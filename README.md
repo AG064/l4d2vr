@@ -8,8 +8,7 @@
 [<img width="640" height="360" alt="image" src="https://github.com/user-attachments/assets/63a16c57-621e-40fc-a581-5f64eafa9633" />](https://www.youtube.com/watch?v=J9vw8VXJWZM)
 
 ## About updates
-It's best to subscribe to this mod directly on the Workshop to avoid missing updates
- [Click here](https://steamcommunity.com/sharedfiles/filedetails/?id=3724995607) to go to the Workshop
+It's best to subscribe to this mod directly on the Workshop to avoid missing updates. <br>[Click here](https://steamcommunity.com/sharedfiles/filedetails/?id=3724995607) to go to L4D2VR's Workshop page
 
 ## Things that work
 * Singleplayer and [multiplayer](#how-to-play-multiplayer)
@@ -17,19 +16,20 @@ It's best to subscribe to this mod directly on the Workshop to avoid missing upd
 * Full controllers two-handed interaction
 * Desktop mirror
 * [Workshop content](https://steamcommunity.com/workshop/browse?appid=550)
-* [Reshard](#reshard)
-* Multi-core rendering support. **(Enable in [VR Config Menu](#vr-config-menu), not the video setting menu)**
-* Anti-aliasing support. **(Enable in [VR Config Menu](#vr-config-menu), not the video setting menu)**
+* [ReShade](#reshade)
+* Multi-core rendering **(Enable in [VR Config Menu](#vr-config-menu), not the game's video settings menu)**
+* Anti-aliasing **(Enable in [VR Config Menu](#vr-config-menu), not the game's video settings menu)**
   
 ## Things that need fixing
-* Interactions and throwables require you to aim with your face. (Except for servers that do not support non‑VR)
+* Interactions and throwables require you to aim with your face. (Except for VR-only servers)
 
 ## How to play multiplayer
-* You can join any server to play, but if the server wasn't created by VR some VR-exclusive features. 
+* You can join any server to play, but if the server wasn't created by VR, you will only have *some* VR-exclusive features. 
 * Versus works, but it's barely been tested.
 
 ## How to use
-1. Download [L4D2VR.zip](https://github.com/liu547161153/l4d2vr/releases) and extract the files to your Left 4 Dead 2 directory `steamapps/common/Left 4 Dead 2`
+1. Download [L4D2VR.zip](https://github.com/keyou91/l4d2vr/releases) and extract the files to your Left 4 Dead 2 installation directory at: `steamapps/common/Left 4 Dead 2`
+    - You can also access the installation directory by right-clicking Left 4 Dead 2 in Steam and going to: Manage > **Browse local files**
 2. Launch SteamVR, then launch Left 4 Dead 2 with these [launch options](https://help.steampowered.com/en/faqs/view/7D01-D2DD-D75E-2955): <br>`-heapsize 524288 -processheap -high -novid -windowed`
     - If you use a desktop client resolution of 2k or higher, add `-bigfonts` to the launch options to make in-game text larger; otherwise, the text on the HUD will be very small.
 3. Join or create your campaign and enjoy the game.
@@ -42,7 +42,7 @@ It's best to subscribe to this mod directly on the Workshop to avoid missing upd
 4. Click to open the L4D2VR Config Panel.
 5. Change the settings and press the Save button to save, or press the Reload button to undo all changes.
 
-## Reshard
+## ReShade
 1. Download [ReShade](https://reshade.me/).
 2. Select the rendering API Left 4 Dead 2 uses: Vulkan + OpenXR.
 > Optional: Select effects to install: [VRToolkit](https://github.com/retroluxfilm/reshade-vrtoolkit) by retroluxfilm.
@@ -60,7 +60,7 @@ It's best to subscribe to this mod directly on the Workshop to avoid missing upd
 * Check `left4dead2_d3d9.log` next to `left4dead2.exe`; lines such as "No adapters found" or "A Vulkan 1.3 capable driver is required" indicate a driver/GPU support problem.
 
 ### If the game is stuttering: 
-* Steam Settings -> Shader Pre-Caching -> Allow background processing of Vulkan shaders.
+* Steam Settings > Downloads > Shader Pre-Caching > **Allow background processing of Vulkan shaders**.
 
 ### DXVK async compilation and low-latency frame pacing
 
@@ -90,18 +90,18 @@ reprojection. Async compilation originates from work by
 pacing from [netborg-afps](https://github.com/netborg-afps/dxvk/releases).
 
 ### If the game is crashing:
-* Lowering video settings.
-* Disabling all add-ons, then Steam > Left 4 Dead 2 > Verifying integrity of game files.
+* Try lowering the game's video settings.
+* Disabling all add-ons, then verifying integrity of game files:
+  * Steam > Left 4 Dead 2 > Properties > Installed Files > **Verify integrity of game files**.
 * Re-installing the game.
 
 ### How to disable it
-If you want to return to normal game mode, there are two methods:
-Method 1: add the startup parameter -nohmd.
-Method 2: find d3d9.dll in the game root directory and rename it or move it somewhere else. After launching the game, open the console and enter crosshair 1 to enable the crosshair again, since VRMod disables it.
-I still recommend keeping it, because it can also be used as DXVK.
+If you want to return to normal game mode with no VR, there are two methods:
+- Method 1: Add the launch option: `-nohmd`.
+- Method 2: Find `d3d9.dll` in the game root directory and rename it or move it somewhere else. After launching the game, open the console and enter `crosshair 1` to enable the crosshair again, since L4D2VR disables it. <br>I still recommend keeping d3d9.dll, because it can also be used as DXVK for non-VR mode.
 
 ## Build instructions
-1. `git clone --recurse-submodules https://github.com/liu547161153/l4d2vr.git`
+1. `git clone --recurse-submodules https://github.com/keyou91/l4d2vr.git`
 2. Initialize submodules:
    ```powershell
    git submodule update --init --recursive
