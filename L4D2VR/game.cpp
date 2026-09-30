@@ -805,7 +805,7 @@ namespace
         }
 
         if (!wasKnown)
-            Game::logMsg("[VR][ServerAck] dedicated server plugin acknowledged VR usercmd support");
+            Game::logMsg("[VR][ServerAck] server acknowledged VR usercmd support");
 
         // Combined-server protocol 3+ advertises pose wire protocol 2.
         // Version 2 of that plugin relays the older 40-byte pose packet and
@@ -1178,7 +1178,10 @@ namespace
     constexpr int kSourceEdictFreeFlag = (1 << 1);
     constexpr char kVRPoseRelayHelloCommand[] = "l4d2vr_pose_hello";
     constexpr char kVRPoseRelayUploadCommand[] = "l4d2vr_pose_upload";
-    constexpr char kVRPoseRelayAckCommand[] = "l4d2vr_pose_ack 2\n";
+    // The built-in listen server also decodes VR usercmds. Advertise both
+    // capabilities so remote clients can leave the standard-input fallback.
+    // A pose-only dedicated relay must continue to send l4d2vr_pose_ack 2.
+    constexpr char kVRPoseRelayAckCommand[] = "l4d2vr_server_ack 3\n";
 
     struct VRPoseRelayCommandView
     {

@@ -1621,8 +1621,9 @@ float __fastcall Hooks::dProcessUsercmds(void* ecx, void* edx, edict_t* player,
 	m_ServerProcessingUsercmdPlayer = pPlayer;
 	m_ServerProcessingUsercmdPlayerIndex = index;
 	float result = hkProcessUsercmds.fOriginal(ecx, player, buf, numcmds, totalcmds, dropped_packets, ignore, paused);
-	if (m_ServerPacketSawVRUsercmd &&
-		m_Game->IsValidPlayerIndex(index))
+	// Offer capabilities after a joining client falls back to standard
+	// input as well. Otherwise the initial negotiation can deadlock.
+	if (m_Game->IsValidPlayerIndex(index))
 	{
 		m_Game->ObserveBuiltinVRPoseRelayClient(
 			index,
