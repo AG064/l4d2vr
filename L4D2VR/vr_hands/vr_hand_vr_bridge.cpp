@@ -5,6 +5,7 @@
 #include "vr_hand_system.h"
 #include "vr_hand_math.h"
 #include "vr_hand_vm_pose.h"
+#include "vr_magazine_policy.h"
 
 #include <d3d9.h>
 #include <d3d9_vr.h>
@@ -7389,19 +7390,13 @@ bool VR::UpdateMagazineInteraction(
             if (m_MagazineInteractionServerClipSettlementActive &&
                 !m_MagazineInteractionShotgunShellMode)
             {
-                const int heldAmmoType = m_MagazineInteractionServerClipReserveHoldAmmoType;
-                const int heldReserve = m_MagazineInteractionServerClipReserveHoldReserve;
-
                 m_MagazineInteractionReloadTriggered = true;
                 m_MagazineInteractionReloadCommandPending = false;
                 m_MagazineInteractionReloadCommandIssued = false;
                 m_MagazineInteractionReloadCommandHoldUntil = {};
-                m_MagazineInteractionChamberEmpty = activeClip == 0;
-
-                if ((heldAmmoType <= 2 && heldReserve == 0)) // Pistol
-                    m_MagazineInteractionOneInChamber = true;
-                else
-                    m_MagazineInteractionOneInChamber = !m_MagazineInteractionChamberEmpty && m_MagazineInteractionServerClipReserveHoldReserve > 0;
+                m_MagazineInteractionChamberEmpty = m_MagazineInteractionStartClip <= 0;
+                m_MagazineInteractionOneInChamber =
+                    l4d2vr_magazine::ChamberRoundsAfterEject(m_MagazineInteractionStartClip) != 0;
 
                 applyServerHookClipSettlement(
                     m_MagazineInteractionOneInChamber ? 1 : 0,
