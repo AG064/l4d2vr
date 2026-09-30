@@ -3041,7 +3041,9 @@ namespace
             return;
 
         bool configChanged = false;
-        const std::unordered_set<std::string> sampleKeys = ExtractConfigParameterKeys(sampleText, true);
+        std::unordered_set<std::string> sampleKeys = ExtractConfigParameterKeys(sampleText, true);
+        // Older workshop samples must not erase this supported optional setting.
+        sampleKeys.insert("MagazineReleaseButtonRequired");
         configChanged |= RemoveConfigParametersNotInSample(configText, sampleKeys);
 
         std::istringstream sampleStream(sampleText);

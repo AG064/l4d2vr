@@ -1,5 +1,6 @@
 void VR::ProcessInput()
 {
+    m_MagazineReleaseJustPressed = false;
     if (!m_IsVREnabled)
     {
         if (m_ObjectPullPhase != ObjectPullClientPhase::Idle ||
@@ -463,6 +464,18 @@ void VR::ProcessInput()
     bool reloadJustPressed = false;
     bool reloadDataValid = getActionState(&m_ActionReload, reloadActionData, reloadButtonDown, reloadJustPressed);
 
+    vr::InputDigitalActionData_t offHandGripData{};
+    bool offHandGripDown = false;
+    bool offHandGripJustPressed = false;
+    getActionState(&m_ActionOffHandGrip, offHandGripData,
+        offHandGripDown, offHandGripJustPressed);
+    vr::InputDigitalActionData_t magazineReleaseData{};
+    bool magazineReleaseDown = false;
+    bool magazineReleaseJustPressed = false;
+    getActionState(&m_ActionMagazineRelease, magazineReleaseData,
+        magazineReleaseDown, magazineReleaseJustPressed);
+    m_MagazineReleaseJustPressed = magazineReleaseJustPressed;
+
     vr::InputDigitalActionData_t secondaryAttackActionData{};
     bool secondaryAttackActive = false;
     bool secondaryAttackJustPressed = false;
@@ -624,17 +637,20 @@ void VR::ProcessInput()
     }
 
     const bool magazineButtonGripDown =
+        offHandGripDown ||
         (reloadFromLeftHand && reloadButtonDown) ||
         (crouchFromLeftHand && crouchButtonDown) ||
         (jumpFromLeftHand && jumpButtonDown) ||
         (secondaryAttackFromLeftHand && secondaryAttackActive);
     const bool magazineButtonGripJustPressed =
+        offHandGripJustPressed ||
         (reloadFromLeftHand && reloadJustPressed) ||
         (crouchFromLeftHand && crouchJustPressed) ||
         (jumpFromLeftHand && jumpJustPressed) ||
         (secondaryAttackFromLeftHand && secondaryAttackJustPressed);
     const bool magazineButtonGripJustPressedFromReload = reloadFromLeftHand && reloadJustPressed;
     const bool magazineButtonGripJustPressedFromOther =
+        offHandGripJustPressed ||
         (crouchFromLeftHand && crouchJustPressed) ||
         (jumpFromLeftHand && jumpJustPressed) ||
         (secondaryAttackFromLeftHand && secondaryAttackJustPressed);

@@ -5498,6 +5498,7 @@ bool VR::UpdateMagazineInteraction(
     const bool vrHandsInteractionAvailable =
         m_IsVREnabled &&
         (m_VrHandsEnabled || m_NativeViewmodelHandsOnly) &&
+        !m_RenderPlayerIncap.load(std::memory_order_relaxed) &&
         hasActiveWeapon;
     const int activeWeaponIdInt = static_cast<int>(activeWeaponId);
 
@@ -5507,6 +5508,7 @@ bool VR::UpdateMagazineInteraction(
         {
             m_VrHandsTwoHandedGripActive = false;
             m_VrHandsTwoHandedGripWeaponId = 0;
+            m_VrHandsTwoHandedGripWeaponTag = 0;
             m_VrHandsTwoHandedMountFriendlyGripEnteredAt = {};
             m_VrHandsTwoHandedMountFriendlyGripContact = false;
             if (m_VrHandsDebugLog)
@@ -5520,6 +5522,13 @@ bool VR::UpdateMagazineInteraction(
         MagazineInteractionWeaponUsesShotgunShells(activeWeaponId);
     const bool activeWeaponUsesPhysicalReload =
         MagazineInteractionWeaponUsesPhysicalReload(activeWeaponId);
+    if (m_MagazineReleaseButtonRequired && m_MagazineReleaseJustPressed &&
+        MagazineInteractionWeaponUsesDetachableMagazine(activeWeaponId))
+    {
+        m_VrHandsTwoHandedGripActive = false;
+        m_VrHandsTwoHandedGripWeaponId = 0;
+        m_VrHandsTwoHandedGripWeaponTag = 0;
+    }
     const bool activeShotgunManualReloadAvailable =
         activeWeaponUsesShotgunShells &&
         IsMagazineInteractionShotgunServerHookActive(static_cast<int>(activeWeaponId));
@@ -5529,18 +5538,21 @@ bool VR::UpdateMagazineInteraction(
             IsMagazineInteractionAnyServerHookActive());
 
     if (m_VrHandsTwoHandedGripActive &&
-        (m_VrHandsTwoHandedGripWeaponId != activeWeaponIdInt))
+        (m_VrHandsTwoHandedGripWeaponId != activeWeaponIdInt ||
+         m_VrHandsTwoHandedGripWeaponTag != reinterpret_cast<uintptr_t>(activeWeapon)))
     {
         if (m_VrHandsDebugLog)
         {
             Game::logMsg(
                 "[VR][Hands] two-hand grip released weaponChanged=%d oldWeapon=%d newWeapon=%d",
-                (m_VrHandsTwoHandedGripWeaponId != activeWeaponIdInt) ? 1 : 0,
+                (m_VrHandsTwoHandedGripWeaponId != activeWeaponIdInt ||
+                 m_VrHandsTwoHandedGripWeaponTag != reinterpret_cast<uintptr_t>(activeWeapon)) ? 1 : 0,
                 m_VrHandsTwoHandedGripWeaponId,
                 activeWeaponIdInt);
         }
         m_VrHandsTwoHandedGripActive = false;
         m_VrHandsTwoHandedGripWeaponId = 0;
+        m_VrHandsTwoHandedGripWeaponTag = 0;
         m_VrHandsTwoHandedMountFriendlyGripEnteredAt = {};
         m_VrHandsTwoHandedMountFriendlyGripContact = false;
     }
@@ -5674,6 +5686,7 @@ bool VR::UpdateMagazineInteraction(
         clearMountFriendlyGripContact();
         m_VrHandsTwoHandedGripActive = false;
         m_VrHandsTwoHandedGripWeaponId = 0;
+        m_VrHandsTwoHandedGripWeaponTag = 0;
         if (feedback)
             triggerMagazineInteractionHaptic(0.018f, 85.0f, 0.28f, 2);
         if (m_VrHandsDebugLog)
@@ -5737,6 +5750,7 @@ bool VR::UpdateMagazineInteraction(
                         m_VrHandsTwoHandedGripPistol = false;
                         m_VrHandsTwoHandedGripActive = true;
                         m_VrHandsTwoHandedGripWeaponId = activeWeaponIdInt;
+                        m_VrHandsTwoHandedGripWeaponTag = reinterpret_cast<uintptr_t>(activeWeapon);
                         triggerMagazineInteractionHaptic(0.020f, 95.0f, 0.32f, 2);
                         if (m_VrHandsDebugLog)
                         {
@@ -5768,6 +5782,7 @@ bool VR::UpdateMagazineInteraction(
         {
             m_VrHandsTwoHandedGripActive = false;
             m_VrHandsTwoHandedGripWeaponId = 0;
+            m_VrHandsTwoHandedGripWeaponTag = 0;
             if (leftGripDown && !allowGameplayInputOnTwoHandedGripRelease)
                 m_MagazineInteractionSuppressLeftInputUntilRelease = true;
             triggerMagazineInteractionHaptic(0.018f, 85.0f, 0.28f, 2);
@@ -5786,7 +5801,7 @@ bool VR::UpdateMagazineInteraction(
             ) &&
             (!IsMagazineInteractionManualActive() || activeWeaponUsesShotgunShells) &&
             !m_MagazineInteractionLeftHandHolding &&
-            (!leftHandTouchesMagazineForGripExclusion() || isSeparateInput))
+            (!leftHandTouchesMagazineForGripExclusion() || isSeparateInput || m_MagazineReleaseButtonRequired))
         {
             float twoHandTargetDistance = FLT_MAX;
             if (leftHandTouchesTwoHandedGripTarget(twoHandTargetDistance))
@@ -5794,6 +5809,7 @@ bool VR::UpdateMagazineInteraction(
                 m_VrHandsTwoHandedGripPistol = !VrHandsLongWeapon(activeWeaponId);
                 m_VrHandsTwoHandedGripActive = true;
                 m_VrHandsTwoHandedGripWeaponId = activeWeaponIdInt;
+                m_VrHandsTwoHandedGripWeaponTag = reinterpret_cast<uintptr_t>(activeWeapon);
                 if (leftGripDown)
                     m_MagazineInteractionSuppressLeftInputUntilRelease = true;
                 triggerMagazineInteractionHaptic(0.020f, 95.0f, 0.32f, 2);
@@ -7425,9 +7441,9 @@ bool VR::UpdateMagazineInteraction(
         return reloadCommandPending();
     }
 
-    if (m_MagazineInteractionSuppressEmptyClipAutoReload &&
-        activeClip == 0 &&
-        MagazineInteractionWeaponUsesDetachableMagazine(activeWeaponId))
+    if (l4d2vr_magazine::ShouldEject(m_MagazineReleaseButtonRequired,
+        m_MagazineReleaseJustPressed, m_MagazineInteractionSuppressEmptyClipAutoReload,
+        activeClip, MagazineInteractionWeaponUsesDetachableMagazine(activeWeaponId)))
     {
         MagazineInteractionBoxSnapshot box{};
         float boxAgeSeconds = -1.0f;
@@ -7436,8 +7452,9 @@ bool VR::UpdateMagazineInteraction(
         {
             beginMagazineInteractionSession(box);
             m_MagazineInteractionState = MagazineInteractionManualState::WaitingForFreshMagazine;
-            m_MagazineInteractionChamberEmpty = true;
-            m_MagazineInteractionOneInChamber = false;
+            m_MagazineInteractionChamberEmpty = activeClip <= 0;
+            m_MagazineInteractionOneInChamber =
+                l4d2vr_magazine::ChamberRoundsAfterEject(activeClip) != 0;
             m_MagazineInteractionLeftHandHolding = false;
             m_MagazineInteractionOldMagazinePulled = true;
             m_MagazineInteractionFreshPickupBasisValid = false;
@@ -7452,7 +7469,7 @@ bool VR::UpdateMagazineInteraction(
                 m_MagazineInteractionReloadCommandIssued = false;
                 m_MagazineInteractionReloadCommandHoldUntil = {};
                 applyServerHookClipSettlement(
-                    0,
+                    m_MagazineInteractionOneInChamber ? 1 : 0,
                     -1,
                     -1,
                     -1,
@@ -7492,6 +7509,11 @@ bool VR::UpdateMagazineInteraction(
 
     m_MagazineInteractionFreshMagazineContactActive = false;
     m_MagazineInteractionBoltContactActive = false;
+
+    // Grip can hold a loose magazine or slide, but it must not detach the
+    // attached magazine when the explicit release action is required.
+    if (m_MagazineReleaseButtonRequired)
+        return reloadCommandPending();
 
     if (!MagazineInteractionWeaponUsesDetachableMagazine(activeWeaponId))
     {

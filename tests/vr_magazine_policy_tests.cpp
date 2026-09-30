@@ -14,6 +14,12 @@ static void Check(bool result, const char* message)
 int main()
 {
     using l4d2vr_magazine::ChamberRoundsAfterEject;
+    using l4d2vr_magazine::ShouldEject;
+    Check(!ShouldEject(true, false, true, 0, true), "Button mode must not automatically eject an empty magazine");
+    Check(ShouldEject(true, true, true, 15, true), "Explicit release must eject a loaded magazine");
+    Check(ShouldEject(true, true, true, 0, true), "Explicit release must eject an empty magazine");
+    Check(!ShouldEject(true, true, true, 8, false), "A tube-fed shotgun must not eject a detachable magazine");
+    Check(ShouldEject(false, false, true, 0, true), "Legacy empty-magazine handling remains available");
     Check(ChamberRoundsAfterEject(-1) == 0, "Unknown clip data must not create ammunition");
     Check(ChamberRoundsAfterEject(0) == 0, "An empty pistol must not gain an infinite-reserve chambered round");
     Check(ChamberRoundsAfterEject(1) == 1, "Removing a magazine must preserve the last existing chambered round");

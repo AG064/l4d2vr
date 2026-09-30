@@ -1318,6 +1318,8 @@ int VR::SetActionManifest(const char* fileName)
     m_Input->GetActionHandle("/actions/main/in/PrevItem", &m_ActionPrevItem);
     m_Input->GetActionHandle("/actions/main/in/ResetPosition", &m_ActionResetPosition);
     m_Input->GetActionHandle("/actions/main/in/Crouch", &m_ActionCrouch);
+    m_Input->GetActionHandle("/actions/main/in/OffHandGrip", &m_ActionOffHandGrip);
+    m_Input->GetActionHandle("/actions/main/in/MagazineRelease", &m_ActionMagazineRelease);
     m_Input->GetActionHandle("/actions/main/in/Flashlight", &m_ActionFlashlight);
     m_Input->GetActionHandle("/actions/main/in/InventoryGripLeft", &m_ActionInventoryGripLeft);
     m_Input->GetActionHandle("/actions/main/in/InventoryGripRight", &m_ActionInventoryGripRight);

@@ -351,6 +351,7 @@ AimLineColor=255,0,0,100
 AimLineMinHitDistance=0
 
 ManualThrowEnabled=false
+MagazineReleaseButtonRequired=false
 ManualThrowVelocityScale=4.0
 ManualThrowHorizontalVelocityScale=1.0
 ManualThrowVerticalVelocityScale=1.0

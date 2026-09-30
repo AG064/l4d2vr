@@ -1549,6 +1549,8 @@ public:
 	vr::VRActionHandle_t m_ActionPrevItem = vr::k_ulInvalidActionHandle;
 	vr::VRActionHandle_t m_ActionResetPosition = vr::k_ulInvalidActionHandle;
 	vr::VRActionHandle_t m_ActionCrouch = vr::k_ulInvalidActionHandle;
+    vr::VRActionHandle_t m_ActionOffHandGrip = vr::k_ulInvalidActionHandle;
+    vr::VRActionHandle_t m_ActionMagazineRelease = vr::k_ulInvalidActionHandle;
 	vr::VRActionHandle_t m_ActionFlashlight = vr::k_ulInvalidActionHandle;
 	vr::VRActionHandle_t m_ActionInventoryGripLeft = vr::k_ulInvalidActionHandle;
 	vr::VRActionHandle_t m_ActionInventoryGripRight = vr::k_ulInvalidActionHandle;
@@ -1875,6 +1877,7 @@ public:
 	Vector m_VrHandsTwoHandedAimUpSmoothed = { 0.0f, 0.0f, 1.0f };
 	bool m_VrHandsTwoHandedGripActive = false;
 	int m_VrHandsTwoHandedGripWeaponId = 0;
+    uintptr_t m_VrHandsTwoHandedGripWeaponTag = 0;
 	std::chrono::steady_clock::time_point m_VrHandsTwoHandedMountFriendlyGripEnteredAt{};
 	bool m_VrHandsTwoHandedMountFriendlyGripContact = false;
 	bool IsVrHandsTwoHandedGripPoseActive() const
@@ -1902,6 +1905,8 @@ public:
 	// Independent magazine interaction prototype. It consumes the current weapon magazine OBB and
 	// lets configured off-hand grip input claim physical reload interactions before normal input.
 	bool m_MagazineInteractionEnabled = false;
+    bool m_MagazineReleaseButtonRequired = false;
+    bool m_MagazineReleaseJustPressed = false;
 	bool m_MagazineInteractionQuickReloadMode = false;
 	bool m_MagazineInteractionUseButtonGripInput = true;
 	bool m_MagazineInteractionUseButtonDisbleReloadCommand = false;

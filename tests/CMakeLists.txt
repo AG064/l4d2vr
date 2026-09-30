@@ -7,3 +7,8 @@ if(MSVC)
     target_compile_options(vr_magazine_policy_tests PRIVATE /W4 /WX)
 endif()
 add_test(NAME vr_magazine_policy COMMAND vr_magazine_policy_tests)
+
+find_package(Python3 COMPONENTS Interpreter)
+if(Python3_Interpreter_FOUND)
+    add_test(NAME vr_input_profiles COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test_input_profiles.py)
+endif()
