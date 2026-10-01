@@ -8627,7 +8627,9 @@ namespace
         vr_vm_stabilize::Mat3x4*& outBones)
     {
         outBones = nullptr;
-        if (!vr || !vr->ShouldDrawMagazineInteractionDetachedMagazine() || !drawState || !pCustomBoneToWorld)
+        const bool bodySpare = vr && vr->m_BodyGripInventoryEnabled &&
+            vr->m_BodyAmmoAvailable.load(std::memory_order_acquire) && !vr->IsMagazineInteractionManualActive();
+        if (!vr || (!bodySpare && !vr->ShouldDrawMagazineInteractionDetachedMagazine()) || !drawState || !pCustomBoneToWorld)
         {
             if (vr && vr->IsMagazineInteractionManualActive())
                 LogMagazineInteractionDetachedDrawSkip("inactive-or-missing-draw-input", modelName);
@@ -8645,8 +8647,17 @@ namespace
             LogMagazineInteractionDetachedDrawSkip("not-viewmodel", modelName);
             return false;
         }
-        if (vr->m_MagazineInteractionMagazineModelName.empty() ||
-            vr_vm_stabilize::ToLowerAscii(vr->m_MagazineInteractionMagazineModelName) != lowerModel)
+        MagazineInteractionBoxSnapshot bodySpareBox{};
+        if (bodySpare &&
+            (!vr->GetMagazineInteractionBox(bodySpareBox) ||
+                vr_vm_stabilize::ToLowerAscii(bodySpareBox.modelName) != lowerModel ||
+                MagazineInteractionInferWeaponIdFromViewmodelModelName(lowerModel) !=
+                    vr->m_MagazineInteractionCurrentWeaponId.load(std::memory_order_relaxed) ||
+                std::chrono::duration<float>(std::chrono::steady_clock::now() - bodySpareBox.publishedAt).count() >
+                    std::max(0.02f, vr->m_MagazineInteractionStaleSeconds)))
+            return false;
+        if (!bodySpare && (vr->m_MagazineInteractionMagazineModelName.empty() ||
+            vr_vm_stabilize::ToLowerAscii(vr->m_MagazineInteractionMagazineModelName) != lowerModel))
         {
             LogMagazineInteractionDetachedDrawSkip("model-mismatch", modelName);
             return false;
@@ -8676,7 +8687,7 @@ namespace
             return false;
         }
 
-        const int clipBone = vr->m_MagazineInteractionMagazineBoneIndex;
+        const int clipBone = bodySpare ? bodySpareBox.boneIndex : vr->m_MagazineInteractionMagazineBoneIndex;
         if (clipBone < 0 || clipBone >= numBones)
         {
             LogMagazineInteractionDetachedDrawSkip("invalid-clip-bone", modelName);
@@ -8692,9 +8703,9 @@ namespace
             poseCache.clipBone == clipBone &&
             poseCache.numBones == numBones &&
             static_cast<int>(poseCache.sourceBones.size()) == numBones;
-        const bool refreshPoseCache =
-            vr->m_MagazineInteractionState == MagazineInteractionManualState::HoldingOldMagazine &&
-            !vr->m_MagazineInteractionReloadTriggered;
+        const bool refreshPoseCache = bodySpare ||
+            (vr->m_MagazineInteractionState == MagazineInteractionManualState::HoldingOldMagazine &&
+                !vr->m_MagazineInteractionReloadTriggered);
 
         const auto* sourceBones = reinterpret_cast<const vr_vm_stabilize::Mat3x4*>(pCustomBoneToWorld);
         if (refreshPoseCache || !cacheMatches)
@@ -8734,7 +8745,8 @@ namespace
             : sourceBones;
 
         VrHandMatrix4 targetMagazineWorld{};
-        if (!vr->GetMagazineInteractionDetachedMagazineWorld(targetMagazineWorld))
+        if (!(bodySpare ? vr->GetBodyAmmoPreviewWorld(bodySpareBox, targetMagazineWorld) :
+            vr->GetMagazineInteractionDetachedMagazineWorld(targetMagazineWorld)))
         {
             LogMagazineInteractionDetachedDrawSkip("missing-target-world", modelName);
             return false;
@@ -23122,8 +23134,9 @@ namespace
         if (!localPlayer || reinterpret_cast<void*>(localPlayer) != player)
             return false;
 
-        origin = Hooks::m_VR->GetRightControllerAbsPos();
-        angles = Hooks::m_VR->GetRightControllerAbsAngle();
+        const bool left = Hooks::m_VR->m_PistolUseLeft.load(std::memory_order_acquire);
+        origin = left ? Hooks::m_VR->GetLeftControllerAbsPos() : Hooks::m_VR->GetRightControllerAbsPos();
+        angles = left ? Hooks::m_VR->GetLeftControllerAbsAngle() : Hooks::m_VR->GetRightControllerAbsAngle();
         NormalizeAndClampViewAngles(angles);
 
         return IsFiniteVector3(origin) && IsFiniteViewAngle(angles);
@@ -23292,6 +23305,103 @@ const QAngle* Hooks::dServerPlayerEyeAngles(void* ecx, void* edx)
     return hkServerPlayerEyeAngles.fOriginal(ecx);
 }
 
+namespace
+{
+    struct PistolPickupAmmoContext
+    {
+        void* owner = nullptr;
+        void* held = nullptr;
+        void* heldVtable = nullptr;
+        int heldClip = -1, incomingClip = -1;
+    };
+    thread_local PistolPickupAmmoContext* g_PistolPickupAmmo = nullptr;
+    static void* PistolPickupSecondary(void* owner)
+    {
+        void** vtable = *reinterpret_cast<void***>(owner);
+        using GetSlot = void* (__thiscall*)(void*, int);
+        return vtable ? reinterpret_cast<GetSlot>(vtable[0x480 / sizeof(void*)])(owner, 1) : nullptr;
+    }
+    static void BeginPistolPickupAmmo(void* owner, PistolPickupAmmoContext& context)
+    {
+        if (!Hooks::m_VR || !Hooks::m_Game || !Hooks::m_VR->m_DualPistolsIndependentHandsEnabled ||
+            !Hooks::m_VR->m_GripReleaseDropEnabled || !ManualPistolLayoutIsVerified() ||
+            owner != Hooks::m_Game->m_CurrentUsercmdPlayer || !Hooks::m_ServerProcessingUsercmd ||
+            !Hooks::m_Game->IsValidPlayerIndex(Hooks::m_Game->m_CurrentUsercmdID)) return;
+        const Player& player = Hooks::m_Game->m_PlayersVRInfo[Hooks::m_Game->m_CurrentUsercmdID];
+        if (!player.isUsingVR || !ManualEmptyHandsPlaceholderOwnerIsLiveSurvivor(owner)) return;
+#ifdef _MSC_VER
+        __try
+#endif
+        {
+            void* held = PistolPickupSecondary(owner);
+            if (!held || held == player.manualEmptyHandsDummyPistol ||
+                reinterpret_cast<Server_WeaponCSBase*>(held)->GetWeaponID() != static_cast<int>(C_WeaponCSBase::WeaponID::PISTOL)) return;
+            const auto* bytes = reinterpret_cast<const unsigned char*>(held);
+            const int clip = *reinterpret_cast<const int*>(bytes + 0x1414);
+            if (bytes[0x17DD] != 0u || clip < 0 || clip > 15) return;
+            context.owner = owner; context.held = held;
+            context.heldVtable = ManualThrowReadEntityVtable(held); context.heldClip = clip;
+        }
+#ifdef _MSC_VER
+        __except (EXCEPTION_EXECUTE_HANDLER) { context = {}; }
+#endif
+    }
+    static void CapturePistolPickupAmmo(void* owner, void* candidate)
+    {
+        auto* context = g_PistolPickupAmmo;
+        if (!context || !context->held || context->owner != owner || !candidate) return;
+        char classname[128]{};
+        if (!ManualCarryImpactReadServerClassName(candidate, classname, sizeof(classname)) ||
+            (std::strcmp(classname, "weapon_pistol") != 0 && std::strcmp(classname, "CPistol") != 0)) return;
+#ifdef _MSC_VER
+        __try
+#endif
+        {
+            const auto* bytes = reinterpret_cast<const unsigned char*>(candidate);
+            const int clip = *reinterpret_cast<const int*>(bytes + 0x1414);
+            if (bytes[0x17DD] == 0u && clip >= 0 && clip <= 15) context->incomingClip = clip;
+        }
+#ifdef _MSC_VER
+        __except (EXCEPTION_EXECUTE_HANDLER) { context->incomingClip = -1; }
+#endif
+    }
+    static void CompletePistolPickupAmmo(const PistolPickupAmmoContext& context)
+    {
+        int clip = -1;
+        if (!context.held || !l4d2vr_pistol::JoinAmmo(context.heldClip, context.incomingClip, clip)) return;
+#ifdef _MSC_VER
+        __try
+#endif
+        {
+            if (PistolPickupSecondary(context.owner) != context.held ||
+                ManualThrowReadEntityVtable(context.held) != context.heldVtable) return;
+            auto* bytes = reinterpret_cast<unsigned char*>(context.held);
+            if (bytes[0x17DD] != 1u) return;
+            // Native AddDualWeapons has already updated models and dirtied the
+            // network state. Replace its clip multiplication with both real clips.
+            *reinterpret_cast<int*>(bytes + 0x1414) = clip;
+            Game::logMsg("[VR][PistolPickup] native merge conserved ammo held=%d incoming=%d total=%d",
+                context.heldClip, context.incomingClip, clip);
+        }
+#ifdef _MSC_VER
+        __except (EXCEPTION_EXECUTE_HANDLER) { }
+#endif
+    }
+    class ScopedPistolPickupAmmo
+    {
+    public:
+        ScopedPistolPickupAmmo(void* owner, void* candidate) : previous(g_PistolPickupAmmo)
+        {
+            BeginPistolPickupAmmo(owner, context); g_PistolPickupAmmo = &context;
+            CapturePistolPickupAmmo(owner, candidate);
+        }
+        ~ScopedPistolPickupAmmo() { g_PistolPickupAmmo = previous; CompletePistolPickupAmmo(context); }
+    private:
+        PistolPickupAmmoContext context{};
+        PistolPickupAmmoContext* previous;
+    };
+}
+
 void Hooks::dPlayerUse(void* ecx, void* edx, void* useEntity)
 {
     if (void* objectPullTarget =
@@ -23310,6 +23420,7 @@ void Hooks::dPlayerUse(void* ecx, void* edx, void* useEntity)
         }
     }
 
+    ScopedPistolPickupAmmo pistolAmmo(ecx, useEntity);
     const bool useAimActive = IsServerUseControllerAimWindowActive();
     if (useAimActive)
     {
@@ -23364,11 +23475,15 @@ void Hooks::dPlayerUse(void* ecx, void* edx, void* useEntity)
 
 Server_BaseEntity* Hooks::dFindUseEntity(void* ecx, void* edx, float radius, float dotLimit, float defaultDotLimit, void* traceResult, void* extra)
 {
+    const auto rememberPistol = [&](Server_BaseEntity* candidate)
+    {
+        CapturePistolPickupAmmo(ecx, candidate);
+        return candidate;
+    };
     if (void* objectPullTarget =
         ObjectPullSelectPendingNativePickupTarget(ecx))
     {
-        return reinterpret_cast<Server_BaseEntity*>(
-            objectPullTarget);
+        return rememberPistol(reinterpret_cast<Server_BaseEntity*>(objectPullTarget));
     }
 
     const bool useAimActive = IsServerUseControllerAimWindowActive();
@@ -23409,10 +23524,10 @@ Server_BaseEntity* Hooks::dFindUseEntity(void* ecx, void* edx, float radius, flo
                 controllerAngles.x, controllerAngles.y, controllerAngles.z);
         }
         ScopedServerUseControllerAimOverride useAim(ecx, controllerOrigin, controllerAngles);
-        return hkFindUseEntity.fOriginal(ecx, radius, dotLimit, defaultDotLimit, traceResult, extra);
+        return rememberPistol(hkFindUseEntity.fOriginal(ecx, radius, dotLimit, defaultDotLimit, traceResult, extra));
     }
 
-    return hkFindUseEntity.fOriginal(ecx, radius, dotLimit, defaultDotLimit, traceResult, extra);
+    return rememberPistol(hkFindUseEntity.fOriginal(ecx, radius, dotLimit, defaultDotLimit, traceResult, extra));
 }
 
 static C_BaseEntity* ObjectPullGetClientNativeHighlightTarget(
@@ -23475,15 +23590,75 @@ static C_BaseEntity* ObjectPullGetClientNativeHighlightTarget(
     return nullptr;
 }
 
+static bool GripPickupCandidateTouchesHand(Game* game, VR* vr, C_BaseEntity* candidate)
+{
+    if (!game || !vr || !candidate || !vr->m_GripReleaseDropEnabled)
+        return false;
+#ifdef _MSC_VER
+    __try
+#endif
+    {
+        const char* name = game->GetNetworkClassName(reinterpret_cast<uintptr_t*>(candidate));
+        if (!name)
+            return false;
+        // FindUseEntity has already selected a usable item. Never reinterpret
+        // doors, survivors or mounted weapons as grip pickup contacts.
+        const bool itemClass = std::strncmp(name, "CWeapon", 7) == 0 ||
+            std::strncmp(name, "CRifle", 6) == 0 || std::strncmp(name, "CSniper", 7) == 0 ||
+            std::strncmp(name, "CShotgun", 8) == 0 || std::strncmp(name, "CSMG", 4) == 0 ||
+            std::strncmp(name, "CPistol", 7) == 0 || std::strcmp(name, "CPumpShotgun") == 0 ||
+            std::strcmp(name, "CAutoShotgun") == 0 || std::strcmp(name, "CMeleeWeapon") == 0 ||
+            std::strcmp(name, "CFirstAidKit") == 0 || std::strcmp(name, "CPainPills") == 0 ||
+            std::strcmp(name, "CAdrenaline") == 0 || std::strcmp(name, "CPipeBomb") == 0 ||
+            std::strcmp(name, "CMolotov") == 0 || std::strcmp(name, "CVomitJar") == 0;
+        if (!itemClass)
+            return false;
+        const bool left = vr->m_PistolUseLeft.load(std::memory_order_acquire);
+        if (left)
+        {
+            // An offhand pickup must never replace a primary gun, open a door,
+            // or grab a teammate. Only a real pistol or pistol map spawn qualifies.
+            bool pistol = std::strcmp(name, "CPistol") == 0;
+            if (std::strcmp(name, "CWeaponSpawn") == 0)
+            {
+                const int offset = game->FindRecvPropOffset("DT_WeaponSpawn", "m_weaponID");
+                pistol = offset > 0 && offset < 0x10000 &&
+                    ReadNetvar<int>(candidate, offset) == static_cast<int>(C_WeaponCSBase::WeaponID::PISTOL);
+            }
+            if (!pistol) return false;
+        }
+        const Vector delta = candidate->GetAbsOrigin() -
+            (left ? vr->GetLeftControllerAbsPos() : vr->GetRightControllerAbsPos());
+        const float distance = delta.Length();
+        return std::isfinite(distance) && std::isfinite(vr->m_VRScale) &&
+            vr->m_VRScale > 0.001f && distance <= 0.18f * vr->m_VRScale;
+    }
+#ifdef _MSC_VER
+    __except (EXCEPTION_EXECUTE_HANDLER) { return false; }
+#endif
+}
+
 C_BaseEntity* Hooks::dClientFindUseEntity(void* ecx, void* edx, float radius, float dotLimit, float defaultDotLimit, void* traceResult, void* extra)
 {
+    const auto publishGripContact = [&](C_BaseEntity* candidate)
+    {
+        if (m_VR)
+        {
+            const bool left = m_VR->m_PistolUseLeft.load(std::memory_order_acquire);
+            const uint32_t offer = GripPickupCandidateTouchesHand(m_Game, m_VR, candidate)
+                ? static_cast<uint32_t>(GetTickCount64()) : 0u;
+            m_VR->m_GripPickupOfferTimeMs.store(left ? 0u : offer, std::memory_order_release);
+            m_VR->m_LeftPistolPickupOfferTimeMs.store(left ? offer : 0u, std::memory_order_release);
+        }
+        return candidate;
+    };
     if (C_BaseEntity* pullTarget =
         ObjectPullGetClientNativeHighlightTarget(m_Game, m_VR))
     {
         // This is the same target feed used by L4D2's native item-outline
         // system. Returning the exact selected entity gives Object Pull the
         // original game outline without drawing a second ray/marker effect.
-        return pullTarget;
+        return publishGripContact(pullTarget);
     }
 
     Vector controllerOrigin;
@@ -23502,10 +23677,94 @@ C_BaseEntity* Hooks::dClientFindUseEntity(void* ecx, void* edx, float radius, fl
                 controllerAngles.x, controllerAngles.y, controllerAngles.z);
         }
         ScopedClientUseControllerAimOverride useAim(ecx, controllerOrigin, controllerAngles);
-        return hkClientFindUseEntity.fOriginal(ecx, radius, dotLimit, defaultDotLimit, traceResult, extra);
+        return publishGripContact(hkClientFindUseEntity.fOriginal(ecx, radius, dotLimit, defaultDotLimit, traceResult, extra));
     }
 
+    // No controller pose means no physical contact offer, even if Source's
+    // ordinary head-directed highlight still finds an item.
+    if (m_VR)
+    {
+        m_VR->m_GripPickupOfferTimeMs.store(0u, std::memory_order_release);
+        m_VR->m_LeftPistolPickupOfferTimeMs.store(0u, std::memory_order_release);
+    }
     return hkClientFindUseEntity.fOriginal(ecx, radius, dotLimit, defaultDotLimit, traceResult, extra);
+}
+
+static void ApplyIndependentDualPistolBones(VR* vr, void* state,
+    const std::string& modelName, void*& bones)
+{
+    const bool singleLeft = vr && vr->m_PistolOwnershipMask.load(std::memory_order_acquire) == 2u;
+    if (!vr || (!vr->m_DualPistolsActive.load(std::memory_order_acquire) && !singleLeft) || !state || !bones)
+        return;
+    const std::string model = vr_vm_stabilize::ToLowerAscii(modelName);
+    if (!HooksModelNameIsViewmodel(model) ||
+        (model.find("pistol") == std::string::npos))
+        return;
+    std::vector<std::string> names;
+    std::vector<int> parents;
+    int count = 0, boneIndex = 0, stride = 0, countOffset = 0;
+    if (!vr_vm_stabilize::TryCollectBoneNamesFromDrawState(state, names, parents, count, boneIndex, stride, countOffset) ||
+        count <= 0 || count > 512 || static_cast<int>(names.size()) < count || static_cast<int>(parents.size()) < count)
+        return;
+    int primaryRoot = -1, otherRoot = -1;
+    for (int bone = 0; bone < count; ++bone)
+    {
+        const std::string name = vr_vm_stabilize::ToLowerAscii(names[bone]);
+        if (name == "valvebiped.weapon_bone" || name == "weapon_bone") primaryRoot = bone;
+        if (name == "valvebiped.weapon_bone_l" || name == "weapon_bone_l" ||
+            name == "valvebiped.weapon_bone2") otherRoot = bone;
+    }
+    if (singleLeft) otherRoot = primaryRoot;
+    if (primaryRoot < 0 || otherRoot < 0 || (!singleLeft && primaryRoot == otherRoot)) return;
+    const auto* source = reinterpret_cast<const vr_vm_stabilize::Mat3x4*>(bones);
+    vr_vm_stabilize::Mat3x4 primary{}, other{}, rightController{}, leftController{}, delta{};
+    if (!vr_vm_stabilize::SafeRead(source + primaryRoot, primary) ||
+        !vr_vm_stabilize::SafeRead(source + otherRoot, other))
+        return;
+    const auto controllerFrame = [&](bool left)
+    {
+        Vector origin = left ? vr->GetLeftControllerAbsPos() : vr->GetRightControllerAbsPos();
+        Vector reprojected{};
+        if (HooksNativeViewmodelHandsOnlyReprojectScenePointToViewmodelLayer(vr, origin, reprojected))
+            origin = reprojected;
+        const QAngle angles = left ? vr->GetLeftControllerAbsAngle() : vr->GetRightControllerAbsAngle();
+        Vector forward{}, right{}, up{};
+        QAngle::AngleVectors(angles, &forward, &right, &up);
+        return l4d2vr_dual::ControllerFrame<vr_vm_stabilize::Mat3x4>(
+            { origin.x, origin.y, origin.z }, { forward.x, forward.y, forward.z },
+            { right.x, right.y, right.z }, { up.x, up.y, up.z });
+    };
+    rightController = controllerFrame(false);
+    leftController = controllerFrame(true);
+    if (!l4d2vr_dual::Retarget(rightController, leftController, primary, other, delta)) return;
+    auto* output = vr_vm_stabilize::AllocStableBones(count, vr->m_RenderFrameSeq.load(std::memory_order_relaxed));
+    if (!output) return;
+    const bool leftTracked = (vr->m_DualPistolTriggerState.load(std::memory_order_acquire) & 4u) != 0u;
+    for (int bone = 0; bone < count; ++bone)
+    {
+        if (!vr_vm_stabilize::SafeRead(source + bone, output[bone])) return;
+        bool belongsToOther = false;
+        int ancestor = bone;
+        for (int depth = 0; depth < count && ancestor >= 0 && ancestor < count; ++depth)
+        {
+            if (ancestor == otherRoot) { belongsToOther = true; break; }
+            ancestor = parents[ancestor];
+        }
+        // Valve's dual model has an orphaned left bullet bone. Keep it with
+        // the left magazine even though it is outside the weapon subtree.
+        const std::string name = vr_vm_stabilize::ToLowerAscii(names[bone]);
+        belongsToOther = belongsToOther || (name.find("weapon_") != std::string::npos &&
+            name.size() >= 2 && name.compare(name.size() - 2, 2, "_l") == 0);
+        if (belongsToOther)
+        {
+            if (leftTracked)
+                output[bone] = l4d2vr_dual::Multiply(delta, output[bone]);
+            else
+                output[bone].m[2][3] += 100000.0f;
+        }
+        if (!l4d2vr_dual::Finite(output[bone])) return;
+    }
+    bones = output;
 }
 
 bool __fastcall Hooks::dWorldPoseWeaponSetupBones(
@@ -24538,6 +24797,10 @@ void Hooks::dDrawModelExecute(void* ecx, void* edx, void* state, const ModelRend
     // Capture the exact arm matrices submitted to Source. In queued rendering
     // pBonesToWorldFinal contains the same stabilization delta as the visible gun,
     // so the standalone right glove follows controller rotation and HMD movement.
+    {
+        MagazineInteractionRenderSnapshotScope dualPistolSnapshot(m_Game && m_Game->GetMatQueueMode() != 0);
+        ApplyIndependentDualPistolBones(m_VR, state, modelName, pBonesToWorldFinal);
+    }
     MaybeCaptureViewmodelMuzzleSmokePose(m_VR, state, modelName, *pDrawInfo, pBonesToWorldFinal);
     MaybeCaptureVrHandsVmPose(
         m_VR,

@@ -312,6 +312,11 @@ namespace
         { "BlockFireOnFriendlyAimEnabled", CfgOptionType::Bool, "\xE8\xBE\x85\xE5\x8A\xA9\xE7\x9E\x84\xE5\x87\x86", "\xE7\xA6\x81\xE6\xAD\xA2\xE5\x90\x91\xE9\x98\x9F\xE5\x8F\x8B\xE5\xBC\x80\xE7\x81\xAB", 0.0f, 0.0f, "false" },
         
         { "ManualThrowEnabled", CfgOptionType::Bool, "\xE6\xAD\xA6\xE5\x99\xA8 / \xE6\x8A\x95\xE6\x8E\xB7\xE7\x89\xA9", "\xE6\x89\x8B\xE5\x8A\xA8\xE6\x8A\x95\xE6\x8E\xB7", 0.0f, 0.0f, "false" },
+        { "GripReleaseDropEnabled", CfgOptionType::Bool, "Weapons / Throwables", "Grip weapon pickup and release", 0.0f, 0.0f, "false" },
+        { "BodyGripInventoryEnabled", CfgOptionType::Bool, "Hands / Manual Reload", "Grip body inventory", 0.0f, 0.0f, "false" },
+        { "ManualPumpEnabled", CfgOptionType::Bool, "Hands / Manual Reload", "Manual shotgun pump", 0.0f, 0.0f, "false" },
+        { "DualPistolsNativeReloadFallbackEnabled", CfgOptionType::Bool, "Hands / Manual Reload", "Native dual pistol reload fallback", 0.0f, 0.0f, "false" },
+        { "DualPistolsIndependentHandsEnabled", CfgOptionType::Bool, "Weapons / Throwables", "Independent dual pistol hands", 0.0f, 0.0f, "false" },
         { "MagazineReleaseButtonRequired", CfgOptionType::Bool, "Hands / Manual Reload", "Require magazine release button", 0.0f, 0.0f, "false" },
         { "ObjectPullEnabled", CfgOptionType::Bool, "\xE6\xAD\xA6\xE5\x99\xA8 / \xE9\x9A\x94\xE7\xA9\xBA\xE6\x8A\x93\xE5\x8F\x96", "\xE9\x9A\x94\xE7\xA9\xBA\xE6\x8A\x93\xE5\x8F\x96", 0.00f, 0.00f, "true" },
         
@@ -594,7 +599,6 @@ namespace
         { "BlockFireOnFriendlyAimEnabled", "Aim Assist", "\350\276\205\345\212\251\347\236\204\345\207\206", "Friendly-fire Aim Guard ", "\347\246\201\346\255\242\345\220\221\351\230\237\345\217\213\345\274\200\347\201\253", "Suppresses firing when your aim line is on a teammate.", "\345\275\223\347\236\204\345\207\206\347\272\277\346\214\207\345\220\221\351\230\237\345\217\213\346\227\266\346\212\221\345\210\266\345\274\200\347\201\253\343\200\202", "This is the startup default; you can still toggle it at runtime via SteamVR binding.", "\350\277\231\346\230\257\345\220\257\345\212\250\346\227\266\347\232\204\351\273\230\350\256\244\345\200\274\357\274\233\350\277\220\350\241\214\344\270\255\344\273\215\345\217\257\347\224\250 SteamVR \347\273\221\345\256\232\345\274\200\345\205\263\345\210\207\346\215\242\343\200\202" },
         
         { "ManualThrowEnabled", "Weapons / Throwables", "\xE6\xAD\xA6\xE5\x99\xA8 / \xE6\x8A\x95\xE6\x8E\xB7\xE7\x89\xA9", "Manual Throw", "\xE6\x89\x8B\xE5\x8A\xA8\xE6\x8A\x95\xE6\x8E\xB7", "Replaces projectile release velocity with measured VR controller movement.", "\xE5\xBC\x80\xE5\x90\xAF\xE5\x90\x8E\xEF\xBC\x8C\xE6\x8A\x95\xE6\x8E\xB7\xE7\x89\xA9\xE7\x9A\x84\xE5\x87\xBA\xE6\x89\x8B\xE9\x80\x9F\xE5\xBA\xA6\xE6\x9D\xA5\xE8\x87\xAA VR \xE6\x89\x8B\xE6\x9F\x84\xE6\x9D\xBE\xE5\xBC\x80\xE5\x89\x8D\xE7\x9A\x84\xE5\xAE\x9E\xE9\x99\x85\xE6\x8C\xA5\xE5\x8A\xA8\xE3\x80\x82", "Off keeps the original game throw and its normal trajectory preview. Requires the VR-aware server hooks.", "\xE5\x85\xB3\xE9\x97\xAD\xE6\x97\xB6\xE4\xBF\x9D\xE6\x8C\x81\xE6\xB8\xB8\xE6\x88\x8F\xE5\x8E\x9F\xE7\x89\x88\xE6\x8A\x95\xE6\x8E\xB7\xE5\x92\x8C\xE6\x99\xAE\xE9\x80\x9A\xE6\x8A\x9B\xE7\x89\xA9\xE7\xBA\xBF\xE9\xA2\x84\xE8\xA7\x88\xEF\xBC\x9B\xE5\xBC\x80\xE5\x90\xAF\xE6\x97\xB6\xE9\x9C\x80\xE8\xA6\x81 VR \xE6\x9C\x8D\xE5\x8A\xA1\xE5\x99\xA8\xE9\x92\xA9\xE5\xAD\x90\xE3\x80\x82" },
-        { "MagazineReleaseButtonRequired", "Hands / Manual Reload", "Button-controlled Magazine Release", "Requires Magazine Release to eject an attached magazine, including when it is empty.", "The off-hand grip handles support, loose magazines and the slide. Running out of ammunition does not eject the magazine." },
         { "ManualThrowVelocityScale", "Weapons / Throwables", "\xE6\xAD\xA6\xE5\x99\xA8 / \xE6\x8A\x95\xE6\x8E\xB7\xE7\x89\xA9", "Overall Velocity Scale", "\xE6\x80\xBB\xE9\x80\x9F\xE5\xBA\xA6\xE5\x80\x8D\xE7\x8E\x87", "Multiplies all measured controller release velocity before axis-specific scaling.", "\xE5\x9C\xA8\xE6\xB0\xB4\xE5\xB9\xB3\xE5\x92\x8C\xE5\x9E\x82\xE7\x9B\xB4\xE5\x88\x86\xE9\x87\x8F\xE5\x88\x86\xE5\x88\xAB\xE8\xB0\x83\xE6\x95\xB4\xE5\x89\x8D\xEF\xBC\x8C\xE5\x85\x88\xE6\x94\xBE\xE5\xA4\xA7\xE6\x95\xB4\xE4\xBD\x93\xE6\x89\x8B\xE6\x9F\x84\xE6\x9D\xBE\xE6\x89\x8B\xE9\x80\x9F\xE5\xBA\xA6\xE3\x80\x82", "Raise for longer throws; lower when small motions travel too far.", "\xE8\xB7\x9D\xE7\xA6\xBB\xE5\xA4\xAA\xE7\x9F\xAD\xE6\x97\xB6\xE8\xB0\x83\xE5\xA4\xA7\xEF\xBC\x8C\xE8\xBD\xBB\xE5\xBE\xAE\xE5\x8A\xA8\xE4\xBD\x9C\xE4\xB9\x9F\xE9\xA3\x9E\xE5\xBE\x97\xE5\xA4\xAA\xE8\xBF\x9C\xE6\x97\xB6\xE8\xB0\x83\xE5\xB0\x8F\xE3\x80\x82" },
         { "ManualThrowHorizontalVelocityScale", "Weapons / Throwables", "\xE6\xAD\xA6\xE5\x99\xA8 / \xE6\x8A\x95\xE6\x8E\xB7\xE7\x89\xA9", "Horizontal Velocity Scale", "\xE6\xB0\xB4\xE5\xB9\xB3\xE9\x80\x9F\xE5\xBA\xA6\xE5\x80\x8D\xE7\x8E\x87", "Separately scales X/Y velocity and therefore mainly controls throw distance.", "\xE5\x8D\x95\xE7\x8B\xAC\xE7\xBC\xA9\xE6\x94\xBE X/Y \xE9\x80\x9F\xE5\xBA\xA6\xEF\xBC\x8C\xE4\xB8\xBB\xE8\xA6\x81\xE7\x94\xA8\xE4\xBA\x8E\xE8\xB0\x83\xE6\x95\xB4\xE6\x8A\x95\xE6\x8E\xB7\xE8\xB7\x9D\xE7\xA6\xBB\xE3\x80\x82", "Does not directly amplify the hand's vertical component.", "\xE4\xB8\x8D\xE4\xBC\x9A\xE7\x9B\xB4\xE6\x8E\xA5\xE6\x94\xBE\xE5\xA4\xA7\xE6\x89\x8B\xE9\x83\xA8\xE7\x9A\x84\xE5\x9E\x82\xE7\x9B\xB4\xE9\x80\x9F\xE5\xBA\xA6\xE3\x80\x82" },
         { "ManualThrowVerticalVelocityScale", "Weapons / Throwables", "\xE6\xAD\xA6\xE5\x99\xA8 / \xE6\x8A\x95\xE6\x8E\xB7\xE7\x89\xA9", "Vertical Velocity Scale", "\xE5\x9E\x82\xE7\x9B\xB4\xE9\x80\x9F\xE5\xBA\xA6\xE5\x80\x8D\xE7\x8E\x87", "Separately scales the measured Z velocity and therefore the natural arc height.", "\xE5\x8D\x95\xE7\x8B\xAC\xE7\xBC\xA9\xE6\x94\xBE\xE6\x89\x8B\xE6\x9F\x84 Z \xE6\x96\xB9\xE5\x90\x91\xE9\x80\x9F\xE5\xBA\xA6\xEF\xBC\x8C\xE4\xB8\xBB\xE8\xA6\x81\xE5\xBD\xB1\xE5\x93\x8D\xE8\x87\xAA\xE7\x84\xB6\xE6\x8A\x9B\xE7\x89\xA9\xE7\xBA\xBF\xE9\xAB\x98\xE5\xBA\xA6\xE3\x80\x82", "Increase for higher arcs, decrease for flatter throws.", "\xE6\x83\xB3\xE8\xA6\x81\xE6\x9B\xB4\xE9\xAB\x98\xE7\x9A\x84\xE6\x8A\x9B\xE7\x89\xA9\xE7\xBA\xBF\xE6\x97\xB6\xE8\xB0\x83\xE5\xA4\xA7\xEF\xBC\x8C\xE6\x83\xB3\xE8\xA6\x81\xE6\x9B\xB4\xE5\xB9\xB3\xE7\x9B\xB4\xE6\x97\xB6\xE8\xB0\x83\xE5\xB0\x8F\xE3\x80\x82" },
@@ -1028,6 +1032,12 @@ namespace
         { "RightAmmoHudYOffset", "HUD (Hand)", "Ammo HUD Position Y", "Moves the gun-hand ammo HUD forward or backward in controller-local space.", "Adjust one axis at a time until the ammo display sits naturally near the weapon hand." },
         { "RightAmmoHudZOffset", "HUD (Hand)", "Ammo HUD Position Z", "Moves the gun-hand ammo HUD up or down in controller-local space.", "Adjust one axis at a time until the ammo display sits naturally near the weapon hand." },
         
+        { "GripReleaseDropEnabled", "Weapons / Throwables", "Grip Pickup and Release", "Hold Weapon Grip near a usable weapon to pick it up; release the same grip to drop it on a VR-capable server.", "Requires Manual Throw. Keyboard and joystick switches require a fresh grip. Menus and tracking/action loss cancel a pending drop." },
+        { "DualPistolsNativeReloadFallbackEnabled", "Hands / Manual Reload", "Native Dual Pistol Reload", "Use Magazine Release to start the native dual-pistol reload while physical dual reload is incomplete.", "Only affects dual pistols. Physical single-pistol and other weapon reloads remain available. Native empty-clip auto reload and reload audio are allowed for dual pistols." },
+        { "DualPistolsIndependentHandsEnabled", "Weapons / Throwables", "Independent Dual Pistols", "Each pistol follows its own controller. Primary and secondary triggers fire from their corresponding hand on a VR-capable server.", "Left trigger replaces shove while dual pistols are equipped. Both held triggers alternate at the native weapon rate. Ammo, reload and firing animation remain the game's shared dual-pistol system." },
+        { "BodyGripInventoryEnabled", "Hands / Manual Reload", "Body Grip Inventory", "Draw carried items by holding the weapon-hand grip near their body slot. Ammo pickup uses the same stable body reference.", "Back: primary. Weapon-side waist: secondary. Other waist: throwable/ammo. Chest: medical kit. Chest side: pills. Uses native inventory slots; items must already be carried." },
+        { "ManualPumpEnabled", "Hands / Manual Reload", "Manual Shotgun Pump", "Pump and chrome shotguns require a full rear and forward fore-end stroke after a shot.", "Releasing the fore-end preserves its position. Automatic shotguns retain their normal cycling. Requires VR hands, manual reload and the shotgun server hook. Disable this option if an unsupported model has no usable pump pose." },
+        { "MagazineReleaseButtonRequired", "Hands / Manual Reload", "Button-controlled Magazine Release", "Requires Magazine Release to eject an attached magazine, including when it is empty.", "The off-hand grip handles support, loose magazines and the slide. Running out of ammunition does not eject the magazine." },
         { "VrHandsEnabled", "Hands / VR Hands", "Enable VR Hand System", "Enables VR hand tracking and hand rendering.", "Manual Reload is a separate child feature that requires VR Hands." },
         { "VrHandsGlovesEnabled", "Hands / VR Hands", "Use Separate VR Glove Models", "Uses separate GLB/SteamVR glove models instead of the game's built-in hand mesh.", "Requires VR Hands. Leave off for the simpler built-in hand path." },
         { "VrHandsTwoHandedGripTargetBoxScale", "Hands / VR Hands", "Two-hand Grip Trigger Range", "Scales the left-middle-finger target box used to enter two-hand grip.", "The magazine box is ignored as an exclusion zone once the clip is full." },
@@ -1773,6 +1783,11 @@ namespace
             "KillSoundEnabled",
             "BlockFireOnFriendlyAimEnabled",
             "ManualThrowEnabled",
+            "GripReleaseDropEnabled",
+            "BodyGripInventoryEnabled",
+            "ManualPumpEnabled",
+            "DualPistolsIndependentHandsEnabled",
+            "DualPistolsNativeReloadFallbackEnabled",
             "MagazineReleaseButtonRequired",
             "ObjectPullEnabled",
             "MotionGesturesEnabled",
@@ -2514,6 +2529,11 @@ AimLineColor=255,0,0,100
 AimLineMinHitDistance=0
 
 ManualThrowEnabled=false
+GripReleaseDropEnabled=false
+BodyGripInventoryEnabled=false
+ManualPumpEnabled=false
+DualPistolsIndependentHandsEnabled=false
+DualPistolsNativeReloadFallbackEnabled=false
 MagazineReleaseButtonRequired=false
 ManualThrowVelocityScale=4.0
 ManualThrowHorizontalVelocityScale=1.0

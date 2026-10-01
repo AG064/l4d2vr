@@ -3043,8 +3043,14 @@ namespace
 
         bool configChanged = false;
         std::unordered_set<std::string> sampleKeys = ExtractConfigParameterKeys(sampleText, true);
-        // Older workshop samples must not erase this supported optional setting.
+        // An older workshop sample must not remove supported interaction
+        // settings added by this DLL when the game starts.
+        sampleKeys.insert("GripReleaseDropEnabled");
         sampleKeys.insert("MagazineReleaseButtonRequired");
+        sampleKeys.insert("BodyGripInventoryEnabled");
+        sampleKeys.insert("ManualPumpEnabled");
+        sampleKeys.insert("DualPistolsIndependentHandsEnabled");
+        sampleKeys.insert("DualPistolsNativeReloadFallbackEnabled");
         for (const auto key : l4d2vr_calibration::kConfigKeys)
             sampleKeys.insert(std::string(key));
         configChanged |= RemoveConfigParametersNotInSample(configText, sampleKeys);

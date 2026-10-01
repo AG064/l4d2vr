@@ -1,4 +1,5 @@
 #pragma once
+class C_WeaponCSBase;
 
 #include <cstdint>
 #include <array>
@@ -30,8 +31,6 @@ class IVDebugOverlay;
 struct edict_t;
 
 // === Forward Declarations for Internal Systems ===
-class C_WeaponCSBase;
-
 class Game;
 class Offsets;
 class VR;
@@ -56,6 +55,7 @@ struct ManualThrowPending
     bool valid = false;
     bool inventoryDrop = false;
     bool inventoryDropExecuted = false;
+    unsigned pistolDropHand = 0u;
     int weaponId = 0;
     int releaseTick = 0;
     void* owner = nullptr;
@@ -126,6 +126,10 @@ struct Player
     Vector controllerPos = { 0.f, 0.f, 0.f };
     QAngle controllerAngle = { 0.f, 0.f, 0.f };
     QAngle prevControllerAngle = { 0.f, 0.f, 0.f };
+    Vector prevControllerPos = { 0.f, 0.f, 0.f };
+    bool hasPrevControllerPose = false;
+    bool dualPistolShotPose = false;
+    int pistolDropLastCommand = 0;
 
     bool isMeleeing = false;
     bool isNewSwing = false;

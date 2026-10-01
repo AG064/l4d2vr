@@ -146,6 +146,12 @@ public:
         0,
         true
     };
+    // CPistol::RemoveDualWeapons(bool force). The signature also verifies the
+    // two pistol flag offsets used by the split transaction. Skip on mismatch.
+    Offset PistolRemoveDualWeapons = { "server.dll", 0x003E85C0,
+        "55 8B EC 56 8B F1 80 BE DD 17 00 00 00 75 07 32 C0 5E 5D C2 04 00 80 7D 08 00 75 1C 80 BE 4D 14 00 00 00",
+        0, true
+    };
     // CBaseCombatCharacter::RemovePlayerItem and UTIL_Remove. Empty-hand mode
     // uses them to destroy only the hidden placeholder pistol before a pickup.
     Offset ManualEmptyHandsRemovePlayerItem = { "server.dll", 0x00045200,

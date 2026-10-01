@@ -520,7 +520,7 @@ namespace
 
 	static bool ManualCarryThrowTeleportDroppedEntity(
 		void* entity,
-		const ManualThrowPending& pending)
+		const ManualThrowPending& pending, bool applyAngles = false)
 	{
 		if (!entity)
 			return false;
@@ -577,7 +577,7 @@ namespace
 #ifdef _MSC_VER
 		__try
 		{
-			teleport(entity, &pending.origin, nullptr, &pending.velocity);
+			teleport(entity, &pending.origin, applyAngles ? &pending.angles : nullptr, &pending.velocity);
 		}
 		__except (EXCEPTION_EXECUTE_HANDLER)
 		{
@@ -588,7 +588,7 @@ namespace
 			return false;
 		}
 #else
-		teleport(entity, &pending.origin, nullptr, &pending.velocity);
+		teleport(entity, &pending.origin, applyAngles ? &pending.angles : nullptr, &pending.velocity);
 #endif
 		return true;
 	}
@@ -2161,6 +2161,90 @@ namespace
 			player.manualEmptyHandsPlaceholderArmed);
 	}
 
+	static bool ManualPistolLayoutIsVerified()
+	{
+		const auto* offsets = Hooks::m_Game ? Hooks::m_Game->m_Offsets : nullptr;
+		if (!offsets || !offsets->PistolRemoveDualWeapons.valid) return false;
+		constexpr unsigned char clipHalving[] = { 0x8B, 0x86, 0x14, 0x14, 0, 0, 0x99, 0x2B, 0xC2, 0x8B, 0xF8, 0xD1, 0xFF };
+#ifdef _MSC_VER
+		__try
+#endif
+		{
+			return std::memcmp(reinterpret_cast<const unsigned char*>(offsets->PistolRemoveDualWeapons.address) + 0xE7,
+				clipHalving, sizeof(clipHalving)) == 0;
+		}
+#ifdef _MSC_VER
+		__except (EXCEPTION_EXECUTE_HANDLER) { return false; }
+#endif
+	}
+
+	// 0: a single pistol uses the normal inventory drop. 1: split committed.
+	// -1: failed closed. All fallible spawn work precedes the native conversion.
+	static int ManualPistolExecuteSplit(int playerIndex, void* owner, const ManualThrowPending& pending)
+	{
+		Offsets* offsets = Hooks::m_Game ? Hooks::m_Game->m_Offsets : nullptr;
+		if (!offsets || !ManualPistolLayoutIsVerified() ||
+			!offsets->GetActiveWeapon.valid || !offsets->DispatchSpawn_Server.valid ||
+			!offsets->CBaseEntity_SetAbsOrigin_Server.valid ||
+			!offsets->ManualEmptyHandsUtilRemove.valid ||
+			!Hooks::hkManualCarryCreateEntityByName.fOriginal ||
+			!ManualEmptyHandsPlaceholderOwnerIsLiveSurvivor(owner))
+			return -1;
+		void* created = nullptr;
+		bool committed = false;
+		using GetActiveFn = void* (__thiscall*)(void*);
+		using RemoveDualFn = bool(__thiscall*)(void*, bool);
+		using SpawnFn = int(__cdecl*)(void*, bool);
+		using SetOriginFn = void(__thiscall*)(void*, const Vector*);
+		using RemoveFn = void(__cdecl*)(void*);
+		const auto remove = reinterpret_cast<RemoveFn>(offsets->ManualEmptyHandsUtilRemove.address);
+		l4d2vr_pistol::AmmoSplit ammo{};
+#ifdef _MSC_VER
+		__try
+		{
+#endif
+			if (reinterpret_cast<GetActiveFn>(offsets->GetActiveWeapon.address)(owner) != pending.sourceWeapon)
+				return -1;
+			auto* source = reinterpret_cast<unsigned char*>(pending.sourceWeapon);
+			if (source[0x17DD] == 0u) return 0;
+			if (source[0x17DD] != 1u || source[0x17DC] > 1u ||
+				!l4d2vr_pistol::SplitAmmo(*reinterpret_cast<int*>(source + 0x1414), ammo))
+				return -1;
+			created = Hooks::hkManualCarryCreateEntityByName.fOriginal("weapon_pistol", -1, true);
+			if (created)
+			{
+				reinterpret_cast<SetOriginFn>(offsets->CBaseEntity_SetAbsOrigin_Server.address)(created, &pending.origin);
+				const int spawned = reinterpret_cast<SpawnFn>(offsets->DispatchSpawn_Server.address)(created, true);
+				if (spawned >= 0 && ManualThrowReadEntityVtable(created) &&
+					ManualCarryThrowTeleportDroppedEntity(created, pending, true))
+				{
+					// Spawn has initialized this native CPistol. Set its clip before
+					// the first network snapshot; it has no inventory owner.
+					*reinterpret_cast<int*>(reinterpret_cast<unsigned char*>(created) + 0x1414) = ammo.dropped;
+					committed = reinterpret_cast<RemoveDualFn>(offsets->PistolRemoveDualWeapons.address)(pending.sourceWeapon, true);
+				}
+			}
+#ifdef _MSC_VER
+		}
+		__except (EXCEPTION_EXECUTE_HANDLER)
+		{
+			Game::logMsg("[VR][PistolDetach] native split exception player=%d source=%p created=%p", playerIndex, pending.sourceWeapon, created);
+		}
+#endif
+		if (!committed && created)
+		{
+#ifdef _MSC_VER
+			__try { remove(created); }
+			__except (EXCEPTION_EXECUTE_HANDLER) { }
+#else
+			remove(created);
+#endif
+		}
+		Game::logMsg("[VR][PistolDetach] split player=%d hand=%u committed=%d retained=%d dropped=%d source=%p world=%p",
+			playerIndex, pending.pistolDropHand, committed ? 1 : 0, ammo.retained, ammo.dropped, pending.sourceWeapon, committed ? created : nullptr);
+		return committed ? 1 : -1;
+	}
+
 	static bool ManualInventoryThrowExecutePendingDrop(
 		int playerIndex,
 		void* ownerPlayer)
@@ -2180,6 +2264,25 @@ namespace
 			ManualThrowReadEntityVtable(pending.sourceWeapon) != pending.sourceWeaponVtable)
 		{
 			return false;
+		}
+
+		if (pending.pistolDropHand != 0u &&
+			pending.weaponId == static_cast<int>(C_WeaponCSBase::WeaponID::PISTOL))
+		{
+			Vector playerOrigin{};
+			if (!ManualThrowIsFiniteVector(pending.origin) || !IsFiniteViewAngle(pending.angles) ||
+				!ManualThrowGetPlayerOrigin(ownerPlayer, playerOrigin) ||
+				(pending.origin - playerOrigin).Length() > 256.0f)
+			{
+				pending = {};
+				return false;
+			}
+			const int splitResult = ManualPistolExecuteSplit(playerIndex, ownerPlayer, pending);
+			if (splitResult != 0)
+			{
+				pending = {};
+				return splitResult > 0;
+			}
 		}
 
 		// The similarly named CWeaponCarry::DropToPhysicsProp routine is only valid

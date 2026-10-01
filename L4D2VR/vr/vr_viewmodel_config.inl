@@ -3198,6 +3198,11 @@ void VR::ParseConfigFile()
     m_GameLaserSightEndOffset.y = std::clamp(m_GameLaserSightEndOffset.y, -256.0f, 256.0f);
     m_GameLaserSightEndOffset.z = std::clamp(m_GameLaserSightEndOffset.z, -256.0f, 256.0f);
     m_ManualThrowEnabled = getBool("ManualThrowEnabled", m_ManualThrowEnabled);
+    m_GripReleaseDropEnabled = getBool("GripReleaseDropEnabled", false);
+    m_BodyGripInventoryEnabled = getBool("BodyGripInventoryEnabled", false);
+    m_ManualPumpEnabled = getBool("ManualPumpEnabled", false);
+    m_DualPistolsIndependentHandsEnabled = getBool("DualPistolsIndependentHandsEnabled", false);
+    m_DualPistolsNativeReloadFallbackEnabled = getBool("DualPistolsNativeReloadFallbackEnabled", false);
     m_MagazineReleaseButtonRequired = getBool("MagazineReleaseButtonRequired", false);
     m_ManualThrowVelocityScale = std::clamp(getFloat("ManualThrowVelocityScale", m_ManualThrowVelocityScale), 0.0f, 20.0f);
     m_ManualThrowHorizontalVelocityScale = std::clamp(getFloat("ManualThrowHorizontalVelocityScale", m_ManualThrowHorizontalVelocityScale), 0.0f, 10.0f);

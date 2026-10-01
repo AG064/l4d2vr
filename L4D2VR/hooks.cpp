@@ -6,6 +6,8 @@
 #include "sdk_server.h"
 #include "vr.h"
 #include "vr_pose_protocol.h"
+#include "vr_grip_release.h"
+#include "vr_pistol_detachment.h"
 #include "trace.h"
 #include "offsets.h"
 #include "vr_hands/vr_hand_math.h"

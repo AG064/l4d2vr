@@ -1130,6 +1130,14 @@ int Hooks::dServerFireTerrorBullets(int playerId, const Vector& vecOrigin, const
 	Vector vecNewOrigin = vecOrigin;
 	QAngle vecNewAngles = vecAngles;
 
+    if (m_Game->IsValidPlayerIndex(playerId))
+    {
+        const auto& pistolPose = m_Game->m_PlayersVRInfo[playerId];
+        if (pistolPose.isUsingVR && pistolPose.dualPistolShotPose)
+            return hkServerFireTerrorBullets.fOriginal(playerId, pistolPose.controllerPos,
+                pistolPose.controllerAngle, a4, a5, a6, a7);
+    }
+
 	// Server host
 	if (m_VR->m_IsVREnabled && playerId == m_Game->m_EngineClient->GetLocalPlayer())
 	{
@@ -1232,8 +1240,17 @@ int Hooks::dClientFireTerrorBullets(
 	int a4, int a5, int a6,
 	float a7)
 {
+    if (m_VR && m_VR->m_IsVREnabled && m_Game && m_Game->m_EngineClient &&
+        playerId == m_Game->m_EngineClient->GetLocalPlayer())
+        m_VR->RecordManualPumpShot();
 	Vector vecNewOrigin = vecOrigin;
 	QAngle vecNewAngles = vecAngles;
+
+    if (m_VR->m_IsVREnabled && playerId == m_Game->m_EngineClient->GetLocalPlayer() &&
+        (m_VR->m_DualPistolsActive.load(std::memory_order_acquire) ||
+            m_VR->m_LeftHandPistolActive.load(std::memory_order_acquire)) &&
+        m_VR->GetLatestDualPistolShotPose(vecNewOrigin, vecNewAngles))
+        return hkClientFireTerrorBullets.fOriginal(playerId, vecNewOrigin, vecNewAngles, a4, a5, a6, a7);
 
 	// 只改本地玩家的“本地预测/表现”
 	if (m_VR->m_IsVREnabled && playerId == m_Game->m_EngineClient->GetLocalPlayer())
@@ -1656,8 +1673,9 @@ float __fastcall Hooks::dProcessUsercmds(void* ecx, void* edx, edict_t* player,
 	m_ServerProcessingUsercmdPlayer = pPlayer;
 	m_ServerProcessingUsercmdPlayerIndex = index;
 	float result = hkProcessUsercmds.fOriginal(ecx, player, buf, numcmds, totalcmds, dropped_packets, ignore, paused);
-	// Offer capabilities after a joining client falls back to standard
-	// input as well. Otherwise the initial negotiation can deadlock.
+	// Offer capabilities even after a joining client has fallen back to
+	// standard usercmds. Waiting for encoded VR input makes negotiation
+	// depend on the client's short initial fallback window.
 	if (m_Game->IsValidPlayerIndex(index))
 	{
 		m_Game->ObserveBuiltinVRPoseRelayClient(
@@ -1771,19 +1789,38 @@ float __fastcall Hooks::dProcessUsercmds(void* ecx, void* edx, edict_t* player,
 				if (!std::isfinite(swingAngle) || swingAngle <= 0.01f)
 					canTraceSwing = false;
 
-				if (canTraceSwing)
-				{
+                Player& swingPlayer = m_Game->m_PlayersVRInfo[index];
+                const Vector finalControllerPosition = swingPlayer.controllerPos;
+                const Vector swingTranslation = swingPlayer.hasPrevControllerPose
+                    ? finalControllerPosition - swingPlayer.prevControllerPos : Vector(0.0f, 0.0f, 0.0f);
+                const float translationDistance = swingTranslation.Length();
+                const float unitsPerMeter = m_VR ? m_VR->m_VRScale : 39.3701f;
+                if (!swingPlayer.hasPrevControllerPose)
+                    canTraceSwing = false;
+                const int sweepSamples = l4d2vr_physical::MeleeSweepSamples(
+                    translationDistance, canTraceSwing ? swingAngle : 0.0f, unitsPerMeter);
+                // A straight thrust/swing can translate without rotating the
+                // controller. Trace its swept origins through the native melee
+                // damage path, which retains per-swing hit limits and gore.
+                if (sweepSamples > 0)
+                {
 					m_Game->m_Hooks->hkGetPrimaryAttackActivity.fOriginal(curWep, meleeWepInfo); // Needed to call TestMeleeSwingCollision
 
 					m_Game->m_PerformingMelee = true;
 
 					Vector traceDirection = initialMeleeDirection;
-					int numTraces = 10;
-					float traceAngle = swingAngle / numTraces;
+					const int numTraces = sweepSamples;
+					const float traceAngle = canTraceSwing ? swingAngle / numTraces : 0.0f;
 					bool confirmedMeleeCollision = false;
 					for (int i = 0; i < numTraces; ++i)
 					{
-						traceDirection = VectorRotate(traceDirection, pivot, traceAngle);
+                        if (canTraceSwing)
+                            traceDirection = VectorRotate(traceDirection, pivot, traceAngle);
+                        else
+                            traceDirection = finalMeleeDirection;
+                        swingPlayer.controllerPos = swingPlayer.hasPrevControllerPose
+                            ? swingPlayer.prevControllerPos + swingTranslation * (static_cast<float>(i + 1) / numTraces)
+                            : finalControllerPosition;
 						const int entitiesHitBefore = curWep->entitiesHitThisSwing;
 						const int collisionResult = m_Game->m_Hooks->hkTestMeleeSwingCollisionServer.fOriginal(curWep, traceDirection);
 						const int entitiesHitAfter = curWep->entitiesHitThisSwing;
@@ -1791,6 +1828,7 @@ float __fastcall Hooks::dProcessUsercmds(void* ecx, void* edx, edict_t* player,
 							confirmedMeleeCollision = true;
 					}
 
+                    swingPlayer.controllerPos = finalControllerPosition;
 					m_Game->m_PerformingMelee = false;
 
 					if (confirmedMeleeCollision && m_VR && index == m_Game->m_EngineClient->GetLocalPlayer())
@@ -1806,7 +1844,12 @@ float __fastcall Hooks::dProcessUsercmds(void* ecx, void* edx, edict_t* player,
 
 	if (hasValidPlayer)
 	{
-		m_Game->m_PlayersVRInfo[index].prevControllerAngle = m_Game->m_PlayersVRInfo[index].controllerAngle;
+        Player& previousPose = m_Game->m_PlayersVRInfo[index];
+        previousPose.prevControllerAngle = previousPose.controllerAngle;
+        previousPose.prevControllerPos = previousPose.controllerPos;
+        previousPose.hasPrevControllerPose = previousPose.isUsingVR &&
+            std::isfinite(previousPose.controllerPos.x) && std::isfinite(previousPose.controllerPos.y) &&
+            std::isfinite(previousPose.controllerPos.z);
 	}
 
 	if (m_VR && hasValidPlayer && m_Game->m_EngineClient && m_Game->m_Offsets->GetActiveWeapon.address)
@@ -1938,6 +1981,7 @@ int Hooks::dReadUsercmd(void* buf, CUserCmd* move, CUserCmd* from)
 
 	int i = m_Game->m_CurrentUsercmdID;
 	const bool hasValidPlayer = m_Game->IsValidPlayerIndex(i);
+    if (hasValidPlayer) m_Game->m_PlayersVRInfo[i].dualPistolShotPose = false;
 	if (m_VR->m_EncodeVRUsercmd && move->tick_count < 0) // Signal for VR CUserCmd
 	{
 		move->tick_count *= -1;
@@ -2123,7 +2167,9 @@ int Hooks::dReadUsercmd(void* buf, CUserCmd* move, CUserCmd* from)
 		const uint32_t encodedCarryValue =
 			(static_cast<uint32_t>(move->buttons) & kManualCarryThrowWeaponMask) >>
 			kManualCarryThrowWeaponShift;
-		const int encodedCarryWeaponId = encodedCarryValue > 0u
+        const auto pistolDropHand = l4d2vr_pistol::DecodeDrop(encodedCarryValue, (move->buttons & kIN_ATTACK) != 0);
+		const int encodedCarryWeaponId = pistolDropHand != l4d2vr_dual::Hand::None
+            ? static_cast<int>(C_WeaponCSBase::WeaponID::PISTOL) : encodedCarryValue > 0u
 			? static_cast<int>(encodedCarryValue - 1u)
 			: static_cast<int>(C_WeaponCSBase::WeaponID::NONE);
 		// Remove the private client-to-listen-server marker before Source processes
@@ -2137,6 +2183,9 @@ int Hooks::dReadUsercmd(void* buf, CUserCmd* move, CUserCmd* from)
 			move->buttons &= ~(kIN_ATTACK | kIN_RELOAD);
 		}
 		const bool attackDown = (move->buttons & kIN_ATTACK) != 0;
+        if (vrPlayerState)
+            vrPlayerState->dualPistolShotPose = l4d2vr_dual::IsShotMarker(encodedCarryValue,
+                attackDown, !serverWeaponIsDummyPistol && serverWeaponId == static_cast<int>(C_WeaponCSBase::WeaponID::PISTOL));
 		const bool activeWeaponIsThrowable = ServerWeaponIdIsThrowable(serverWeaponId);
 		const bool activeWeaponIsCarryThrowable = ServerWeaponIdIsManualCarryThrowable(serverWeaponId);
 		const bool encodedCarryRelease =
@@ -2209,7 +2258,9 @@ int Hooks::dReadUsercmd(void* buf, CUserCmd* move, CUserCmd* from)
 			}
 		}
 		if (vrPlayerState && manualInventoryThrowActive && encodedInventoryRelease &&
-			vrPlayerState->manualCarryThrowLastDecodedReleaseTick != move->tick_count)
+			vrPlayerState->manualCarryThrowLastDecodedReleaseTick != move->tick_count &&
+            (pistolDropHand == l4d2vr_dual::Hand::None ||
+                (m_VR->m_DualPistolsIndependentHandsEnabled && move->command_number > vrPlayerState->pistolDropLastCommand)))
 		{
 			const bool sourceMatchesRelease = serverWeapon &&
 				ManualInventoryThrowWeaponIdRequiresCustomDrop(serverWeaponId) &&
@@ -2224,6 +2275,19 @@ int Hooks::dReadUsercmd(void* buf, CUserCmd* move, CUserCmd* from)
 					encodedCarryWeaponId,
 					move->tick_count,
 					true);
+                if (pistolDropHand != l4d2vr_dual::Hand::None)
+                {
+                    vrPlayerState->pistolDropLastCommand = move->command_number;
+                    if (prepared)
+                    {
+                        auto& pending = vrPlayerState->manualThrowPending;
+                        pending.pistolDropHand = static_cast<unsigned>(pistolDropHand);
+                        // The shared pose history can switch between hands. Do not
+                        // interpret that jump as a throwing velocity.
+                        pending.origin = vrPlayerState->controllerPos;
+                        pending.velocity = {}; pending.angularVelocity = {};
+                    }
+                }
 				Game::logMsg(
 					"[VR][ManualInventoryThrow] release decoded player=%d tick=%d weaponId=%d source=%p prepared=%d velocity=(%.1f %.1f %.1f)",
 					i,
@@ -2397,7 +2461,22 @@ int Hooks::dWriteUsercmd(void* buf, CUserCmd* to, CUserCmd* from)
 
 	Vector controllerPos{};
 	QAngle controllerAngles{};
-	if (objectPullOverridePose)
+    l4d2vr_dual::Hand dualHand = l4d2vr_dual::Hand::None;
+    const bool pistolPose = !objectPullOverridePose &&
+        m_VR->GetDualPistolCommandPose(originalCommandNum, controllerPos, controllerAngles, dualHand);
+    const bool dualShotPose = pistolPose && (to->buttons & 1u) != 0u;
+    if (pistolPose)
+    {
+        // Both markers are outside supported inventory/carry weapon IDs and
+        // are stripped by the existing decoder before native gameplay input.
+        if (dualShotPose)
+        {
+            const uint32_t word = dualHand == l4d2vr_dual::Hand::Left
+                ? l4d2vr_dual::kLeftShotMarker : l4d2vr_dual::kRightShotMarker;
+            to->buttons = static_cast<int>((static_cast<uint32_t>(to->buttons) & ~(0x3fu << 26)) | (word << 26));
+        }
+    }
+    else if (objectPullOverridePose)
 	{
 		controllerPos = objectPullPosition;
 		controllerAngles = objectPullAngles;
@@ -2438,7 +2517,7 @@ int Hooks::dWriteUsercmd(void* buf, CUserCmd* to, CUserCmd* from)
 	if (m_VR->CanCalibrateBulletAim() &&
 		l4d2vr_calibration::ShouldEncodeRay(primaryAttack, activeWeaponIsFirearm,
 			localUsingMountedWeapon, m_VR->m_MouseModeEnabled, m_VR->IsScopeActive(),
-			objectPullOverridePose, false))
+			objectPullOverridePose, dualShotPose))
 	{
 		Vector bulletDirection{};
 		Vector bulletOrigin{};
@@ -2488,7 +2567,7 @@ int Hooks::dWriteUsercmd(void* buf, CUserCmd* to, CUserCmd* from)
 	// Signal to the server that this CUserCmd has VR info. The controller pose above
 	// belongs to this exact command, including when Source retransmits it as backup.
 	to->tick_count *= -1;
-	if (to && (to->buttons & (1 << 0)) != 0 && m_Game && m_Game->m_EngineClient)
+	if (to && !dualShotPose && (to->buttons & (1 << 0)) != 0 && m_Game && m_Game->m_EngineClient)
 	{
 		const int lpIdx = m_Game->m_EngineClient->GetLocalPlayer();
 		C_BasePlayer* localPlayer = (lpIdx > 0) ? reinterpret_cast<C_BasePlayer*>(m_Game->GetClientEntity(lpIdx)) : nullptr;
@@ -2541,4 +2620,3 @@ int Hooks::dWriteUsercmd(void* buf, CUserCmd* to, CUserCmd* from)
 
 	return 1;
 }
-

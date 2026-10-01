@@ -12,8 +12,10 @@
 #endif
 #include "openvr.h"
 #include "vr_weapon_calibration.h"
-#include "vr_interaction_geometry.h"
 #include "vr_magazine_policy.h"
+#include "vr_physical_controls.h"
+#include "vr_interaction_geometry.h"
+#include "vr_dual_pistols.h"
 #include "vector.h"
 #include "vr_hands/vr_hand_types.h"
 #include <cstdint>
@@ -1180,6 +1182,50 @@ public:
 	std::chrono::steady_clock::time_point m_ObjectPullCancelRepeatUntil{};
 
 	bool m_ManualThrowEnabled = false;
+	bool m_GripReleaseDropEnabled = false;
+	bool m_MagazineReleaseButtonRequired = false;
+	bool m_MagazineReleaseJustPressed = false;
+	std::atomic<uint32_t> m_WeaponGripInputState{ 0 };
+    std::atomic<uint32_t> m_GripPickupOfferTimeMs{ 0 };
+    std::atomic<uint32_t> m_LeftPistolPickupOfferTimeMs{ 0 };
+    std::atomic<uint32_t> m_BodyGripSelectionSerial{ 0 };
+    bool m_BodyGripInventoryEnabled = false;
+    bool m_ManualPumpEnabled = false;
+    std::atomic<bool> m_ManualPumpBlockingFire{ false };
+    std::atomic<bool> m_BodyAmmoAvailable{ false };
+    bool m_DualPistolsIndependentHandsEnabled = false;
+    bool m_DualPistolsNativeReloadFallbackEnabled = false;
+    std::atomic<uint32_t> m_DualPistolNativeReloadState{ 0u };
+    l4d2vr_dual::ReloadPulse m_DualPistolNativeReloadPulse;
+    std::atomic<bool> m_DualPistolsActive{ false };
+    std::atomic<uint32_t> m_DualPistolTriggerState{ 0u };
+    std::atomic<uint32_t> m_PistolOwnershipMask{ 0u }; // Right=1, left=2.
+    std::atomic<uint32_t> m_PistolOffhandGripState{ 0u }; // Active=1, down=2.
+    std::atomic<bool> m_PistolUseLeft{ false };
+    std::atomic<bool> m_LeftHandPistolActive{ false };
+    mutable std::mutex m_DualPistolShotMutex;
+    l4d2vr_dual::CommandShots m_DualPistolCommandShots;
+    l4d2vr_dual::Shot m_LatestDualPistolShot{};
+    void RecordDualPistolCommand(int command, l4d2vr_dual::Hand hand, bool firing = true);
+    bool GetDualPistolCommandPose(int command, Vector& position, QAngle& angles, l4d2vr_dual::Hand& hand) const;
+    bool GetLatestDualPistolShotPose(Vector& position, QAngle& angles) const;
+    l4d2vr_physical::PumpCycles m_ManualPumpCycles;
+    std::mutex m_ManualPumpMutex;
+    MagazineInteractionBoxSnapshot m_ManualPumpClosedBoltBox{};
+    uintptr_t m_ManualPumpClosedBoltWeapon = 0;
+    bool m_ManualPumpClosedBoltValid = false;
+    void RecordManualPumpShot();
+    void UpdateBodyInventoryPose();
+    bool GetBodyInventoryPose(Vector& origin, Vector& forward, Vector& right) const;
+    bool GetBodyAmmoPreviewWorld(const MagazineInteractionBoxSnapshot& box, VrHandMatrix4& outWorld) const;
+    mutable std::mutex m_BodyInventoryPoseMutex;
+    bool m_BodyInventoryPoseValid = false;
+    float m_BodyInventoryYaw = 0.0f;
+    float m_BodyInventoryRotationOffset = 0.0f;
+    Vector m_BodyInventoryOrigin{};
+    Vector m_BodyInventoryHeadPosAbs{};
+    Vector m_BodyInventoryForward{};
+    Vector m_BodyInventoryRight{};
 	struct ManualThrowUsercmdPoseSnapshot
 	{
 		bool valid = false;
@@ -1565,8 +1611,9 @@ public:
 	vr::VRActionHandle_t m_ActionPrevItem = vr::k_ulInvalidActionHandle;
 	vr::VRActionHandle_t m_ActionResetPosition = vr::k_ulInvalidActionHandle;
 	vr::VRActionHandle_t m_ActionCrouch = vr::k_ulInvalidActionHandle;
-    vr::VRActionHandle_t m_ActionOffHandGrip = vr::k_ulInvalidActionHandle;
-    vr::VRActionHandle_t m_ActionMagazineRelease = vr::k_ulInvalidActionHandle;
+	vr::VRActionHandle_t m_ActionWeaponGrip = vr::k_ulInvalidActionHandle;
+	vr::VRActionHandle_t m_ActionOffHandGrip = vr::k_ulInvalidActionHandle;
+	vr::VRActionHandle_t m_ActionMagazineRelease = vr::k_ulInvalidActionHandle;
 	vr::VRActionHandle_t m_ActionFlashlight = vr::k_ulInvalidActionHandle;
 	vr::VRActionHandle_t m_ActionInventoryGripLeft = vr::k_ulInvalidActionHandle;
 	vr::VRActionHandle_t m_ActionInventoryGripRight = vr::k_ulInvalidActionHandle;
@@ -1893,7 +1940,7 @@ public:
 	Vector m_VrHandsTwoHandedAimUpSmoothed = { 0.0f, 0.0f, 1.0f };
 	bool m_VrHandsTwoHandedGripActive = false;
 	int m_VrHandsTwoHandedGripWeaponId = 0;
-    uintptr_t m_VrHandsTwoHandedGripWeaponTag = 0;
+	uintptr_t m_VrHandsTwoHandedGripWeaponTag = 0;
 	std::chrono::steady_clock::time_point m_VrHandsTwoHandedMountFriendlyGripEnteredAt{};
 	bool m_VrHandsTwoHandedMountFriendlyGripContact = false;
 	bool IsVrHandsTwoHandedGripPoseActive() const
@@ -1921,8 +1968,6 @@ public:
 	// Independent magazine interaction prototype. It consumes the current weapon magazine OBB and
 	// lets configured off-hand grip input claim physical reload interactions before normal input.
 	bool m_MagazineInteractionEnabled = false;
-    bool m_MagazineReleaseButtonRequired = false;
-    bool m_MagazineReleaseJustPressed = false;
 	bool m_MagazineInteractionQuickReloadMode = false;
 	bool m_MagazineInteractionUseButtonGripInput = true;
 	bool m_MagazineInteractionUseButtonDisbleReloadCommand = false;

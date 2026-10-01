@@ -9,6 +9,15 @@ bool __fastcall Hooks::dCreateMove(void* ecx, void* edx, float flInputSampleTime
 	static bool s_prevSpectatorLikeInitialized = false;
 
 	// Non-VR server melee feel state (ForceNonVRServerMovement=true only)
+	static l4d2vr_grip::ReleaseLatch s_weaponGripRelease;
+    static l4d2vr_physical::PickupIntent s_gripPickup;
+    static uint32_t s_bodyGripSelectionSerial = 0u;
+    static uintptr_t s_previousGripWeapon = 0u;
+    static uintptr_t s_pendingGripAdoption = 0u;
+    static l4d2vr_dual::TriggerRouter s_dualPistolTriggers;
+    static l4d2vr_pistol::Ownership s_pistolOwnership;
+    static l4d2vr_physical::PickupIntent s_leftPistolPickup;
+    l4d2vr_dual::Hand pistolInteractionHand = l4d2vr_dual::Hand::None;
 	static int s_nonvrMeleeHoldTicks = 0;
 	static bool s_nonvrMeleeArmed = true;
 	static QAngle s_nonvrMeleeLockedAngles = { 0,0,0 };
@@ -93,6 +102,7 @@ bool __fastcall Hooks::dCreateMove(void* ecx, void* edx, float flInputSampleTime
 
 	if (!cmd)
 	{
+		s_weaponGripRelease.Reset();
 		const bool result = hkCreateMove.fOriginal(ecx, flInputSampleTime, cmd);
 		updateFirstPersonBodyLocalState(false);
 		return result;
@@ -100,6 +110,7 @@ bool __fastcall Hooks::dCreateMove(void* ecx, void* edx, float flInputSampleTime
 
 	if (!cmd->command_number)
 	{
+		s_weaponGripRelease.Reset();
 		const bool result = hkCreateMove.fOriginal(ecx, flInputSampleTime, cmd);
 		updateFirstPersonBodyLocalState(false);
 		return result;
@@ -166,6 +177,7 @@ bool __fastcall Hooks::dCreateMove(void* ecx, void* edx, float flInputSampleTime
 
 		// Drop transient attack helpers so returning to the body cannot replay a
 		// queued melee swing, auto-repeat pulse or effective-range cycle.
+		s_weaponGripRelease.Reset();
 		s_nonvrMeleeHoldTicks = 0;
 		s_nonvrMeleeArmed = true;
 		s_nonvrMeleeLockUntil = {};
@@ -1711,6 +1723,114 @@ bool __fastcall Hooks::dCreateMove(void* ecx, void* edx, float flInputSampleTime
 
 			const bool physicalAttackDown = m_VR->m_PrimaryAttackDown;
 			const bool physicalUseDown = localUseButtonDownForAutoActions || m_VR->m_UseCmdOwned;
+			const uint32_t weaponGripInputState =
+				m_VR->m_WeaponGripInputState.load(std::memory_order_acquire);
+			const bool weaponGripActionActive = (weaponGripInputState & 1u) != 0u;
+			const bool weaponGripDown = (weaponGripInputState & 2u) != 0u;
+            const uint32_t gripNowMs = static_cast<uint32_t>(GetTickCount64());
+            const uint32_t pickupOffer = m_VR->m_GripPickupOfferTimeMs.load(std::memory_order_acquire);
+            const uint32_t leftPickupOffer = m_VR->m_LeftPistolPickupOfferTimeMs.load(std::memory_order_acquire);
+            const uint32_t bodySelection = m_VR->m_BodyGripSelectionSerial.load(std::memory_order_acquire);
+            const bool gripPickupEligible = m_VR->m_GripReleaseDropEnabled &&
+                m_VR->m_IsVREnabled && m_VR->m_EncodeVRUsercmd && s_ServerUnderstandsVR &&
+                !m_VR->m_ForceNonVRServerMovement && !m_VR->m_SuppressPlayerInput &&
+                m_VR->m_FirstPersonControlReady.load(std::memory_order_acquire) &&
+                !m_VR->m_RenderPlayerIncap.load(std::memory_order_relaxed) &&
+                !m_VR->m_RenderPlayerControlledBySI.load(std::memory_order_relaxed) &&
+                !IsLocalClientUsingMountedWeapon();
+            const bool pistolGripMode = gripPickupEligible && inventoryItem &&
+                activeWeaponId == static_cast<int>(C_WeaponCSBase::WeaponID::PISTOL) &&
+                m_VR->m_DualPistolsIndependentHandsEnabled && manualThrowInputActive;
+            const bool nativeDual = pistolGripMode && m_Game->IsDualPistolWeapon(activeWeapon);
+            s_pistolOwnership.Observe(pistolGripMode, activeWeaponTag, nativeDual, gripNowMs);
+            const uint32_t leftGrip = m_VR->m_PistolOffhandGripState.load(std::memory_order_acquire);
+            const bool useLeft = m_VR->m_PistolUseLeft.load(std::memory_order_acquire);
+            const unsigned leftPickup = s_leftPistolPickup.Update(
+                gripPickupEligible && m_VR->m_DualPistolsIndependentHandsEnabled &&
+                (pistolGripMode || emptyHandsPlaceholderActive) && useLeft,
+                (leftGrip & 1u) != 0u, (leftGrip & 2u) != 0u,
+                leftPickupOffer != 0u && gripNowMs - leftPickupOffer <= 100u, gripNowMs, activeWeaponTag);
+            if ((leftPickup & l4d2vr_physical::PickupIntent::RequestUse) != 0u)
+            {
+                cmd->buttons |= 1u << 5;
+                pistolInteractionHand = l4d2vr_dual::Hand::Left;
+                s_pistolOwnership.PickupRequested(l4d2vr_dual::Hand::Left);
+                Game::logMsg("[VR][PistolPickup] left contact requested cmd=%d", cmd->command_number);
+            }
+            if ((leftPickup & l4d2vr_physical::PickupIntent::AdoptWeapon) != 0u && pistolGripMode)
+                s_pistolOwnership.AdoptPickup(l4d2vr_dual::Hand::Left);
+            if (bodySelection != s_bodyGripSelectionSerial)
+            {
+                s_bodyGripSelectionSerial = bodySelection;
+                if (gripPickupEligible && weaponGripActionActive && weaponGripDown)
+                    s_gripPickup.Begin(gripNowMs, s_previousGripWeapon);
+            }
+            const unsigned pickupResult = s_gripPickup.Update(gripPickupEligible && !useLeft,
+                weaponGripActionActive, weaponGripDown,
+                pickupOffer != 0u && gripNowMs - pickupOffer <= 100u,
+                gripNowMs, activeWeaponTag);
+            if ((pickupResult & l4d2vr_physical::PickupIntent::AdoptWeapon) != 0u)
+            {
+                s_pendingGripAdoption = activeWeaponTag;
+            }
+            if ((pickupResult & l4d2vr_physical::PickupIntent::RequestUse) != 0u)
+            {
+                cmd->buttons |= 1u << 5; // Native, server-validated IN_USE pickup.
+                if (pistolGripMode) s_pistolOwnership.PickupRequested(l4d2vr_dual::Hand::Right);
+                Game::logMsg("[VR][GripPickup] contact pickup requested cmd=%d", cmd->command_number);
+            }
+            s_previousGripWeapon = activeWeaponTag;
+
+			const bool gripDropEligible =
+				m_VR->m_GripReleaseDropEnabled && manualThrowInputActive && inventoryItem &&
+				m_VR->m_EncodeVRUsercmd && !m_VR->m_ForceNonVRServerMovement &&
+				m_VR->m_FirstPersonControlReady.load(std::memory_order_acquire) &&
+				!m_VR->m_SuppressPlayerInput &&
+				!m_VR->m_RenderPlayerIncap.load(std::memory_order_relaxed) &&
+				!m_VR->m_RenderPlayerControlledBySI.load(std::memory_order_relaxed) &&
+				!IsLocalClientUsingMountedWeapon() &&
+				l4d2vr_grip::CanReleaseInventoryItem(
+					ManualInventoryThrowWeaponIdDoesMeleeDamage(activeWeaponId),
+					physicalAttackDown, s_manualCarryThrowPhysicalAttackDown,
+					physicalUseDown, s_manualInventoryThrowArmed);
+            if (!weaponGripActionActive || !weaponGripDown || s_pendingGripAdoption != activeWeaponTag)
+                s_pendingGripAdoption = 0u;
+            if (gripDropEligible && s_pendingGripAdoption != 0u)
+            {
+                s_weaponGripRelease.AdoptWeapon(activeWeaponTag);
+                if (pistolGripMode) s_pistolOwnership.AdoptPickup(l4d2vr_dual::Hand::Right);
+                s_pendingGripAdoption = 0u;
+                Game::logMsg("[VR][GripPickup] confirmed weaponId=%d; held grip adopted", activeWeaponId);
+            }
+            const l4d2vr_dual::Hand pistolDropHand = pistolGripMode && gripDropEligible
+                ? s_pistolOwnership.Release(weaponGripActionActive, weaponGripDown,
+                    (leftGrip & 1u) != 0u, (leftGrip & 2u) != 0u, gripNowMs)
+                : l4d2vr_dual::Hand::None;
+            m_VR->m_PistolOwnershipMask.store(s_pistolOwnership.Mask(), std::memory_order_release);
+			const bool gripDropRequested = s_weaponGripRelease.Update(
+                gripDropEligible && !pistolGripMode,
+				weaponGripActionActive,
+				weaponGripDown,
+				activeWeaponTag) || pistolDropHand != l4d2vr_dual::Hand::None;
+			if (m_VR->m_GripReleaseDropEnabled && m_VR->m_VrHandsDebugLog)
+			{
+				static uint32_t previousGripGateState = ~0u;
+				const uint32_t gateState = weaponGripInputState |
+					(s_ServerUnderstandsVR ? 1u << 2 : 0u) |
+					(throwBackendReady ? 1u << 3 : 0u) |
+					(inventoryItem ? 1u << 4 : 0u) |
+					(m_VR->m_ForceNonVRServerMovement ? 1u << 5 : 0u) |
+					(m_VR->m_FirstPersonControlReady.load(std::memory_order_acquire) ? 1u << 6 : 0u);
+				if (gateState != previousGripGateState)
+				{
+					previousGripGateState = gateState;
+					Game::logMsg("[VR][GripDrop][input] active=%d down=%d server=%d backend=%d inventory=%d fallback=%d controlReady=%d weaponId=%d",
+						weaponGripActionActive ? 1 : 0, weaponGripDown ? 1 : 0,
+						s_ServerUnderstandsVR ? 1 : 0, throwBackendReady ? 1 : 0,
+						inventoryItem ? 1 : 0, m_VR->m_ForceNonVRServerMovement ? 1 : 0,
+						m_VR->m_FirstPersonControlReady.load(std::memory_order_acquire) ? 1 : 0, activeWeaponId);
+				}
+			}
 			if (!manualThrowInputActive)
 			{
 				s_manualCarryThrowWeapon = 0;
@@ -1756,7 +1876,26 @@ bool __fastcall Hooks::dCreateMove(void* ecx, void* edx, float flInputSampleTime
 					const bool triggerPressedAfterUse =
 						physicalAttackDown && !s_manualCarryThrowPhysicalAttackDown &&
 						physicalUseDown && s_manualInventoryThrowPhysicalUseDown;
-					if (!s_manualInventoryThrowArmed && triggerPressedAfterUse)
+					if (gripDropRequested)
+					{
+						m_VR->CancelMagazineInteractionManual();
+						m_VR->m_VrHandsTwoHandedGripActive = false;
+						m_VR->m_VrHandsTwoHandedGripWeaponId = 0;
+						m_VR->m_VrHandsTwoHandedGripWeaponTag = 0;
+						m_VR->m_Game->ClientCmd_Unrestricted("-reload");
+						m_VR->m_ReloadCmdOwned = false;
+						s_manualInventoryThrowArmed = false;
+						// Reuse the existing, server-validated Weapon_Drop request.
+						// Clear attack/use/reload so a dropped grenade stays unarmed.
+						carryButtons &= ~(kManualCarryThrowIN_ATTACK | kManualInventoryThrowIN_USE | (1u << 13));
+						const uint32_t encodedWeaponId = pistolDropHand == l4d2vr_dual::Hand::Left
+                            ? l4d2vr_pistol::kLeftDropMarker : pistolDropHand == l4d2vr_dual::Hand::Right
+                            ? l4d2vr_pistol::kRightDropMarker : static_cast<uint32_t>(activeWeaponId + 1);
+						if (pistolDropHand != l4d2vr_dual::Hand::None) pistolInteractionHand = pistolDropHand;
+						carryButtons |= (encodedWeaponId & 0x3Fu) << kManualCarryThrowWeaponShift;
+						Game::logMsg("[VR][GripDrop] client release cmd=%d weaponId=%d", cmd->command_number, activeWeaponId);
+					}
+					if (!gripDropRequested && !s_manualInventoryThrowArmed && triggerPressedAfterUse)
 						s_manualInventoryThrowArmed = true;
 
 					if (s_manualInventoryThrowArmed)
@@ -1825,6 +1964,49 @@ bool __fastcall Hooks::dCreateMove(void* ecx, void* edx, float flInputSampleTime
 			std::memory_order_release);
 	}
 
+    l4d2vr_dual::Hand dualShotHand = l4d2vr_dual::Hand::None;
+    const unsigned pistolMask = m_VR ? m_VR->m_PistolOwnershipMask.load(std::memory_order_acquire) : 0u;
+    C_WeaponCSBase* routingPistol = localPlayerForAutoActions
+        ? reinterpret_cast<C_WeaponCSBase*>(localPlayerForAutoActions->GetActiveWeapon()) : nullptr;
+    const bool dualEquipped = m_VR && routingPistol &&
+        routingPistol->GetWeaponID() == C_WeaponCSBase::WeaponID::PISTOL &&
+        (m_Game->IsDualPistolWeapon(routingPistol) || pistolMask == 2u) &&
+        m_VR->m_DualPistolsIndependentHandsEnabled;
+    if (dualEquipped)
+    {
+        const uint32_t triggers = m_VR->m_DualPistolTriggerState.load(std::memory_order_acquire);
+        int clip = -1;
+        clip = ReadNetvar<int>(routingPistol, VR::kClip1Offset);
+        const bool eligible = m_VR->m_EncodeVRUsercmd && !m_VR->m_ForceNonVRServerMovement &&
+            s_ServerUnderstandsVR && !m_VR->m_SuppressPlayerInput &&
+            m_VR->m_FirstPersonControlReady.load(std::memory_order_acquire) &&
+            !m_VR->m_RenderPlayerIncap.load(std::memory_order_relaxed) &&
+            !m_VR->m_RenderPlayerControlledBySI.load(std::memory_order_relaxed) &&
+            !m_VR->IsMagazineInteractionBlockingFire() && !s_pistolOwnership.Awaiting() &&
+            (cmd->buttons & (1u << 5)) == 0u;
+        const unsigned firingMask = pistolMask ? pistolMask : 3u;
+        dualShotHand = s_dualPistolTriggers.Update(eligible,
+            (firingMask & 1u) != 0u && (triggers & 2u) != 0u,
+            (firingMask & 2u) != 0u && (triggers & 8u) != 0u, clip);
+        cmd->buttons &= ~1u;
+        if ((triggers & 8u) != 0u) cmd->buttons &= ~(1u << 11);
+        if (dualShotHand != l4d2vr_dual::Hand::None)
+        {
+            cmd->buttons |= 1u;
+            cmd->viewangles = dualShotHand == l4d2vr_dual::Hand::Left
+                ? m_VR->GetLeftControllerAbsAngle() : m_VR->GetRightControllerAbsAngle();
+        }
+    }
+    else
+        s_dualPistolTriggers.Reset();
+    if (m_VR)
+    {
+        const auto poseHand = dualShotHand != l4d2vr_dual::Hand::None ? dualShotHand :
+            pistolInteractionHand != l4d2vr_dual::Hand::None ? pistolInteractionHand :
+            dualEquipped && pistolMask == 2u ? l4d2vr_dual::Hand::Left : l4d2vr_dual::Hand::None;
+        m_VR->RecordDualPistolCommand(cmd->command_number, poseHand, dualShotHand != l4d2vr_dual::Hand::None);
+    }
+
 	bool manualThrowPoseRelevant = false;
 	if (m_VR && m_VR->m_IsVREnabled && m_VR->m_ManualThrowEnabled &&
 		m_VR->m_EncodeVRUsercmd && !m_VR->m_ForceNonVRServerMovement &&
@@ -1862,4 +2044,3 @@ bool __fastcall Hooks::dCreateMove(void* ecx, void* edx, float flInputSampleTime
 
 	return result;
 }
-
