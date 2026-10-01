@@ -3783,6 +3783,7 @@ void VR::QueueMagazineInteractionServerClipCommit(
     const char*,
     float holdSeconds)
 {
+    std::lock_guard<std::mutex> commitLock(m_MagazineInteractionCommitMutex);
     if (targetClip < 0 ||
         !MagazineInteractionWeaponUsesDetachableMagazine(
             static_cast<C_WeaponCSBase::WeaponID>(m_MagazineInteractionWeaponId)))
@@ -3799,6 +3800,7 @@ void VR::QueueMagazineInteractionServerClipCommit(
     m_MagazineInteractionServerClipAmmoType = ammoType;
     m_MagazineInteractionServerClipTargetReserve = targetReserve;
     m_MagazineInteractionServerClipWeaponId = m_MagazineInteractionWeaponId;
+    m_MagazineInteractionServerClipGeneration = m_MagazineInteractionSessionGeneration.load(std::memory_order_acquire);
     m_MagazineInteractionServerClipExpectedPrior = expectedPriorClip;
     m_MagazineInteractionServerReserveExpectedPrior = expectedPriorReserve;
     m_MagazineInteractionServerClipCommitUntil =
@@ -3811,6 +3813,7 @@ bool VR::TryApplyMagazineInteractionServerClipCommit(
     int serverWeaponId,
     void* serverPlayer)
 {
+    std::lock_guard<std::mutex> commitLock(m_MagazineInteractionCommitMutex);
     if (!serverWeapon)
         return false;
 
@@ -3843,9 +3846,9 @@ bool VR::TryApplyMagazineInteractionServerClipCommit(
 
     const int currentClientWeaponId =
         m_MagazineInteractionCurrentWeaponId.load(std::memory_order_relaxed);
-    if (m_MagazineInteractionServerClipWeaponId != 0 &&
-        serverWeaponId != m_MagazineInteractionServerClipWeaponId &&
-        currentClientWeaponId != m_MagazineInteractionServerClipWeaponId)
+    if (!l4d2vr_magazine::MayCommitAmmo(m_MagazineInteractionServerClipWeaponId,
+            serverWeaponId, currentClientWeaponId, m_MagazineInteractionServerClipGeneration,
+            m_MagazineInteractionSessionGeneration.load(std::memory_order_acquire)))
     {
         return false;
     }
@@ -3996,11 +3999,14 @@ bool VR::TryApplyMagazineInteractionServerClipCommit(
 
 void VR::QueueMagazineInteractionShotgunServerReloadAbort(const char*)
 {
+    std::lock_guard<std::mutex> commitLock(m_MagazineInteractionCommitMutex);
     if (!m_MagazineInteractionShotgunShellMode)
         return;
 
     const auto now = std::chrono::steady_clock::now();
     m_MagazineInteractionShotgunServerReloadAbortPending = true;
+    m_MagazineInteractionShotgunAbortWeaponId = m_MagazineInteractionWeaponId;
+    m_MagazineInteractionShotgunAbortGeneration = m_MagazineInteractionSessionGeneration.load(std::memory_order_acquire);
     m_MagazineInteractionShotgunServerReloadAbortUntil =
         now + std::chrono::duration_cast<std::chrono::steady_clock::duration>(
             std::chrono::duration<float>(0.50f));
@@ -4013,23 +4019,27 @@ void VR::QueueMagazineInteractionShotgunDirectShellCommit(
     int expectedPriorReserve,
     const char* reason)
 {
-    if (!m_MagazineInteractionShotgunShellMode || targetClip < 0)
-        return;
+    {
+        std::lock_guard<std::mutex> commitLock(m_MagazineInteractionCommitMutex);
+        if (!m_MagazineInteractionShotgunShellMode || targetClip < 0)
+            return;
 
-    const auto now = std::chrono::steady_clock::now();
-    m_MagazineInteractionShotgunDirectShellCommitPending = true;
-    m_MagazineInteractionShotgunDirectShellServerClipCommitted = false;
-    m_MagazineInteractionShotgunDirectShellServerReserveCommitted =
-        targetReserve < 0 || ammoType < 0 || ammoType >= 32;
-    m_MagazineInteractionShotgunDirectShellTargetClip = targetClip;
-    m_MagazineInteractionShotgunDirectShellAmmoType = ammoType;
-    m_MagazineInteractionShotgunDirectShellTargetReserve = targetReserve;
-    m_MagazineInteractionShotgunDirectShellExpectedPriorReserve = expectedPriorReserve;
-    m_MagazineInteractionShotgunDirectShellWeaponId = m_MagazineInteractionWeaponId;
-    m_MagazineInteractionShotgunDirectShellCommitUntil =
-        now + std::chrono::duration_cast<std::chrono::steady_clock::duration>(
-            std::chrono::duration<float>(1.00f));
-    m_MagazineInteractionShotgunLastInterruptedClip = targetClip;
+        const auto now = std::chrono::steady_clock::now();
+        m_MagazineInteractionShotgunDirectShellCommitPending = true;
+        m_MagazineInteractionShotgunDirectShellServerClipCommitted = false;
+        m_MagazineInteractionShotgunDirectShellServerReserveCommitted =
+            targetReserve < 0 || ammoType < 0 || ammoType >= 32;
+        m_MagazineInteractionShotgunDirectShellTargetClip = targetClip;
+        m_MagazineInteractionShotgunDirectShellAmmoType = ammoType;
+        m_MagazineInteractionShotgunDirectShellTargetReserve = targetReserve;
+        m_MagazineInteractionShotgunDirectShellExpectedPriorReserve = expectedPriorReserve;
+        m_MagazineInteractionShotgunDirectShellWeaponId = m_MagazineInteractionWeaponId;
+        m_MagazineInteractionShotgunDirectShellGeneration = m_MagazineInteractionSessionGeneration.load(std::memory_order_acquire);
+        m_MagazineInteractionShotgunDirectShellCommitUntil =
+            now + std::chrono::duration_cast<std::chrono::steady_clock::duration>(
+                std::chrono::duration<float>(1.00f));
+        m_MagazineInteractionShotgunLastInterruptedClip = targetClip;
+    }
     QueueMagazineInteractionShotgunServerReloadAbort(reason);
 }
 
@@ -4038,6 +4048,7 @@ bool VR::TryApplyMagazineInteractionShotgunServerReloadAbort(
     int serverWeaponId,
     void* serverPlayer)
 {
+    std::lock_guard<std::mutex> commitLock(m_MagazineInteractionCommitMutex);
     if (!serverWeapon)
         return false;
 
@@ -4081,9 +4092,13 @@ bool VR::TryApplyMagazineInteractionShotgunServerReloadAbort(
     if (!serverWeaponIsShotgun)
         return false;
 
-    if (directCommitPending &&
-        m_MagazineInteractionShotgunDirectShellWeaponId != 0 &&
-        serverWeaponId != m_MagazineInteractionShotgunDirectShellWeaponId)
+    const int clientWeaponId = m_MagazineInteractionCurrentWeaponId.load(std::memory_order_acquire);
+    const uint32_t generation = m_MagazineInteractionSessionGeneration.load(std::memory_order_acquire);
+    if (abortPending && !l4d2vr_magazine::MayCommitAmmo(m_MagazineInteractionShotgunAbortWeaponId,
+            serverWeaponId, clientWeaponId, m_MagazineInteractionShotgunAbortGeneration, generation))
+        return false;
+    if (directCommitPending && !l4d2vr_magazine::MayCommitAmmo(m_MagazineInteractionShotgunDirectShellWeaponId,
+            serverWeaponId, clientWeaponId, m_MagazineInteractionShotgunDirectShellGeneration, generation))
         return false;
 
     bool directCommitAppliedOrAlreadyCurrent = false;
@@ -4352,6 +4367,75 @@ bool VR::GetMagazineInteractionBoltWorld(VrHandMatrix4& outWorld) const
     return MagazineInteractionMatrixLooksRenderable(outWorld);
 }
 
+void VR::ResetMagazineInteractionSession()
+{
+    // Fence old updates before waiting for a server-side settlement in progress.
+    m_MagazineInteractionSessionGeneration.fetch_add(1, std::memory_order_acq_rel);
+    CancelMagazineInteractionManual();
+    if (m_ReloadCmdOwned)
+    {
+        if (m_Game && m_Game->m_EngineClient)
+            m_Game->ClientCmd_Unrestricted("-reload");
+        m_ReloadCmdOwned = false;
+    }
+    m_MagazineInteractionSuppressLeftInputUntilRelease = false;
+    m_MagazineInteractionNativeReloadSuppressUntil = {};
+    m_MagazineInteractionNativeReloadSuppressWeaponId = 0;
+    m_VrHandsTwoHandedGripActive = false;
+    m_VrHandsTwoHandedGripWeaponId = 0;
+    m_VrHandsTwoHandedGripWeaponTag = 0;
+    m_VrHandsTwoHandedMountFriendlyGripEnteredAt = {};
+    m_VrHandsTwoHandedMountFriendlyGripContact = false;
+    {
+        std::lock_guard<std::mutex> lock(m_MagazineInteractionCommitMutex);
+        m_MagazineInteractionServerClipCommitPending = false;
+        m_MagazineInteractionServerClipCommitted = false;
+        m_MagazineInteractionServerReserveCommitted = false;
+        m_MagazineInteractionServerClipTarget = -1;
+        m_MagazineInteractionServerClipAmmoType = -1;
+        m_MagazineInteractionServerClipTargetReserve = -1;
+        m_MagazineInteractionServerClipWeaponId = 0;
+        m_MagazineInteractionServerClipExpectedPrior = -1;
+        m_MagazineInteractionServerReserveExpectedPrior = -1;
+        m_MagazineInteractionServerClipCommitUntil = {};
+        m_MagazineInteractionServerClipGeneration = 0;
+        m_MagazineInteractionShotgunDirectShellCommitPending = false;
+        m_MagazineInteractionShotgunDirectShellServerClipCommitted = false;
+        m_MagazineInteractionShotgunDirectShellServerReserveCommitted = false;
+        m_MagazineInteractionShotgunDirectShellTargetClip = -1;
+        m_MagazineInteractionShotgunDirectShellAmmoType = -1;
+        m_MagazineInteractionShotgunDirectShellTargetReserve = -1;
+        m_MagazineInteractionShotgunDirectShellExpectedPriorReserve = -1;
+        m_MagazineInteractionShotgunDirectShellWeaponId = 0;
+        m_MagazineInteractionShotgunDirectShellCommitUntil = {};
+        m_MagazineInteractionShotgunDirectShellGeneration = 0;
+        m_MagazineInteractionShotgunServerReloadAbortPending = false;
+        m_MagazineInteractionShotgunServerReloadAbortUntil = {};
+        m_MagazineInteractionShotgunAbortWeaponId = 0;
+        m_MagazineInteractionShotgunAbortGeneration = 0;
+    }
+    {
+        std::lock_guard<std::mutex> lock(m_MagazineInteractionBoxMutex);
+        m_MagazineInteractionBoxValid = false;
+        m_MagazineInteractionBox = {};
+    }
+    {
+        std::lock_guard<std::mutex> lock(m_MagazineInteractionBoltBoxMutex);
+        m_MagazineInteractionBoltBoxValid = false;
+        m_MagazineInteractionBoltBox = {};
+    }
+    {
+        std::lock_guard<std::mutex> lock(m_VrHandsTwoHandedGripWeaponBoxMutex);
+        m_VrHandsTwoHandedGripWeaponBoxValid = false;
+        m_VrHandsTwoHandedGripWeaponBox = {};
+    }
+    {
+        std::lock_guard<std::mutex> lock(m_MagazineInteractionHandAnchorMutex);
+        m_MagazineInteractionNativeLeftWristValid = false;
+        m_MagazineInteractionNativeLeftWristPublishedAt = {};
+    }
+}
+
 void VR::CancelMagazineInteractionManual()
 {
     const bool wasActive = IsMagazineInteractionManualActive() || m_MagazineInteractionLeftHandHolding;
@@ -4373,7 +4457,10 @@ void VR::CancelMagazineInteractionManual()
     m_MagazineInteractionServerClipReserveHoldAmmoType = -1;
     m_MagazineInteractionServerClipReserveHoldReserve = -1;
     m_MagazineInteractionServerClipReserveHoldOffset = -1;
-    m_MagazineInteractionShotgunServerReloadAbortPending = false;
+    {
+        std::lock_guard<std::mutex> lock(m_MagazineInteractionCommitMutex);
+        m_MagazineInteractionShotgunServerReloadAbortPending = false;
+    }
     m_MagazineInteractionShotgunShellsLoadedThisSession = 0;
     m_MagazineInteractionShotgunLastInterruptedClip = -1;
     m_MagazineInteractionWeapon = nullptr;
@@ -4602,6 +4689,35 @@ bool VR::UpdateMagazineInteraction(
     bool leftSupportHandJustPressed,
     bool allowGameplayInputOnTwoHandedGripRelease)
 {
+    C_WeaponCSBase* activeWeapon = nullptr;
+    C_WeaponCSBase::WeaponID activeWeaponId = C_WeaponCSBase::WeaponID::NONE;
+    int activeClip = -1;
+    const bool hasActiveWeapon = MagazineInteractionReadActiveWeapon(
+        localPlayer,
+        activeWeapon,
+        activeWeaponId,
+        activeClip);
+    m_MagazineInteractionCurrentWeaponId.store(
+        hasActiveWeapon ? static_cast<int>(activeWeaponId) : 0,
+        std::memory_order_relaxed);
+
+    unsigned char lifeState = 0xFF;
+    const bool vrHandsInteractionAvailable = m_IsVREnabled &&
+        (m_VrHandsEnabled || m_NativeViewmodelHandsOnly) &&
+        m_Game && m_Game->m_EngineClient && m_Game->m_EngineClient->IsInGame() &&
+        !m_RenderPlayerIncap.load(std::memory_order_acquire) &&
+        !m_RenderTpObserver.load(std::memory_order_acquire) && hasActiveWeapon &&
+        MagazineInteractionTryReadValue(localPlayer, kLifeStateOffset, lifeState) && lifeState == 0;
+    const int activeWeaponIdInt = static_cast<int>(activeWeaponId);
+    const unsigned int interactionInputMode = (m_MagazineInteractionEnabled ? 1u : 0u) |
+        (m_VrHandsEnabled ? 2u : 0u) | (m_NativeViewmodelHandsOnly ? 4u : 0u);
+    if (m_MagazineInteractionSession.Observe(vrHandsInteractionAvailable,
+            reinterpret_cast<uintptr_t>(localPlayer), reinterpret_cast<uintptr_t>(activeWeapon),
+            activeWeaponIdInt, interactionInputMode))
+        ResetMagazineInteractionSession();
+    if (!vrHandsInteractionAvailable)
+        return false;
+
     const auto now = std::chrono::steady_clock::now();
     const bool magazineInteractionPhysicalLeftHand = IsGameplayHandLeftPhysical(true);
     if (m_MagazineInteractionSuppressLeftInputUntilRelease && !leftGripDown)
@@ -5483,40 +5599,7 @@ bool VR::UpdateMagazineInteraction(
         return probeTouchesSocket;
     };
 
-    C_WeaponCSBase* activeWeapon = nullptr;
-    C_WeaponCSBase::WeaponID activeWeaponId = C_WeaponCSBase::WeaponID::NONE;
-    int activeClip = -1;
-    const bool hasActiveWeapon = MagazineInteractionReadActiveWeapon(
-        localPlayer,
-        activeWeapon,
-        activeWeaponId,
-        activeClip);
-    m_MagazineInteractionCurrentWeaponId.store(
-        hasActiveWeapon ? static_cast<int>(activeWeaponId) : 0,
-        std::memory_order_relaxed);
 
-    const bool vrHandsInteractionAvailable =
-        m_IsVREnabled &&
-        (m_VrHandsEnabled || m_NativeViewmodelHandsOnly) &&
-        !m_RenderPlayerIncap.load(std::memory_order_relaxed) &&
-        hasActiveWeapon;
-    const int activeWeaponIdInt = static_cast<int>(activeWeaponId);
-
-    if (!vrHandsInteractionAvailable)
-    {
-        if (m_VrHandsTwoHandedGripActive)
-        {
-            m_VrHandsTwoHandedGripActive = false;
-            m_VrHandsTwoHandedGripWeaponId = 0;
-            m_VrHandsTwoHandedGripWeaponTag = 0;
-            m_VrHandsTwoHandedMountFriendlyGripEnteredAt = {};
-            m_VrHandsTwoHandedMountFriendlyGripContact = false;
-            if (m_VrHandsDebugLog)
-                Game::logMsg("[VR][Hands] two-hand grip released because VR hands input became unavailable");
-        }
-        CancelMagazineInteractionManual();
-        return false;
-    }
 
     const bool activeWeaponUsesShotgunShells =
         MagazineInteractionWeaponUsesShotgunShells(activeWeaponId);

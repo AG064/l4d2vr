@@ -2096,7 +2096,10 @@ int Hooks::dReadUsercmd(void* buf, CUserCmd* move, CUserCmd* from)
 		Server_WeaponCSBase* serverWeapon = nullptr;
 		int serverWeaponId = static_cast<int>(C_WeaponCSBase::WeaponID::NONE);
 		TryGetServerCurrentWeapon(serverWeapon, serverWeaponId);
-		if (m_VR && serverWeapon)
+		// A remote player's command must not consume the host's queued reload.
+		const int localAmmoPlayerIndex = m_Game->m_EngineClient
+			? m_Game->m_EngineClient->GetLocalPlayer() : -1;
+		if (m_VR && serverWeapon && l4d2vr_magazine::IsLocalPlayerCommand(i, localAmmoPlayerIndex))
 		{
 			m_VR->MarkMagazineInteractionServerHookSeen(serverWeaponId);
 			if (!MagazineInteractionWeaponIdIsShotgun(serverWeaponId))

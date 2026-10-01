@@ -10,6 +10,12 @@ specific commit caused a failure.
 Priority: high. Reload can stop working after weapon changes or incapacitation.
 VR Gloves currently provide the usable hand-tracking path.
 
+Implemented offline: interaction ownership is checked before the grip-release
+wait. Weapon/player changes, incapacitation, spectator state and input-mode
+changes clear held-hand state, stale pose regions and old ammo updates. Normal
+reload completion retains its pending settlement. Gameplay recovery remains
+to be verified in a headset.
+
 - Audit stale weapon, magazine, bolt and support-grip ownership on weapon swap,
   downing, revival, death and map change.
 - Check a full and empty pistol, Magnum and SMG for ten consecutive reloads,
@@ -78,6 +84,10 @@ Related: [magazine pose #392](https://github.com/keyou91/l4d2vr/issues/392),
 ## VR-006: Verify multiplayer pose replication and physical melee
 
 Priority: high. The user could not see the host's VR movements.
+
+Implemented offline: another player's command cannot consume the host's queued
+manual-reload ammo update. This is separate from the remaining pose-replication
+checks below.
 
 - Verify the committed listen-server acknowledgement with two VR clients,
   including a late join, compatibility fallback and map change.

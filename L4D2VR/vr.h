@@ -12,6 +12,7 @@
 #endif
 #include "openvr.h"
 #include "vr_weapon_calibration.h"
+#include "vr_magazine_policy.h"
 #include "vector.h"
 #include "vr_hands/vr_hand_types.h"
 #include <cstdint>
@@ -2064,6 +2065,13 @@ public:
 	int m_MagazineInteractionServerClipReserveHoldAmmoType = -1;
 	int m_MagazineInteractionServerClipReserveHoldReserve = -1;
 	int m_MagazineInteractionServerClipReserveHoldOffset = -1;
+	l4d2vr_magazine::SessionTracker m_MagazineInteractionSession;
+	std::atomic<uint32_t> m_MagazineInteractionSessionGeneration{ 0 };
+	std::mutex m_MagazineInteractionCommitMutex;
+	uint32_t m_MagazineInteractionServerClipGeneration = 0;
+	uint32_t m_MagazineInteractionShotgunDirectShellGeneration = 0;
+	uint32_t m_MagazineInteractionShotgunAbortGeneration = 0;
+	int m_MagazineInteractionShotgunAbortWeaponId = 0;
 	MagazineInteractionManualState m_MagazineInteractionState = MagazineInteractionManualState::Idle;
 	C_WeaponCSBase* m_MagazineInteractionWeapon = nullptr;
 	int m_MagazineInteractionWeaponId = 0;
@@ -3887,6 +3895,7 @@ public:
 	void PlayMagazineInteractionBlockedFireEmptySound();
 	bool CaptureMagazineInteractionSound(int entityIndex, const char* sample, float volume, int flags, int pitch);
 	void CancelMagazineInteractionManual();
+	void ResetMagazineInteractionSession();
 	void BeginVrHandsEyeRender(const CViewSetup& view, int eyeIndex);
 	void DrawVrHandsWorldDepthMaskBeforeViewmodel();
 	void FinishVrHandsEyeRender();

@@ -3,6 +3,8 @@ void VR::ProcessInput()
     m_MagazineReleaseJustPressed = false;
     if (!m_IsVREnabled)
     {
+        if (m_MagazineInteractionSession.Observe(false, 0u, 0u, 0, 0u))
+            ResetMagazineInteractionSession();
         if (m_ObjectPullPhase != ObjectPullClientPhase::Idle ||
             m_ObjectPullDesiredWireCommand != kObjectPullWireNone)
         {
