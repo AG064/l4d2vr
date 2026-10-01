@@ -933,8 +933,8 @@ namespace
 
         const VrHandMatrix4 handLocal = MagazineInteractionBuildLocalTransform(
             vr->m_VRScale,
-            vr->m_NativeViewmodelLeftHandPoseOffsetMeters,
-            vr->m_NativeViewmodelLeftHandPoseRotationOffsetDeg);
+            vr->m_VrHandsEnabled ? vr->m_VrHandsLeftPoseOffsetMeters : vr->m_NativeViewmodelLeftHandPoseOffsetMeters,
+            vr->m_VrHandsEnabled ? vr->m_VrHandsLeftPoseRotationOffsetDeg : vr->m_NativeViewmodelLeftHandPoseRotationOffsetDeg);
         VrHandMatrix4 handWorld = VrHandMath::Multiply(controllerWorld, handLocal);
 
         const VrHandMatrix4 magazineOffsetLocal = MagazineInteractionBuildLocalTransform(
@@ -1443,23 +1443,12 @@ namespace
 
     Vector MagazineInteractionBuildBoltInputAxisWorld(const VR* vr, const Vector& fallbackAxis)
     {
-        Vector fallback = VrHandMath::Normalize(fallbackAxis);
-        if (!vr || !MagazineInteractionHasBoltPullAxisProfileOverride(vr))
-            return fallback;
-
-        Vector viewmodelBack = vr->m_ViewmodelForward * -1.0f;
-        viewmodelBack.z = 0.0f;
-        viewmodelBack = VrHandMath::Normalize(viewmodelBack);
-        if (viewmodelBack.Length() > 0.0001f)
-            return viewmodelBack;
-
-        Vector hmdBack = vr->m_HmdForward * -1.0f;
-        hmdBack.z = 0.0f;
-        hmdBack = VrHandMath::Normalize(hmdBack);
-        if (hmdBack.Length() > 0.0001f)
-            return hmdBack;
-
-        return fallback;
+        if (!vr)
+            return VrHandMath::Normalize(fallbackAxis);
+        const Vector forward = vr->m_RightControllerForwardUnforced.IsZero()
+            ? vr->m_RightControllerForward : vr->m_RightControllerForwardUnforced;
+        const Vector rear = VrHandMath::Normalize(forward * -1.0f);
+        return rear.IsZero() ? VrHandMath::Normalize(fallbackAxis) : rear;
     }
 
     Vector MagazineInteractionAlignBoltVisualAxisToInputAxis(
@@ -1468,7 +1457,7 @@ namespace
         const Vector& inputAxis)
     {
         Vector visual = VrHandMath::Normalize(visualAxis);
-        if (!vr || !MagazineInteractionHasBoltPullAxisProfileOverride(vr))
+        if (!vr)
             return visual;
 
         const Vector input = VrHandMath::Normalize(inputAxis);
@@ -4829,6 +4818,17 @@ bool VR::UpdateMagazineInteraction(
         return m_LeftControllerPosAbs - m_HmdPosAbs;
     };
 
+    auto leftControllerPosRelativeToWeapon = [&]() -> Vector
+    {
+        Vector local{};
+        const Vector forward = m_RightControllerForwardUnforced.IsZero()
+            ? m_RightControllerForward : m_RightControllerForwardUnforced;
+        if (!l4d2vr_interaction::LocalHandPosition(m_LeftControllerPosAbs, m_RightControllerPosAbs,
+                forward, m_RightControllerUp, local))
+            return Vector(std::numeric_limits<float>::quiet_NaN(), 0.0f, 0.0f);
+        return local;
+    };
+
     auto updateMagazineInteractionContactHaptic = [&](
         bool& contactActive,
         bool touching,
@@ -5328,9 +5328,12 @@ bool VR::UpdateMagazineInteraction(
 
     auto beginBoltHoldFromCurrentLeftHand = [&](float grabDistance, float grabRange)
     {
+        const Vector handLocal = leftControllerPosRelativeToWeapon();
+        if (!l4d2vr_interaction::Finite(handLocal))
+            return;
         m_MagazineInteractionState = MagazineInteractionManualState::HoldingBolt;
         m_MagazineInteractionLeftHandHolding = true;
-        m_MagazineInteractionBoltGrabStartLeftControllerPosAbs = leftControllerPosRelativeToHmd();
+        m_MagazineInteractionBoltGrabStartLeftControllerPosAbs = handLocal;
         m_MagazineInteractionBoltGrabStartPullDistance = m_MagazineInteractionBoltPullDistance;
         m_MagazineInteractionBoltGrabbedAt = now;
         m_MagazineInteractionBoltPullAxisSignLocked = false;
@@ -6971,10 +6974,10 @@ bool VR::UpdateMagazineInteraction(
         if (visualAxis.Length() > 0.0001f)
             m_MagazineInteractionBoltPullAxisWorld = visualAxis;
 
-        const Vector handDelta =
-            leftControllerPosRelativeToHmd() -
-            m_MagazineInteractionBoltGrabStartLeftControllerPosAbs;
-        const float handPullDistance = VrHandMath::Dot(handDelta, inputAxis);
+        const Vector handLocal = leftControllerPosRelativeToWeapon();
+        if (!l4d2vr_interaction::Finite(handLocal))
+            return false;
+        const float handPullDistance = m_MagazineInteractionBoltGrabStartLeftControllerPosAbs.x - handLocal.x;
         if (!m_MagazineInteractionBoltPullAxisSignLocked)
         {
             const float signLockDistance = std::max(0.10f, 0.006f * m_VRScale);

@@ -1009,13 +1009,13 @@ void Game::logMsg(const char* fmt, ...)
 {
     if (fmt && std::strncmp(fmt, "[VR][DesktopHUD]", 16) == 0)
         return;
-    if (fmt &&
-        (std::strncmp(fmt, "[VR][UseAim]", 12) == 0 ||
-            std::strncmp(fmt, "[VR][MagazineInteraction]", 25) == 0 ||
-            std::strncmp(fmt, "[VR][MagazineInteractionFresh]", 30) == 0))
-    {
+    if (fmt && std::strncmp(fmt, "[VR][UseAim]", 12) == 0)
         return;
-    }
+    if (fmt &&
+        (std::strncmp(fmt, "[VR][MagazineInteraction]", 25) == 0 ||
+            std::strncmp(fmt, "[VR][MagazineInteractionFresh]", 30) == 0) &&
+        (!Hooks::m_VR || !Hooks::m_VR->m_VrHandsDebugLog))
+        return;
 
     std::lock_guard<std::mutex> lock(logMutex);
     std::call_once(logResetOnce, []()
@@ -2454,6 +2454,8 @@ int Game::FindRecvPropOffset(const char* networkName, const char* propName) cons
     if (!m_BaseClientDll || !networkName || !*networkName || !propName || !*propName)
         return -1;
 
+    static std::mutex cacheMutex;
+    std::lock_guard<std::mutex> cacheLock(cacheMutex);
     static std::unordered_map<std::string, int> cache;
     const std::string key = std::string(networkName) + "::" + propName;
     auto cached = cache.find(key);
@@ -2465,6 +2467,36 @@ int Game::FindRecvPropOffset(const char* networkName, const char* propName) cons
         cache[key] = offset;
 
     return offset;
+}
+
+bool Game::IsDualPistolWeapon(C_WeaponCSBase* weapon, int* clip) const
+{
+    if (!weapon) return false;
+    // Resolve from the installed game's receive table, not a guessed offset.
+    // Current clients publish m_hasDualWeapons. m_isDualWielding is also
+    // present as animation/datamap metadata, but need not be in the receive table.
+    int offset = FindRecvPropOffset("DT_Pistol", "m_hasDualWeapons");
+    if (offset <= 0)
+        offset = FindRecvPropOffset("DT_Pistol", "m_isDualWielding");
+    if (offset <= 0 || offset > 0x10000) return false;
+#ifdef _MSC_VER
+    __try
+#endif
+    {
+        if (weapon->GetWeaponID() != C_WeaponCSBase::WeaponID::PISTOL) return false;
+        const unsigned char flag = *reinterpret_cast<const unsigned char*>(reinterpret_cast<uintptr_t>(weapon) + offset);
+        if (flag != 1u) return false;
+        if (clip)
+        {
+            const int rounds = *reinterpret_cast<const int*>(reinterpret_cast<uintptr_t>(weapon) + VR::kClip1Offset);
+            if (rounds < 0 || rounds > 512) return false;
+            *clip = rounds;
+        }
+        return true;
+    }
+#ifdef _MSC_VER
+    __except (EXCEPTION_EXECUTE_HANDLER) { return false; }
+#endif
 }
 
 // === Commands ===

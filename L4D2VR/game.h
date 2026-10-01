@@ -30,6 +30,8 @@ class IVDebugOverlay;
 struct edict_t;
 
 // === Forward Declarations for Internal Systems ===
+class C_WeaponCSBase;
+
 class Game;
 class Offsets;
 class VR;
@@ -249,6 +251,7 @@ public:
     char* getNetworkName(uintptr_t* entity);
     const char* GetNetworkClassName(uintptr_t* entity) const;
     int FindRecvPropOffset(const char* networkName, const char* propName) const;
+    bool IsDualPistolWeapon(C_WeaponCSBase* weapon, int* clip = nullptr) const;
 
     // === Rendering Thread Mode ===
     // Returns material system thread mode (0 = single-threaded, >0 = queued/multicore).

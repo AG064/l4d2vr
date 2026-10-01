@@ -12,6 +12,7 @@
 #endif
 #include "openvr.h"
 #include "vr_weapon_calibration.h"
+#include "vr_interaction_geometry.h"
 #include "vr_magazine_policy.h"
 #include "vector.h"
 #include "vr_hands/vr_hand_types.h"
