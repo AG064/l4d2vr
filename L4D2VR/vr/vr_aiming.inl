@@ -1324,6 +1324,14 @@ void VR::UpdateNonVRAimSolution(C_BasePlayer* localPlayer, bool forceFresh, bool
     if (!useAutoGripAimPose && m_IsThirdPersonCamera && camDelta.LengthSqr() > (5.0f * 5.0f))
         originBase += camDelta;
 
+    Vector controllerUp{};
+    QAngle::AngleVectors(GetRightControllerAbsAngle(), nullptr, nullptr, &controllerUp);
+    if (!ApplyBulletAimOffset(originBase, direction, controllerUp))
+    {
+        m_HasNonVRAimSolution = false;
+        return;
+    }
+
     // The cached pose is already the controller start (including its historical
     // two-unit offset) transformed by AutoGrip's exact draw delta.
     Vector origin = useAutoGripAimPose ? originBase : originBase + direction * 2.0f;
@@ -1480,6 +1488,14 @@ bool VR::UpdateFriendlyFireAimHit(C_BasePlayer* localPlayer)
     Vector camDelta = GetAimRenderCameraDelta();
     if (!frontViewEyeAim && !frontViewControllerEyeOrigin && m_IsThirdPersonCamera && camDelta.LengthSqr() > (5.0f * 5.0f))
         gunOriginBase += camDelta;
+
+    if (!useMouse && !frontViewEyeAim && !frontViewControllerEyeOrigin)
+    {
+        Vector controllerUp{};
+        QAngle::AngleVectors(GetRightControllerAbsAngle(), nullptr, nullptr, &controllerUp);
+        if (!ApplyBulletAimOffset(gunOriginBase, gunDir, controllerUp))
+            return false;
+    }
 
     Vector gunStart = gunOriginBase + gunDir * 2.0f;
     Vector gunEnd = gunStart + gunDir * 8192.0f;
@@ -1786,6 +1802,79 @@ bool VR::ShouldSuppressPrimaryFire(const CUserCmd* cmd, C_BasePlayer* localPlaye
     return false;
 }
 
+bool VR::HasBulletAimCalibration() const
+{
+    return l4d2vr_calibration::HasOffset(m_BulletAimPosOffset,
+        Vector(m_BulletAimRotationOffsetDeg.x, m_BulletAimRotationOffsetDeg.y,
+            m_BulletAimRotationOffsetDeg.z));
+}
+
+bool VR::CanCalibrateBulletAim() const
+{
+    return HasBulletAimCalibration() && l4d2vr_calibration::ShouldCalibrateRay(
+        m_BulletAimWeaponEligible.load(std::memory_order_acquire),
+        m_MouseModeEnabled, IsScopeActive());
+}
+
+QAngle VR::GetBulletAimAbsAngle()
+{
+    QAngle angles = GetRightControllerAbsAngle();
+    // Keep the original roll and angle representation with zero calibration.
+    if (!CanCalibrateBulletAim())
+        return angles;
+    Vector origin{};
+    Vector direction{};
+    if (GetBulletAimRay(origin, direction))
+    {
+        QAngle::VectorAngles(direction, angles);
+        NormalizeAndClampViewAngles(angles);
+    }
+    return angles;
+}
+
+bool VR::GetBulletAimRay(Vector& origin, Vector& direction)
+{
+    origin = GetRightControllerViewmodelAbsPos();
+    Vector up{};
+    QAngle::AngleVectors(GetRightControllerAbsAngle(), &direction, nullptr, &up);
+    if (!l4d2vr_calibration::Finite(origin) || !l4d2vr_calibration::Finite(direction) || direction.IsZero())
+        return false;
+    if (!CanCalibrateBulletAim())
+        return true;
+
+    // AutoGrip already includes the legacy two-unit ray clearance. Reuse its
+    // corrected basis so hidden aim lines and visible aim lines agree.
+    Vector gripOrigin{}, gripDirection{};
+    const bool useAutoGrip = VR_TryGetAutoGripAimLinePose(this, gripOrigin, gripDirection);
+    if (useAutoGrip)
+    {
+        origin = gripOrigin;
+        direction = gripDirection;
+    }
+    else if (m_IsThirdPersonCamera)
+    {
+        const Vector delta = GetAimRenderCameraDelta();
+        if (delta.LengthSqr() > 25.0f)
+            origin += delta;
+        if (!m_RightControllerForwardUnforced.IsZero())
+            direction = m_RightControllerForwardUnforced;
+    }
+    if (!ApplyBulletAimOffset(origin, direction, up))
+        return false;
+    if (!useAutoGrip)
+        origin += direction * 2.0f;
+    return l4d2vr_calibration::Finite(origin);
+}
+
+bool VR::ApplyBulletAimOffset(Vector& origin, Vector& direction, const Vector& referenceUp) const
+{
+    if (!CanCalibrateBulletAim())
+        return true;
+    return l4d2vr_calibration::ApplyRayOffset(origin, direction, referenceUp,
+        m_BulletAimPosOffset, Vector(m_BulletAimRotationOffsetDeg.x,
+            m_BulletAimRotationOffsetDeg.y, m_BulletAimRotationOffsetDeg.z));
+}
+
 void VR::UpdateAimingLaser(C_BasePlayer* localPlayer)
 {
     UpdateSpecialInfectedWarningState();
@@ -1986,6 +2075,12 @@ void VR::UpdateAimingLaser(C_BasePlayer* localPlayer)
     if (!useAutoGripAimPose && !frontViewEyeAim && !frontViewControllerEyeOrigin &&
         m_IsThirdPersonCamera && camDelta.LengthSqr() > (5.0f * 5.0f))
         originBase += camDelta;
+
+    if (!isThrowable && !useMouse && !frontViewEyeAim && !frontViewControllerEyeOrigin &&
+        !ApplyBulletAimOffset(originBase, direction, controllerUp))
+    {
+        return;
+    }
 
     Vector origin = useAutoGripAimPose ? originBase : originBase + direction * 2.0f;
 
@@ -3648,6 +3743,14 @@ bool VR::BuildRenderAimLineSegment(C_BasePlayer* localPlayer, Vector& start, Vec
         return false;
 
     VectorNormalize(dir);
+
+    if (!frontViewEyeAim && !frontViewControllerEyeOrigin)
+    {
+        Vector controllerUp{};
+        QAngle::AngleVectors(GetRightControllerAbsAngle(), nullptr, nullptr, &controllerUp);
+        if (!ApplyBulletAimOffset(originBase, dir, controllerUp))
+            return false;
+    }
 
     start = useAutoGripAimPose ? originBase : originBase + dir * 2.0f;
 

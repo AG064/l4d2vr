@@ -25,6 +25,7 @@
 #include "game.h"
 #include "hooks.h"
 #include "sdk.h"
+#include "vr_weapon_calibration.h"
 
 extern "C" void __cdecl L4D2VR_ShutdownSystemMouseInputSuppression();
 extern "C" void __cdecl L4D2VR_ShutdownReShadeVRBridge();
@@ -3044,6 +3045,8 @@ namespace
         std::unordered_set<std::string> sampleKeys = ExtractConfigParameterKeys(sampleText, true);
         // Older workshop samples must not erase this supported optional setting.
         sampleKeys.insert("MagazineReleaseButtonRequired");
+        for (const auto key : l4d2vr_calibration::kConfigKeys)
+            sampleKeys.insert(std::string(key));
         configChanged |= RemoveConfigParametersNotInSample(configText, sampleKeys);
 
         std::istringstream sampleStream(sampleText);
@@ -3054,6 +3057,8 @@ namespace
             std::string value;
             if (TryExtractConfigParameterAssignment(line, key, value, false))
             {
+                if (!l4d2vr_calibration::ShouldApplySampleValue(key, ConfigParameterKeyExists(configText, key)))
+                    continue;
                 if (SetConfigParameterValue(configText, key, value))
                     configChanged = true;
                 continue;

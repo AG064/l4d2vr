@@ -748,6 +748,7 @@ void VR::UpdateTracking()
         ? (C_BasePlayer*)m_Game->GetClientEntity(playerIndex)
         : nullptr;
     if (!localPlayer) {
+        m_BulletAimWeaponEligible.store(false, std::memory_order_release);
         m_FirstPersonControlReady.store(false, std::memory_order_release);
         ClearPlayerModelMaterialsSnapshot();
         // Never let a reconnect/map transition publish tracking coordinates
@@ -997,6 +998,8 @@ void VR::UpdateTracking()
         if (C_WeaponCSBase* weapon = (C_WeaponCSBase*)active)
             m_ScopeWeaponIsFirearm = IsFirearmWeaponId(weapon->GetWeaponID());
     }
+    m_BulletAimWeaponEligible.store(m_ScopeWeaponIsFirearm &&
+        !IsUsingMountedGun(viewPlayer), std::memory_order_release);
     RefreshActiveViewmodelAdjustment(viewPlayer);
     RefreshActiveScopeAdjustment(viewPlayer);
 
@@ -1775,16 +1778,32 @@ void VR::UpdateTracking()
     m_LeftControllerForward = VectorRotate(m_LeftControllerForward, m_LeftControllerRight, -45.0);
     m_LeftControllerUp = VectorRotate(m_LeftControllerUp, m_LeftControllerRight, -45.0);
 
-    // Calibrate the logical weapon hand's grip pose. This stays in the shared
-    // aim basis so the gun model, aim line, scope, and bullets remain aligned.
-    m_RightControllerForward = VectorRotate(
-        m_RightControllerForward,
-        m_RightControllerRight,
-        m_WeaponAimPitchOffsetDeg);
-    m_RightControllerUp = VectorRotate(
-        m_RightControllerUp,
-        m_RightControllerRight,
-        m_WeaponAimPitchOffsetDeg);
+	// Calibrate the logical weapon hand's grip pose. This stays in the shared
+	// aim basis so the gun model, aim line, scope, and bullets remain aligned.
+	m_RightControllerForward = VectorRotate(
+		m_RightControllerForward,
+		m_RightControllerUp,
+		m_WeaponAimYawOffsetDeg);
+	m_RightControllerRight = VectorRotate(
+		m_RightControllerRight,
+		m_RightControllerUp,
+		m_WeaponAimYawOffsetDeg);
+	m_RightControllerForward = VectorRotate(
+		m_RightControllerForward,
+		m_RightControllerRight,
+		m_WeaponAimPitchOffsetDeg);
+	m_RightControllerUp = VectorRotate(
+		m_RightControllerUp,
+		m_RightControllerRight,
+		m_WeaponAimPitchOffsetDeg);
+	m_RightControllerRight = VectorRotate(
+		m_RightControllerRight,
+		m_RightControllerForward,
+		m_WeaponAimRollOffsetDeg);
+	m_RightControllerUp = VectorRotate(
+		m_RightControllerUp,
+		m_RightControllerForward,
+		m_WeaponAimRollOffsetDeg);
 
     m_RightControllerForwardUnforced = m_RightControllerForward;
     if (!m_RightControllerForwardUnforced.IsZero())
@@ -2361,8 +2380,8 @@ void VR::UpdateTracking()
 
     PositionAngle viewmodelOffset = localPlayer->GetViewmodelOffset();
 
-    m_ViewmodelPosOffset = viewmodelOffset.position + m_ViewmodelPosAdjust;
-    m_ViewmodelAngOffset = viewmodelOffset.angle + m_ViewmodelAngAdjust;
+	m_ViewmodelPosOffset = viewmodelOffset.position + m_ViewmodelPosAdjust + m_ViewmodelPosePosOffset;
+	m_ViewmodelAngOffset = viewmodelOffset.angle + m_ViewmodelAngAdjust + m_ViewmodelPoseAngOffset;
 
     if (m_MouseModeEnabled)
     {
@@ -2539,6 +2558,8 @@ void VR::UpdateTracking()
         m_RenderViewmodelAngOffsetY.store(m_ViewmodelAngOffset.y, std::memory_order_relaxed);
         m_RenderViewmodelAngOffsetZ.store(m_ViewmodelAngOffset.z, std::memory_order_relaxed);
         m_RenderWeaponAimPitchOffsetDeg.store(m_WeaponAimPitchOffsetDeg, std::memory_order_relaxed);
+        m_RenderWeaponAimYawOffsetDeg.store(m_WeaponAimYawOffsetDeg, std::memory_order_relaxed);
+        m_RenderWeaponAimRollOffsetDeg.store(m_WeaponAimRollOffsetDeg, std::memory_order_relaxed);
 
         // Local player / third-person / aim line state for the render thread.
         m_RenderHasLocalPlayer.store(1, std::memory_order_relaxed);
