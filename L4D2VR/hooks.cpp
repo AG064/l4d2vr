@@ -1075,6 +1075,51 @@ static bool IsLocalClientUsingMountedWeapon()
 #endif
 }
 
+struct GripGameplaySession
+{
+    uintptr_t weapon = 0u;
+    bool liveInventory = false;
+    bool gameplay = false;
+    unsigned blocked = 0u;
+};
+
+static GripGameplaySession ReadGripGameplaySession(VR* vr, Game* game)
+{
+    GripGameplaySession state{};
+#ifdef _MSC_VER
+    __try
+#endif
+    {
+        if (!vr || !vr->m_IsVREnabled) { state.blocked = 1u; return state; }
+        if (!game || !game->m_EngineClient || !game->m_EngineClient->IsInGame())
+        { state.blocked = 2u; return state; }
+        const int index = game->m_EngineClient->GetLocalPlayer();
+        C_BasePlayer* player = index > 0 ? reinterpret_cast<C_BasePlayer*>(game->GetClientEntity(index)) : nullptr;
+        HooksFirstPersonBodyLocalState local{};
+        if (!player || !HooksFirstPersonBodyReadLocalStateSafe(player, &local))
+        { state.blocked = 4u; return state; }
+        if (local.team != 2 || local.lifeState != 0 || local.observerMode != 0) state.blocked |= 8u;
+        if (local.incapacitated) state.blocked |= 16u;
+        state.weapon = reinterpret_cast<uintptr_t>(player->GetActiveWeapon());
+        state.liveInventory = state.blocked == 0u && state.weapon != 0u;
+        if (!state.weapon) state.blocked |= 0x8000u;
+        if ((local.flags & (1 << 5)) != 0) state.blocked |= 32u;
+        if (game->m_EngineClient->IsPaused()) state.blocked |= 64u;
+        if (game->m_VguiSurface && game->m_VguiSurface->IsCursorVisible()) state.blocked |= 128u;
+        if (vr->m_MouseModeEnabled) state.blocked |= 256u;
+        if (vr->m_TeleportVisualScoutActive) state.blocked |= 512u;
+        if (vr->m_SuppressPlayerInput) state.blocked |= 1024u;
+        if (!vr->m_FirstPersonControlReady.load(std::memory_order_acquire)) state.blocked |= 2048u;
+        if (vr->m_RenderPlayerControlledBySI.load(std::memory_order_acquire)) state.blocked |= 4096u;
+        if (IsLocalClientUsingMountedWeapon()) state.blocked |= 8192u;
+        state.gameplay = state.blocked == 0u;
+        return state;
+    }
+#ifdef _MSC_VER
+    __except (EXCEPTION_EXECUTE_HANDLER) { state = {}; state.blocked = 0x10000u; return state; }
+#endif
+}
+
 static void NotifyLocalMeleeCollisionHaptics(bool serverCollision, void* weapon, int collisionResult, int entitiesHitBefore, int entitiesHitAfter)
 {
 	const bool collided = (collisionResult != 0)

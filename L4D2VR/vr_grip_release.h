@@ -18,6 +18,16 @@ namespace l4d2vr_grip
     class ReleaseLatch
     {
     public:
+        // Source's extra mouse samples call CreateMove with command number
+        // zero. Keep a live session's held grip across those camera-only calls.
+        // Actual lifecycle loss or a different inventory item still cancels it.
+        void ObserveSession(bool gameplayActive, std::uintptr_t weapon)
+        {
+            if (!gameplayActive || !weapon || (m_Weapon && m_Weapon != weapon))
+                Reset();
+        }
+        bool IsArmed() const { return m_Armed; }
+        bool WaitingForRelease() const { return m_WaitForRelease; }
         bool Update(bool eligible, bool actionActive, bool down, std::uintptr_t weapon)
         {
             if (!eligible || !actionActive || weapon == 0u)

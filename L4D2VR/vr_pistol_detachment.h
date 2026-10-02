@@ -88,6 +88,13 @@ namespace l4d2vr_pistol
         }
         unsigned Mask() const { return m_Mask; }
         bool Awaiting() const { return m_Awaiting; }
+        void CancelInteractions()
+        {
+            // Menus cancel input edges while keeping the actual inventory
+            // hand. A split already sent may still be confirmed after a pause.
+            m_Right.Reset(); m_Left.Reset(); m_Queued = 0u;
+            m_Awaiting = false; m_Pickup = Hand::None;
+        }
         void Reset()
         {
             m_Weapon = 0u; m_Mask = m_Queued = 0u; m_Dual = m_Awaiting = false;

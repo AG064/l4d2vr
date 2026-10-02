@@ -49,3 +49,13 @@ dropped pistol to recover the pair. Repeat with the other hand, both grips
 released together, partially spent clips, a weapon switch, and revival.
 Check `vrmod_log.txt` for `[VR][PistolDetach]` and `[VR][PistolPickup]` events
 with `VrHandsDebugLog` enabled.
+
+`[VR][GripDrop][input]` reports final eligibility, release state, and the number
+of extra camera samples. These samples keep the live grip latch, rather than
+resetting it simply because their command number is zero. `blockers` is a
+hexadecimal mask: 0x1 inactive VR, 0x2 outside a game, 0x4 unreadable player,
+0x8 dead/observer/wrong team, 0x10 incapacitated, 0x20 frozen, 0x40 paused,
+0x80 menu cursor, 0x100 mouse mode, 0x200 teleport scout, 0x400 suppressed input,
+0x800 control not ready, 0x1000 special infected control, 0x2000 mounted weapon,
+0x8000 missing inventory weapon, and 0x10000 unreadable session. Server support
+and the inventory-drop backend are logged separately.

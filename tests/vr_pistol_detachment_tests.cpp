@@ -68,4 +68,7 @@ int main()
     CHECK(hands.Release(true, false, true, true, 2013u) == Hand::None);
     hands.Observe(true, 200u, false, 2014u); // delayed authoritative split still retains left ownership
     CHECK(hands.Mask() == 2u);
+    hands.CancelInteractions();
+    CHECK(hands.Mask() == 2u && !hands.Awaiting());
+    CHECK(hands.Release(true, false, true, false, 2015u) == Hand::None);
 }

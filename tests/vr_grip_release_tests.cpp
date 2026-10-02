@@ -48,6 +48,25 @@ int main()
     Check(!grip.Update(true, true, false, 0), "An absent weapon must cancel a pending drop");
     Check(!grip.Update(true, true, false, 3), "Reappearing weapons must not replay the cancelled drop");
 
+    grip.Reset();
+    grip.Update(true, true, false, 4);
+    grip.Update(true, true, true, 4);
+    // Reproduce extra camera input samples between two actual user commands.
+    for (int sample = 0; sample < 12; ++sample) grip.ObserveSession(true, 4);
+    Check(grip.IsArmed(), "Camera-only samples must preserve the held grip");
+    Check(grip.Update(true, true, false, 4), "Release after extra samples must drop exactly once");
+    Check(!grip.Update(true, true, false, 4), "Camera samples must not produce duplicate releases");
+    grip.Update(true, true, true, 4);
+    grip.ObserveSession(false, 4); // pause, death, or disconnect
+    Check(!grip.IsArmed(), "Actual lifecycle loss must cancel the held grip");
+    Check(!grip.Update(true, true, false, 4), "Menu-time release must not replay after return");
+    grip.Update(true, true, true, 4);
+    grip.ObserveSession(true, 5);
+    Check(!grip.IsArmed(), "A changed inventory item must cancel old grip ownership");
+    Check(!grip.Update(true, true, true, 5), "A weapon switch with grip held must wait for release");
+    Check(grip.WaitingForRelease(), "A switched weapon cannot inherit an unrelated held grip");
+    Check(!grip.Update(true, true, false, 5), "Inherited release after a switch must be ignored");
+
     using l4d2vr_magazine::ShouldEject;
     using l4d2vr_magazine::ChamberRoundsAfterEject;
     Check(!ShouldEject(true, false, true, 0, true), "Empty ammunition must not automatically eject a magazine in button mode");
