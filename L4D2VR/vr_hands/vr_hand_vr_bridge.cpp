@@ -3430,6 +3430,7 @@ void VR::RecordManualPumpShot()
     if (!MagazineInteractionReadActiveWeapon(player, weapon, id, clip) || !MagazineInteractionWeaponUsesSinglePumpSound(id))
         return;
     std::lock_guard<std::mutex> lock(m_ManualPumpMutex);
+    m_ManualPumpCycles.ObserveOwner(true, reinterpret_cast<uintptr_t>(player));
     m_ManualPumpCycles.NotifyShot(reinterpret_cast<uintptr_t>(weapon), static_cast<int>(id), clip);
     Game::logMsg("[VR][ManualPump] shot observed weaponId=%d clip=%d", static_cast<int>(id), clip);
 }
@@ -4523,7 +4524,8 @@ void VR::ResetMagazineInteractionSession()
     CancelMagazineInteractionManual();
     {
         std::lock_guard<std::mutex> lock(m_ManualPumpMutex);
-        m_ManualPumpCycles.Reset();
+        const uintptr_t owner = m_MagazineInteractionSession.OwnerTag();
+        m_ManualPumpCycles.ObserveOwner(m_ManualPumpEnabled && owner != 0u, owner);
     }
     m_ManualPumpClosedBoltValid = false;
     m_ManualPumpClosedBoltWeapon = 0;

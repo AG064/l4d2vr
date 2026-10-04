@@ -43,6 +43,7 @@ namespace l4d2vr_magazine
     class SessionTracker
     {
     public:
+        std::uintptr_t OwnerTag() const { return m_Ready ? m_Player : 0u; }
         // Compare opaque identities without dereferencing objects that may
         // already have been deleted. Completion of a reload is not a boundary.
         bool Observe(bool ready, std::uintptr_t player, std::uintptr_t weapon,

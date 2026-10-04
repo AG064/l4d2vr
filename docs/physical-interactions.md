@@ -66,6 +66,9 @@ weapon, rather than treating a missing reload impulse as permission to reload.
 A different player entity starts a fresh reload command sequence. Controller
 profile validation covers all default bindings and the optional Quest preset;
 Knuckles and Cosmos keep analog turning without undeclared legacy turn actions.
+Ordinary weapon swaps discard stale magazine and hand poses but retain the
+same player's outstanding pump cycles. Death, incapacitation, disabled VR
+interaction, and player replacement clear that cycling ownership.
 
 For a headset test, start with both grips released, then grip each gun. Fire
 with each trigger and check its aim. Release one grip, confirm that a world

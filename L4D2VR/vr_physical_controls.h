@@ -100,6 +100,11 @@ namespace l4d2vr_physical
     class PumpCycles
     {
     public:
+        void ObserveOwner(bool active, std::uintptr_t owner)
+        {
+            if (!active || !owner) { Reset(); return; }
+            if (owner != m_Owner) { Reset(); m_Owner = owner; }
+        }
         bool Observe(std::uintptr_t weapon, int weaponId, int clip)
         {
             if (!weapon || clip < 0)
@@ -139,7 +144,7 @@ namespace l4d2vr_physical
                     entry.needsCycle = false;
         }
 
-        void Reset() { m_Entries = {}; m_Next = 0u; }
+        void Reset() { m_Entries = {}; m_Next = 0u; m_Owner = 0u; }
 
         static bool StrokeComplete(bool reachedRear, float distance, float returnDistance)
         {
@@ -156,6 +161,7 @@ namespace l4d2vr_physical
             bool needsCycle = false;
         };
         std::array<Entry, 16> m_Entries{};
+        std::uintptr_t m_Owner = 0u;
         std::size_t m_Next = 0u;
     };
 }

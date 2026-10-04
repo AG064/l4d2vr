@@ -63,4 +63,21 @@ int main()
     Check(pumps.Observe(10u, 3, 0));
     pumps.Reset();
     Check(!pumps.Observe(10u, 3, 0));
+
+    pumps.ObserveOwner(true, 100u);
+    pumps.NotifyShot(10u, 3, 7);
+    pumps.ObserveOwner(true, 100u); // normal interaction reset on a weapon swap
+    Check(!pumps.Observe(20u, 2, 50));
+    pumps.ObserveOwner(true, 100u);
+    Check(pumps.Observe(10u, 3, 7)); // drawing the shotgun again still requires a stroke
+    pumps.ObserveOwner(false, 100u); // downed/dead/VR interaction unavailable
+    Check(!pumps.Observe(10u, 3, 7));
+    pumps.ObserveOwner(true, 100u);
+    pumps.NotifyShot(10u, 3, 6);
+    pumps.ObserveOwner(true, 200u); // a replacement player owns a different inventory
+    Check(!pumps.Observe(10u, 3, 6));
+    pumps.ObserveOwner(true, 200u);
+    pumps.NotifyShot(10u, 8, 5);
+    pumps.Complete(10u);
+    Check(!pumps.Observe(10u, 8, 5));
 }

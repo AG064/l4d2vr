@@ -1,4 +1,5 @@
 #include "../L4D2VR/vr_magazine_policy.h"
+#include "../L4D2VR/vr_physical_controls.h"
 #include <cstdio>
 #include <cstdlib>
 
@@ -14,6 +15,19 @@ static void Check(bool result, const char* message)
 int main()
 {
     using namespace l4d2vr_magazine;
+    SessionTracker pumpSession;
+    l4d2vr_physical::PumpCycles pump;
+    pumpSession.Observe(true, 501u, 601u, 3, 3u);
+    pump.ObserveOwner(true, pumpSession.OwnerTag());
+    pump.NotifyShot(601u, 3, 7);
+    Check(pumpSession.Observe(true, 501u, 602u, 2, 3u), "Drawing an SMG resets only current hand interaction");
+    pump.ObserveOwner(true, pumpSession.OwnerTag());
+    pumpSession.Observe(true, 501u, 601u, 3, 3u);
+    pump.ObserveOwner(true, pumpSession.OwnerTag());
+    Check(pump.Observe(601u, 3, 7), "Interaction recovery must preserve the shotgun's outstanding pump cycle");
+    pumpSession.Observe(false, 501u, 601u, 3, 3u);
+    pump.ObserveOwner(false, pumpSession.OwnerTag());
+    Check(!pump.Observe(601u, 3, 7), "Death or incapacitation must clear expired pump ownership");
     SessionTracker session;
     Check(!session.Observe(false, 0u, 0u, 0, 0u), "A disconnected session must remain idle");
     Check(session.Observe(true, 100u, 200u, 1, 3u), "Entering gameplay must discard state from the previous session");
