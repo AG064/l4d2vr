@@ -5,6 +5,10 @@ static void Check(bool x) { if (!x) { std::fprintf(stderr,"Interaction packet ar
 int main()
 {
     using namespace l4d2vr_wire;
+    Check(!SupportsPhysicalVersion(0u));
+    Check(SupportsPhysicalVersion(1u));
+    Check(!SupportsPhysicalVersion(2u));
+    Check(!SupportsPhysicalVersion(255u));
     for (unsigned value=0;value<256;++value)
     {
         const auto impulse=static_cast<std::uint8_t>(value);

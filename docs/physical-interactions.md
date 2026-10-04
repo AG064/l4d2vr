@@ -10,6 +10,12 @@ Enable `ManualThrowEnabled`, `GripReleaseDropEnabled`, and
 running the same build. Keep `DualPistolsNativeReloadFallbackEnabled` enabled
 for dual pistols and for a single pistol retained in the gameplay left hand.
 The repository config leaves these experimental switches off by default.
+The server also advertises `l4d2vr_interaction_ack 1` separately from its pose
+relay acknowledgement. Grip transport, independent pistol commands and native
+reload suppression require that matching capability. A pose-only or older
+server cannot enable them just by acknowledging VR movement. The capability
+is cleared when the client changes server sessions; ordinary controls remain
+available without it.
 
 With the supplied Quest binding:
 
@@ -69,6 +75,9 @@ Knuckles and Cosmos keep analog turning without undeclared legacy turn actions.
 Ordinary weapon swaps discard stale magazine and hand poses but retain the
 same player's outstanding pump cycles. Death, incapacitation, disabled VR
 interaction, and player replacement clear that cycling ownership.
+Before a queued inventory drop executes, the server rechecks the living owner,
+weapon identity, active inventory selection and bounded command age. A weapon
+switch or an expired request cancels the transaction before inventory changes.
 
 For a headset test, start with both grips released, then grip each gun. Fire
 with each trigger and check its aim. Release one grip, confirm that a world

@@ -4,6 +4,8 @@
 
 namespace l4d2vr_wire
 {
+    constexpr unsigned kPhysicalVersion = 1u;
+    inline bool SupportsPhysicalVersion(unsigned version) { return version == kPhysicalVersion; }
     inline bool IsGripAction(std::uint8_t impulse)
     {
         return impulse == l4d2vr_grip::kPickupImpulse || impulse == l4d2vr_grip::kReleaseImpulse;

@@ -20,6 +20,7 @@
 #include "sdk.h"
 #include "vr.h"
 #include "hooks.h"
+#include "vr_interaction_protocol.h"
 #include "offsets.h"
 #include "sigscanner.h"
 #include "vr_pose_protocol.h"
@@ -764,6 +765,7 @@ namespace
 {
     constexpr int kFcvarServerCanExecute = (1 << 28);
     constexpr char kL4D2VRServerAckCommandName[] = "l4d2vr_server_ack";
+    constexpr char kL4D2VRInteractionAckCommandName[] = "l4d2vr_interaction_ack";
     constexpr char kL4D2VRPoseAckCommandName[] = "l4d2vr_pose_ack";
     constexpr char kL4D2VRPoseReceiveCommandName[] = "l4d2vr_pose_receive";
     constexpr char kVRConfigCommandName[] = "vrconfig";
@@ -832,6 +834,17 @@ namespace
         g_Game->HandleVRPoseServerAck(
             static_cast<int>(protocolVersion));
     }
+    void __cdecl OnL4D2VRInteractionAckCommand(const SourceCCommand& command)
+    {
+        unsigned long version = 0;
+        if (!g_Game || !g_Game->m_VR || !Hooks::s_ServerUnderstandsVR || command.ArgC() != 2 ||
+            !ParseUnsignedCommandArgument(command, 1, 255u, version) ||
+            !l4d2vr_wire::SupportsPhysicalVersion(static_cast<unsigned>(version))) return;
+        const unsigned previous = g_Game->m_VR->m_ServerPhysicalInteractionVersion.exchange(
+            static_cast<unsigned>(version), std::memory_order_acq_rel);
+        if (previous != version)
+            Game::logMsg("[VR][InteractionAck] server supports physical interaction protocol %lu", version);
+    }
 
     void __cdecl OnL4D2VRPoseReceiveCommand(const SourceCCommand& command)
     {
@@ -879,6 +892,9 @@ namespace
         &OnL4D2VRPoseAckCommand,
         "Accepts L4D2VR world-pose relay acknowledgement.",
         kFcvarServerCanExecute);
+    SourceRegisteredConCommand g_L4D2VRInteractionAckCommand(
+        kL4D2VRInteractionAckCommandName, &OnL4D2VRInteractionAckCommand,
+        "Accepts the physical-interaction capability of a matching server build.", kFcvarServerCanExecute);
     SourceRegisteredConCommand g_L4D2VRPoseReceiveCommand(
         kL4D2VRPoseReceiveCommandName,
         &OnL4D2VRPoseReceiveCommand,
@@ -907,6 +923,8 @@ namespace
         {
             if (!cvar->FindCommandBase(kL4D2VRServerAckCommandName))
                 cvar->RegisterConCommand(&g_L4D2VRServerAckCommand);
+            if (!cvar->FindCommandBase(kL4D2VRInteractionAckCommandName))
+                cvar->RegisterConCommand(&g_L4D2VRInteractionAckCommand);
             if (!cvar->FindCommandBase(kL4D2VRPoseAckCommandName))
                 cvar->RegisterConCommand(&g_L4D2VRPoseAckCommand);
             if (!cvar->FindCommandBase(kL4D2VRPoseReceiveCommandName))
@@ -1126,6 +1144,7 @@ bool Game::IsValidPlayerIndex(int index) const
 
 void Game::ResetAllPlayerVRInfo()
 {
+    if (m_VR) m_VR->m_ServerPhysicalInteractionVersion.store(0u, std::memory_order_release);
     {
         std::lock_guard<std::mutex> lock(m_VRPoseMutex);
         m_PlayersVRInfo.fill(Player{});
@@ -1143,6 +1162,7 @@ void Game::ResetAllPlayerVRInfo()
 
 void Game::ResetVRPoseServerSession()
 {
+    if (m_VR) m_VR->m_ServerPhysicalInteractionVersion.store(0u, std::memory_order_release);
     {
         std::lock_guard<std::mutex> lock(m_VRPoseMutex);
         for (Player& player : m_PlayersVRInfo)
@@ -1648,11 +1668,14 @@ void Game::ObserveBuiltinVRPoseRelayClient(
 
     client.lastAckTickMs = nowMs;
     ++client.ackAttempts;
-    if (VRPoseRelaySendClientCommand(
+    const bool poseAckSent = VRPoseRelaySendClientCommand(
             m_ServerPluginHelpers,
             entity,
-            kVRPoseRelayAckCommand) &&
-        client.ackAttempts == 1)
+            kVRPoseRelayAckCommand);
+    if (poseAckSent && Hooks::hkPhysicalGunReload.isEnabled && Hooks::hkPhysicalShotgunReload.isEnabled &&
+        m_Offsets && m_Offsets->ManualInventoryWeaponDrop.valid && m_Offsets->PistolRemoveDualWeapons.valid)
+        VRPoseRelaySendClientCommand(m_ServerPluginHelpers, entity, "l4d2vr_interaction_ack 1\n");
+    if (poseAckSent && client.ackAttempts == 1)
     {
         Game::logMsg(
             "[VR][WorldPose] built-in listen relay offered protocol %u to player %d",

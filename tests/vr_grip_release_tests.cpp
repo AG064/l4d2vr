@@ -16,6 +16,16 @@ int main()
 {
     using l4d2vr_grip::ReleaseLatch;
     using l4d2vr_grip::CanReleaseInventoryItem;
+    using l4d2vr_grip::MayCommitDrop;
+    Check(MayCommitDrop(true, true, true, true, 0), "A current live owned weapon may be released");
+    Check(MayCommitDrop(true, true, true, true, 48), "A bounded delayed command may still commit");
+    Check(!MayCommitDrop(true, true, true, true, 49), "An expired release must not mutate inventory");
+    Check(!MayCommitDrop(true, true, true, true, -1), "A future or reordered release must not commit");
+    Check(!MayCommitDrop(true, true, true, true, 4294967295LL), "An overflowing tick difference must not appear current");
+    Check(!MayCommitDrop(false, true, true, true, 0), "Dead players must not replay a queued drop");
+    Check(!MayCommitDrop(true, false, true, true, 0), "A different player must not consume the release");
+    Check(!MayCommitDrop(true, true, false, true, 0), "An expired entity must not be used");
+    Check(!MayCommitDrop(true, true, true, false, 0), "A weapon swap must cancel the old release");
     Check(CanReleaseInventoryItem(true, true, true, true, true), "A firearm release must cancel firing or reload interaction");
     Check(!CanReleaseInventoryItem(false, true, true, false, false), "A primed grenade must not execute an inventory drop");
     Check(!CanReleaseInventoryItem(false, false, true, false, false), "Grenade trigger release must not also drop its inventory weapon");

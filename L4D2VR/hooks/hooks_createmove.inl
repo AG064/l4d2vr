@@ -1742,6 +1742,7 @@ bool __fastcall Hooks::dCreateMove(void* ecx, void* edx, float flInputSampleTime
             const uint32_t leftPickupOffer = m_VR->m_LeftPistolPickupOfferTimeMs.load(std::memory_order_acquire);
             const uint32_t bodySelection = m_VR->m_BodyGripSelectionSerial.load(std::memory_order_acquire);
             const bool gripPickupEligible = gripSession.gameplay && m_VR->m_GripReleaseDropEnabled &&
+                l4d2vr_wire::SupportsPhysicalVersion(m_VR->m_ServerPhysicalInteractionVersion.load(std::memory_order_acquire)) &&
                 m_VR->m_IsVREnabled && m_VR->m_EncodeVRUsercmd && s_ServerUnderstandsVR &&
                 !m_VR->m_ForceNonVRServerMovement && !m_VR->m_SuppressPlayerInput &&
                 m_VR->m_FirstPersonControlReady.load(std::memory_order_acquire) &&
@@ -1798,6 +1799,7 @@ bool __fastcall Hooks::dCreateMove(void* ecx, void* edx, float flInputSampleTime
             s_previousGripWeapon = activeWeaponTag;
 
 			const bool gripDropEligible =
+				l4d2vr_wire::SupportsPhysicalVersion(m_VR->m_ServerPhysicalInteractionVersion.load(std::memory_order_acquire)) &&
 				gripSession.gameplay && m_VR->m_GripReleaseDropEnabled && manualThrowInputActive && inventoryItem &&
 				m_VR->m_EncodeVRUsercmd && !m_VR->m_ForceNonVRServerMovement &&
 				m_VR->m_FirstPersonControlReady.load(std::memory_order_acquire) &&
@@ -1837,18 +1839,20 @@ bool __fastcall Hooks::dCreateMove(void* ecx, void* edx, float flInputSampleTime
 					(inventoryItem ? 1u << 4 : 0u) |
 					(m_VR->m_ForceNonVRServerMovement ? 1u << 5 : 0u) |
 					(m_VR->m_FirstPersonControlReady.load(std::memory_order_acquire) ? 1u << 6 : 0u) |
-                    (gripDropEligible ? 1u << 7 : 0u) | (gripSession.blocked << 8);
+                    (gripDropEligible ? 1u << 7 : 0u) | (gripSession.blocked << 8) |
+                    (m_VR->m_ServerPhysicalInteractionVersion.load(std::memory_order_acquire) == 1u ? 1u << 25 : 0u);
 				if (gateState != previousGripGateState)
 				{
 					previousGripGateState = gateState;
-					Game::logMsg("[VR][GripDrop][input] active=%d down=%d server=%d backend=%d inventory=%d fallback=%d controlReady=%d weaponId=%d eligible=%d blockers=0x%X armed=%d waitRelease=%d requested=%d extraSamples=%u weapon=%p",
+					Game::logMsg("[VR][GripDrop][input] active=%d down=%d server=%d backend=%d inventory=%d fallback=%d controlReady=%d weaponId=%d eligible=%d blockers=0x%X armed=%d waitRelease=%d requested=%d extraSamples=%u weapon=%p physicalProtocol=%u",
 						weaponGripActionActive ? 1 : 0, weaponGripDown ? 1 : 0,
 						s_ServerUnderstandsVR ? 1 : 0, throwBackendReady ? 1 : 0,
 						inventoryItem ? 1 : 0, m_VR->m_ForceNonVRServerMovement ? 1 : 0,
 						m_VR->m_FirstPersonControlReady.load(std::memory_order_acquire) ? 1 : 0, activeWeaponId,
                         gripDropEligible ? 1 : 0, gripSession.blocked,
                         s_weaponGripRelease.IsArmed() ? 1 : 0, s_weaponGripRelease.WaitingForRelease() ? 1 : 0,
-                        gripDropRequested ? 1 : 0, s_gripExtraSamples, reinterpret_cast<void*>(activeWeaponTag));
+                        gripDropRequested ? 1 : 0, s_gripExtraSamples, reinterpret_cast<void*>(activeWeaponTag),
+                        m_VR->m_ServerPhysicalInteractionVersion.load(std::memory_order_acquire));
 				}
 			}
 			if (!manualThrowInputActive)
@@ -1991,6 +1995,7 @@ bool __fastcall Hooks::dCreateMove(void* ecx, void* edx, float flInputSampleTime
     C_WeaponCSBase* routingPistol = localPlayerForAutoActions
         ? reinterpret_cast<C_WeaponCSBase*>(localPlayerForAutoActions->GetActiveWeapon()) : nullptr;
     const bool dualEquipped = m_VR && routingPistol &&
+        l4d2vr_wire::SupportsPhysicalVersion(m_VR->m_ServerPhysicalInteractionVersion.load(std::memory_order_acquire)) &&
         routingPistol->GetWeaponID() == C_WeaponCSBase::WeaponID::PISTOL &&
         (m_Game->IsDualPistolWeapon(routingPistol) || pistolMask == 2u) &&
         m_VR->m_DualPistolsIndependentHandsEnabled;
@@ -2060,6 +2065,7 @@ bool __fastcall Hooks::dCreateMove(void* ecx, void* edx, float flInputSampleTime
 		manualThrowPoseRelevant);
 
     if (m_VR && routingPistol && cmd->impulse == 0 &&
+        l4d2vr_wire::SupportsPhysicalVersion(m_VR->m_ServerPhysicalInteractionVersion.load(std::memory_order_acquire)) &&
         m_VR->m_MagazineInteractionEnabled && m_VR->m_MagazineInteractionSuppressEmptyClipAutoReload &&
         (m_VR->m_VrHandsEnabled || m_VR->m_NativeViewmodelHandsOnly) &&
         !m_VR->IsMagazineInteractionReloadCommandActive() &&

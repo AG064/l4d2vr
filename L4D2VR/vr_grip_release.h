@@ -7,6 +7,10 @@ namespace l4d2vr_grip
     constexpr unsigned char kPickupImpulse = 234u;
     constexpr unsigned char kReleaseImpulse = 235u;
     constexpr unsigned char kBlockNativeReloadImpulse = 236u;
+    inline bool MayCommitDrop(bool liveOwner, bool sameOwner, bool sameEntity, bool activeWeapon, std::int64_t ageTicks)
+    {
+        return liveOwner && sameOwner && sameEntity && activeWeapon && ageTicks >= 0 && ageTicks <= 48;
+    }
     inline bool CanReleaseInventoryItem(bool firearmOrMelee, bool primaryDown,
         bool primaryWasDown, bool useDown, bool manualThrowArmed)
     {

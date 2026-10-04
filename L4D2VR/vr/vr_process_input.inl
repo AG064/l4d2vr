@@ -296,7 +296,8 @@ void VR::ProcessInput()
     m_LeftHandPistolActive.store(leftHeldPistol, std::memory_order_release);
     const bool nativeDualReload = m_DualPistolsNativeReloadFallbackEnabled && (nativeDualPistols || leftHeldPistol);
     nativeDualReloadState = nativeDualReload ? 1u : 0u;
-    const bool dualPistolsActive = m_DualPistolsIndependentHandsEnabled && !m_MouseModeEnabled && nativeDualPistols;
+    const bool dualPistolsActive = m_DualPistolsIndependentHandsEnabled && !m_MouseModeEnabled && nativeDualPistols &&
+        m_ServerPhysicalInteractionVersion.load(std::memory_order_acquire) == 1u;
     m_DualPistolsActive.store(dualPistolsActive, std::memory_order_release);
 
     const bool jumpGestureActive = m_MotionGesturesEnabled && currentTime < m_JumpGestureHoldUntil;

@@ -2266,6 +2266,31 @@ namespace
 			return false;
 		}
 
+        bool activeMatches = false;
+        if (Hooks::m_Game->m_Offsets->GetActiveWeapon.valid)
+        {
+            using Active = void* (__thiscall*)(void*);
+#ifdef _MSC_VER
+            __try
+#endif
+            {
+                activeMatches = reinterpret_cast<Active>(Hooks::m_Game->m_Offsets->GetActiveWeapon.address)(ownerPlayer) == pending.sourceWeapon;
+            }
+#ifdef _MSC_VER
+            __except (EXCEPTION_EXECUTE_HANDLER) { activeMatches = false; }
+#endif
+        }
+        const std::int64_t dropAge = static_cast<std::int64_t>(player.manualThrowLastTick) - pending.releaseTick;
+        if (!l4d2vr_grip::MayCommitDrop(ManualEmptyHandsPlaceholderOwnerIsLiveSurvivor(ownerPlayer),
+            pending.owner == ownerPlayer, ManualThrowReadEntityVtable(pending.sourceWeapon) == pending.sourceWeaponVtable,
+            activeMatches, dropAge))
+        {
+            Game::logMsg("[VR][GripDrop] canceled stale server drop player=%d source=%p activeMatch=%d age=%lld",
+                playerIndex, pending.sourceWeapon, activeMatches ? 1 : 0, static_cast<long long>(dropAge));
+            pending = {};
+            return false;
+        }
+
 		if (pending.pistolDropHand != 0u &&
 			pending.weaponId == static_cast<int>(C_WeaponCSBase::WeaponID::PISTOL))
 		{
