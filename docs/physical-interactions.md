@@ -59,6 +59,14 @@ Manual pump movement uses a closed rest pose rebased onto the current gun;
 moving the pump hand does not steer the gun's aim. Native automatic pump
 sounds are muted, while the sound from an actual manual stroke is allowed.
 
+Grip pickup and release take priority over a simultaneous Object Pull packet,
+including the controller pose associated with the grip action. Object Pull
+and transient grip actions preserve the current reload gate for the same
+weapon, rather than treating a missing reload impulse as permission to reload.
+A different player entity starts a fresh reload command sequence. Controller
+profile validation covers all default bindings and the optional Quest preset;
+Knuckles and Cosmos keep analog turning without undeclared legacy turn actions.
+
 For a headset test, start with both grips released, then grip each gun. Fire
 with each trigger and check its aim. Release one grip, confirm that a world
 pistol falls at that hand and the other pistol stays held, then grip the

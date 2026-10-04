@@ -2065,6 +2065,7 @@ int Hooks::dReadUsercmd(void* buf, CUserCmd* move, CUserCmd* from)
 		move->upmove = 0;
 
 		constexpr int kIN_USE = (1 << 5);
+        const uint8_t incomingInteractionImpulse = move->impulse;
 		const bool gripPickupCommand = move->impulse == l4d2vr_grip::kPickupImpulse;
         const bool gripReleaseCommand = move->impulse == l4d2vr_grip::kReleaseImpulse;
         const bool blockPhysicalNativeReload = move->impulse == l4d2vr_grip::kBlockNativeReloadImpulse;
@@ -2147,7 +2148,9 @@ int Hooks::dReadUsercmd(void* buf, CUserCmd* move, CUserCmd* from)
         if (vrPlayerState)
             vrPlayerState->physicalReloadLedger.Observe(move->command_number,
                 reinterpret_cast<uintptr_t>(serverWeapon), blockPhysicalNativeReload &&
-                l4d2vr_calibration::IsFirearm(serverWeaponId));
+                l4d2vr_calibration::IsFirearm(serverWeaponId),
+                l4d2vr_wire::KeepNativeReloadGate(incomingInteractionImpulse),
+                reinterpret_cast<uintptr_t>(m_Game->m_CurrentUsercmdPlayer));
 		// A remote player's command must not consume the host's queued reload.
 		const int localAmmoPlayerIndex = m_Game->m_EngineClient
 			? m_Game->m_EngineClient->GetLocalPlayer() : -1;
@@ -2470,7 +2473,7 @@ int Hooks::dWriteUsercmd(void* buf, CUserCmd* to, CUserCmd* from)
 	int objectPullTargetEntityIndex = 0;
 	VR::ObjectPullTargetHint objectPullTargetHint =
 		VR::ObjectPullTargetHint::None;
-	const bool hasObjectPullCommand = m_VR->GetObjectPullUsercmdData(
+	const bool objectPullPayloadAvailable = m_VR->GetObjectPullUsercmdData(
 		originalCommandNum,
 		objectPullCommand,
 		objectPullPosition,
@@ -2478,6 +2481,8 @@ int Hooks::dWriteUsercmd(void* buf, CUserCmd* to, CUserCmd* from)
 		objectPullOverridePose,
 		objectPullTargetEntityIndex,
 		objectPullTargetHint);
+    const bool hasObjectPullCommand = l4d2vr_wire::UseObjectPullPayload(objectPullPayloadAvailable, originalImpulse);
+    if (!hasObjectPullCommand) objectPullOverridePose = false;
 
 	Vector controllerPos{};
 	QAngle controllerAngles{};

@@ -35,4 +35,15 @@ int main()
     Check(local.Blocks(20u) && !local.Blocks(10u), "Changing weapons must release the old weapon's reload gate");
     local.Observe(103, 0u, true);
     Check(!local.Blocks(20u) && !local.Blocks(0u), "Empty inventory must not retain a reload gate");
+    local.Observe(104, 20u, true, false, 1u);
+    local.Observe(105, 20u, false, true, 1u);
+    Check(local.Blocks(20u), "A remote pull or grip action must not silently permit automatic reload");
+    local.Observe(106, 30u, false, true, 1u);
+    Check(!local.Blocks(20u) && !local.Blocks(30u), "A transient action on a new weapon must not inherit another weapon's gate");
+    local.Observe(107, 30u, true, false, 1u);
+    local.Observe(1, 40u, true, false, 2u);
+    Check(local.Blocks(40u) && !local.Blocks(30u), "A replaced player must get a new command sequence and ownership");
+    local.Observe(2, 40u, false, false, 2u);
+    local.Observe(1, 40u, true, false, 2u);
+    Check(!local.Blocks(40u), "Backup commands from the current player must still be rejected");
 }

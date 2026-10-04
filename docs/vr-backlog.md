@@ -30,6 +30,12 @@ Related: [native hands #406](https://github.com/keyou91/l4d2vr/issues/406),
 
 Priority: high. Right-grip release did not drop weapons in the earlier prototype.
 
+October 4 headset feedback confirms grip release drops weapons in `cd6e3a9`.
+Table pickup, drop placement, free-hand orientation, ammo placement and reload
+timing produced additional failures. `51239cf` addresses those paths but still
+needs headset verification. Later offline checks protect grip packets from
+Object Pull conflicts and retain per-player reload ownership across them.
+
 - Trace contact pickup and the client/server drop request through native weapon
   ownership. Distinguish close-range grip pickup from remote Grip Pull.
 - Holding grip near a reachable weapon must pick it up. Releasing grip must
