@@ -1252,6 +1252,9 @@ void VR::ParseConfigFile()
         m_VrHandsLeftPoseRotationOffsetDeg = clampVector(getVector3("VrHandsLeftPoseRotationOffsetDeg", m_VrHandsLeftPoseRotationOffsetDeg), -180.0f, 180.0f);
         m_VrHandsRightPoseOffsetMeters = clampVector(getVector3("VrHandsRightPoseOffsetMeters", m_VrHandsRightPoseOffsetMeters), -1.0f, 1.0f);
         m_VrHandsRightPoseRotationOffsetDeg = clampVector(getVector3("VrHandsRightPoseRotationOffsetDeg", m_VrHandsRightPoseRotationOffsetDeg), -180.0f, 180.0f);
+        const Vector mirroredFreeOffset(-m_VrHandsLeftPoseOffsetMeters.x, m_VrHandsLeftPoseOffsetMeters.y, m_VrHandsLeftPoseOffsetMeters.z);
+        m_VrHandsRightFreePoseOffsetMeters = clampVector(getVector3("VrHandsRightFreePoseOffsetMeters", mirroredFreeOffset), -1.0f, 1.0f);
+        m_VrHandsRightFreePoseRotationOffsetDeg = clampVector(getVector3("VrHandsRightFreePoseRotationOffsetDeg", m_VrHandsLeftPoseRotationOffsetDeg), -180.0f, 180.0f);
         m_VrHandsLeftHandedLeftPoseOffsetMeters = clampVector(
             getVector3("VrHandsLeftHandedLeftPoseOffsetMeters", m_VrHandsLeftHandedLeftPoseOffsetMeters),
             -1.0f,

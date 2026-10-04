@@ -25,4 +25,14 @@ int main()
     Check(ChamberRoundsAfterEject(1) == 1, "Removing a magazine must preserve the last existing chambered round");
     Check(ChamberRoundsAfterEject(15) == 1, "A tactical reload must preserve exactly one existing round");
     Check(ChamberRoundsAfterEject(30) == 1, "Clip capacity must not increase the retained chamber count");
+    l4d2vr_magazine::NativeReloadLedger local, teammate;
+    local.Observe(100, 10u, true);
+    Check(local.Blocks(10u) && !teammate.Blocks(10u), "Physical reload suppression belongs only to its sender");
+    local.Observe(101, 10u, false);
+    local.Observe(100, 10u, true);
+    Check(!local.Blocks(10u), "An older backup command must not cancel an authorized reload");
+    local.Observe(102, 20u, true);
+    Check(local.Blocks(20u) && !local.Blocks(10u), "Changing weapons must release the old weapon's reload gate");
+    local.Observe(103, 0u, true);
+    Check(!local.Blocks(20u) && !local.Blocks(0u), "Empty inventory must not retain a reload gate");
 }

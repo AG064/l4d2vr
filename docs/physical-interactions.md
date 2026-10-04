@@ -42,6 +42,23 @@ First-person bone retargeting does not yet separate remote world-model
 pistols. Body inventory follows tracked head position and yaw; full body IK
 and character-specific avatar fitting remain separate work.
 
+Grip release places the item at the tracked hand with no throwing impulse.
+Trigger-release throwing remains separate. Grip pickup uses nearby native
+item selection with surface contact and controller aim on the server.
+Physical reloads send a per-player reload gate; validated gun and shotgun
+Reload hooks prevent the native automatic reload while the physical system
+owns it. The gate is lifted for its explicit backend reload, and native dual
+reload remains available. Both client and server need this build.
+
+Free right gloves use the mirrored left glove calibration by default, rather
+than the held viewmodel hand calibration. Advanced overrides are
+`VrHandsRightFreePoseOffsetMeters` and `VrHandsRightFreePoseRotationOffsetDeg`.
+Held ammo uses the glove's rotation convention and palm center. An observed
+empty chamber stays empty until its required manual bolt cycle is completed.
+Manual pump movement uses a closed rest pose rebased onto the current gun;
+moving the pump hand does not steer the gun's aim. Native automatic pump
+sounds are muted, while the sound from an actual manual stroke is allowed.
+
 For a headset test, start with both grips released, then grip each gun. Fire
 with each trigger and check its aim. Release one grip, confirm that a world
 pistol falls at that hand and the other pistol stays held, then grip the

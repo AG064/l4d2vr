@@ -1766,6 +1766,7 @@ bool __fastcall Hooks::dCreateMove(void* ecx, void* edx, float flInputSampleTime
             if ((leftPickup & l4d2vr_physical::PickupIntent::RequestUse) != 0u)
             {
                 cmd->buttons |= 1u << 5;
+                cmd->impulse = l4d2vr_grip::kPickupImpulse;
                 pistolInteractionHand = l4d2vr_dual::Hand::Left;
                 s_pistolOwnership.PickupRequested(l4d2vr_dual::Hand::Left);
                 Game::logMsg("[VR][PistolPickup] left contact requested cmd=%d", cmd->command_number);
@@ -1789,6 +1790,8 @@ bool __fastcall Hooks::dCreateMove(void* ecx, void* edx, float flInputSampleTime
             if ((pickupResult & l4d2vr_physical::PickupIntent::RequestUse) != 0u)
             {
                 cmd->buttons |= 1u << 5; // Native, server-validated IN_USE pickup.
+                cmd->impulse = l4d2vr_grip::kPickupImpulse;
+                pistolInteractionHand = l4d2vr_dual::Hand::Right;
                 if (pistolGripMode) s_pistolOwnership.PickupRequested(l4d2vr_dual::Hand::Right);
                 Game::logMsg("[VR][GripPickup] contact pickup requested cmd=%d", cmd->command_number);
             }
@@ -1908,7 +1911,9 @@ bool __fastcall Hooks::dCreateMove(void* ecx, void* edx, float flInputSampleTime
 						const uint32_t encodedWeaponId = pistolDropHand == l4d2vr_dual::Hand::Left
                             ? l4d2vr_pistol::kLeftDropMarker : pistolDropHand == l4d2vr_dual::Hand::Right
                             ? l4d2vr_pistol::kRightDropMarker : static_cast<uint32_t>(activeWeaponId + 1);
-						if (pistolDropHand != l4d2vr_dual::Hand::None) pistolInteractionHand = pistolDropHand;
+                        pistolInteractionHand = pistolDropHand != l4d2vr_dual::Hand::None
+                            ? pistolDropHand : l4d2vr_dual::Hand::Right;
+                        cmd->impulse = l4d2vr_grip::kReleaseImpulse;
 						carryButtons |= (encodedWeaponId & 0x3Fu) << kManualCarryThrowWeaponShift;
 						Game::logMsg("[VR][GripDrop] client release cmd=%d weaponId=%d", cmd->command_number, activeWeaponId);
 					}
@@ -2053,6 +2058,15 @@ bool __fastcall Hooks::dCreateMove(void* ecx, void* edx, float flInputSampleTime
 		m_Game,
 		cmd->command_number,
 		manualThrowPoseRelevant);
+
+    if (m_VR && routingPistol && cmd->impulse == 0 &&
+        m_VR->m_MagazineInteractionEnabled && m_VR->m_MagazineInteractionSuppressEmptyClipAutoReload &&
+        (m_VR->m_VrHandsEnabled || m_VR->m_NativeViewmodelHandsOnly) &&
+        !m_VR->IsMagazineInteractionReloadCommandActive() &&
+        (m_VR->m_DualPistolNativeReloadState.load(std::memory_order_acquire) & 1u) == 0u &&
+        !m_VR->m_RenderPlayerIncap.load(std::memory_order_acquire) &&
+        l4d2vr_calibration::IsFirearm(static_cast<int>(routingPistol->GetWeaponID())))
+        cmd->impulse = l4d2vr_grip::kBlockNativeReloadImpulse;
 
 	if (m_Game && m_VR)
 		m_Game->PublishLocalVRPose(m_VR, localPlayerForAutoActions);

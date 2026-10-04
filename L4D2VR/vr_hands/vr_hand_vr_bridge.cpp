@@ -933,6 +933,16 @@ namespace
         if (!vr)
             return controllerWorld;
 
+        if (vr->m_VrHandsEnabled)
+        {
+            // Use the glove renderer's GLB Euler convention, not Source's
+            // pitch/yaw/roll convention. Remove model scale from the anchor.
+            return VrHandMath::BuildControllerWorld(MagazineInteractionMatrixOrigin(controllerWorld),
+                const_cast<VR*>(vr)->GetLeftControllerAbsAngle(), vr->m_VRScale,
+                1.0f / std::max(0.001f, vr->m_VRScale), vr->m_VrHandsLeftPoseOffsetMeters,
+                vr->m_VrHandsLeftPoseRotationOffsetDeg);
+        }
+
         const VrHandMatrix4 handLocal = MagazineInteractionBuildLocalTransform(
             vr->m_VRScale,
             vr->m_VrHandsEnabled ? vr->m_VrHandsLeftPoseOffsetMeters : vr->m_NativeViewmodelLeftHandPoseOffsetMeters,
@@ -953,7 +963,7 @@ namespace
     {
         const float scale = vr ? vr->m_VRScale : 1.0f;
         Vector palmLocalMeters(0.0f, 0.0f, 0.07f);
-        if (vr)
+        if (vr && !vr->m_VrHandsEnabled)
             palmLocalMeters += vr->m_MagazineInteractionFreshMagazineWristAnchorOffsetMeters;
         return MagazineInteractionMatrixOrigin(nativeLeftHandWorld) +
             MagazineInteractionMatrixLocalVectorToWorld(
@@ -1682,6 +1692,7 @@ namespace
         const MagazineInteractionBoxSnapshot& magazineBox)
     {
         Vector anchorLocal = MagazineInteractionBoxCenterLocal(magazineBox);
+        if (vr && vr->m_VrHandsEnabled) return anchorLocal;
         const Vector freshHalf = MagazineInteractionFreshMagazineHalfExtentsSourceUnits(vr);
         const float configuredHeight = freshHalf.z * 2.0f;
         const float fallbackHeight = std::max(0.0f, magazineBox.maxs.z - magazineBox.mins.z);
@@ -4843,6 +4854,14 @@ bool VR::UpdateMagazineInteraction(
         activeWeapon,
         activeWeaponId,
         activeClip);
+    const uintptr_t clipWeapon = hasActiveWeapon ? reinterpret_cast<uintptr_t>(activeWeapon) : 0u;
+    if (clipWeapon != m_PhysicalReloadClipWeapon)
+    {
+        m_PhysicalReloadClipWeapon = clipWeapon;
+        m_PhysicalReloadObservedEmpty = false;
+    }
+    if (hasActiveWeapon && activeClip == 0 && m_MagazineInteractionSuppressEmptyClipAutoReload)
+        m_PhysicalReloadObservedEmpty = true;
     m_MagazineInteractionCurrentWeaponId.store(
         hasActiveWeapon ? static_cast<int>(activeWeaponId) : 0,
         std::memory_order_relaxed);
@@ -5395,8 +5414,15 @@ bool VR::UpdateMagazineInteraction(
             return;
 
         MagazineInteractionBoxSnapshot box{};
-        if (!getFreshBoltBoxForActiveViewmodel(box))
-            return;
+        const bool manualPump = m_ManualPumpEnabled &&
+            MagazineInteractionWeaponUsesSinglePumpSound(activeWeaponId) &&
+            m_ManualPumpClosedBoltValid && m_ManualPumpClosedBoltWeapon == reinterpret_cast<uintptr_t>(activeWeapon);
+        if (manualPump)
+        {
+            VrHandMatrix4 rebasedWorld{};
+            if (!MagazineInteractionRebaseBoxToCurrentViewmodelModelBasis(this, m_ManualPumpClosedBoltBox, box, rebasedWorld)) return;
+        }
+        else if (!getFreshBoltBoxForActiveViewmodel(box)) return;
 
         const VrHandMatrix4 boxWorld = MagazineInteractionBuildBoxWorld(box);
         if (!MagazineInteractionMatrixLooksRenderable(boxWorld))
@@ -5551,6 +5577,7 @@ bool VR::UpdateMagazineInteraction(
 
     auto completeBoltStage = [&](const char* reason, bool suppressLeftInputUntilRelease)
     {
+        m_PhysicalReloadObservedEmpty = false;
         const bool manualPump = m_ManualPumpEnabled &&
             MagazineInteractionWeaponUsesSinglePumpSound(static_cast<C_WeaponCSBase::WeaponID>(m_MagazineInteractionWeaponId));
         if (manualPump)
@@ -6597,7 +6624,7 @@ bool VR::UpdateMagazineInteraction(
         // Capture this before the interaction mutates the client/server clip.
         // The chamber state remains authoritative for the eventual bolt stage,
         // even when empty-clip auto-reload suppression is disabled.
-        m_MagazineInteractionChamberEmpty = activeClip <= 0;
+        m_MagazineInteractionChamberEmpty = m_PhysicalReloadObservedEmpty || activeClip <= 0;
         m_MagazineInteractionServerClipSettlementActive =
             !m_MagazineInteractionShotgunShellMode &&
             activeDetachableServerClipSettlementAvailable;
@@ -6617,7 +6644,8 @@ bool VR::UpdateMagazineInteraction(
         m_MagazineInteractionWeaponId = static_cast<int>(activeWeaponId);
         m_MagazineInteractionWeaponEntityIndex =
             MagazineInteractionFindClientEntityIndex(m_Game, activeWeapon);
-        m_MagazineInteractionStartClip = activeClip;
+        m_MagazineInteractionStartClip = m_PhysicalReloadObservedEmpty &&
+            !MagazineInteractionWeaponUsesShotgunShells(activeWeaponId) ? 0 : activeClip;
         m_MagazineInteractionMagazineBoneIndex = box.boneIndex;
         m_MagazineInteractionViewmodelEntityIndex = box.entityIndex;
         m_MagazineInteractionMagazineModelName = box.modelName;
@@ -7836,9 +7864,9 @@ bool VR::UpdateMagazineInteraction(
         {
             beginMagazineInteractionSession(box);
             m_MagazineInteractionState = MagazineInteractionManualState::WaitingForFreshMagazine;
-            m_MagazineInteractionChamberEmpty = activeClip <= 0;
+            m_MagazineInteractionChamberEmpty = m_PhysicalReloadObservedEmpty || activeClip <= 0;
             m_MagazineInteractionOneInChamber =
-                l4d2vr_magazine::ChamberRoundsAfterEject(activeClip) != 0;
+                    l4d2vr_magazine::ChamberRoundsAfterEject(m_PhysicalReloadObservedEmpty ? 0 : activeClip) != 0;
             m_MagazineInteractionLeftHandHolding = false;
             m_MagazineInteractionOldMagazinePulled = true;
             m_MagazineInteractionFreshPickupBasisValid = false;
@@ -8313,7 +8341,8 @@ bool VR::DrawVrHandsForEyeImmediate(
     const QAngle currentViewmodelAngles = GetRecommendedViewmodelAbsAngle();
     Vector rightHandPoseOffsetMeters = m_VrHandsRightPoseOffsetMeters;
     Vector rightHandPoseRotationOffsetDeg = m_VrHandsRightPoseRotationOffsetDeg;
-    const bool twoHandedGripPoseActive = IsVrHandsTwoHandedGripPoseActive();
+    const bool twoHandedGripPoseActive = IsVrHandsTwoHandedGripPoseActive() &&
+        !(m_ManualPumpEnabled && m_ManualPumpBlockingFire.load(std::memory_order_acquire));
     Vector leftHandPoseOffsetMeters = twoHandedGripPoseActive
         ? Vector(0.0f, 0.0f, 0.0f)
         : m_VrHandsLeftPoseOffsetMeters;
@@ -8323,6 +8352,11 @@ bool VR::DrawVrHandsForEyeImmediate(
     const bool vrHandsRightUseViewmodelPose =
         m_VrHandsRightUseViewmodelPose && !(emptyHandsPlaceholderActive && m_GripReleaseDropEnabled) &&
         m_PistolOwnershipMask.load(std::memory_order_acquire) != 2u;
+    if (!vrHandsRightUseViewmodelPose)
+    {
+        rightHandPoseOffsetMeters = m_VrHandsRightFreePoseOffsetMeters;
+        rightHandPoseRotationOffsetDeg = m_VrHandsRightFreePoseRotationOffsetDeg;
+    }
     if (m_LeftHanded)
     {
         // Gameplay-right is the physical left/gun hand after the left-handed pose swap.
@@ -8969,7 +9003,7 @@ bool VR::CaptureMagazineInteractionSound(int entityIndex, const char* sample, fl
     {
         if (MagazineInteractionSoundLooksShotgunFire(sample))
             return false;
-        if (MagazineInteractionSoundLooksShotgunPump(sample))
+        if (MagazineInteractionSoundLooksShotgunPump(sample) && !m_ManualPumpEnabled)
             return false;
     }
 
@@ -8995,9 +9029,10 @@ bool VR::CaptureMagazineInteractionSound(int entityIndex, const char* sample, fl
         nativeReloadSuppressed;
     const bool shotgunPhysicalSoundState =
         m_MagazineInteractionShotgunShellMode && (waitingForInsertTail || waitingForBoltAction);
+    const bool manualPumpSound = m_ManualPumpEnabled && MagazineInteractionSoundLooksShotgunPump(sample);
     if (!sample || !*sample || !m_Game ||
-        (!m_MagazineInteractionReloadTriggered && !shotgunPhysicalSoundState && !nativeReloadSuppressed) ||
-        !suppressingNativeReload)
+        (!m_MagazineInteractionReloadTriggered && !shotgunPhysicalSoundState && !nativeReloadSuppressed && !manualPumpSound) ||
+        (!suppressingNativeReload && !manualPumpSound))
     {
         return false;
     }
@@ -9017,8 +9052,7 @@ bool VR::CaptureMagazineInteractionSound(int entityIndex, const char* sample, fl
         (fromConsoleOrWorld || entityIndex == localPlayerIndex || fromActiveWeapon) &&
         MagazineInteractionSoundLooksWeaponRelated(sample);
     const bool fromShotgunReloadPath =
-        m_MagazineInteractionShotgunShellMode &&
-        MagazineInteractionSoundLooksWeaponRelated(sample);
+        m_MagazineInteractionShotgunShellMode && fromLocalWeaponPath;
     if (!fromViewmodel &&
         !fromLocalWeaponPath &&
         !fromShotgunReloadPath &&
@@ -9038,6 +9072,7 @@ bool VR::CaptureMagazineInteractionSound(int entityIndex, const char* sample, fl
             sample);
         return false;
     }
+
     if (fromConsoleOrWorld && MagazineInteractionShouldLetSyntheticSoundPlay(
         m_MagazineInteractionSyntheticClipInSample,
         m_MagazineInteractionSyntheticClipInStarted,
@@ -9070,6 +9105,13 @@ bool VR::CaptureMagazineInteractionSound(int entityIndex, const char* sample, fl
             "[VR][MagazineInteraction][Audio] let synthetic bolt-forward play sample=%s",
             sample);
         return false;
+    }
+
+    if (m_ManualPumpEnabled && MagazineInteractionSoundLooksShotgunPump(sample) &&
+        (fromViewmodel || fromLocalWeaponPath))
+    {
+        Game::logMsg("[VR][ManualPump] suppressed native automatic pump sound sample=%s", sample);
+        return true;
     }
 
     const bool allowVisibleShotgunNativeReloadSound =

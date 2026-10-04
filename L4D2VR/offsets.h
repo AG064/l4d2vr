@@ -152,6 +152,14 @@ public:
         "55 8B EC 56 8B F1 80 BE DD 17 00 00 00 75 07 32 C0 5E 5D C2 04 00 80 7D 08 00 75 1C 80 BE 4D 14 00 00 00",
         0, true
     };
+    // Reload is virtual slot 281 on the supported L4D2 server ABI. Verified
+    // against the installed gun/shotgun vtables; skip when signatures differ.
+    Offset PhysicalGunReload = { "server.dll", 0x003E8860,
+        "55 8B EC 83 EC 08 53 56 8B F1 E8 ? ? ? ? 8B D8 85 DB 0F 84 ? ? ? ? 8B 83 3C 2E 00 00", 0, true };
+    Offset PhysicalShotgunReload = { "server.dll", 0x003C2F80,
+        "55 8B EC 83 EC 08 56 57 8B F1 E8 ? ? ? ? 8B F8 85 FF 0F 84 ? ? ? ? 8B 87 B4 1C 00 00", 0, true };
+    Offset PhysicalGunOwner = { "server.dll", 0x003EC5D0,
+        "56 E8 ? ? ? ? 8B F0 85 F6 74 14 8B 06 8B 90 68 01 00 00 8B CE FF D2 84 C0 74 04 8B C6 5E C3", 0, true };
     // CBaseCombatCharacter::RemovePlayerItem and UTIL_Remove. Empty-hand mode
     // uses them to destroy only the hidden placeholder pistol before a pickup.
     Offset ManualEmptyHandsRemovePlayerItem = { "server.dll", 0x00045200,

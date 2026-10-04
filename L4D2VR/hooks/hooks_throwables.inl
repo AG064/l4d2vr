@@ -2409,7 +2409,7 @@ namespace
 			: consumed.sourceWeapon;
 		const bool applied = ManualCarryThrowTeleportDroppedEntity(
 			droppedEntity,
-			consumed);
+			consumed, consumed.gripRelease);
 		if (applied)
 			ManualCarryImpactArm(droppedEntity, consumed);
 		Game::logMsg(
@@ -4132,6 +4132,40 @@ namespace
 	}
 
 
+}
+
+static bool PhysicalNativeReloadIsBlocked(void* weapon)
+{
+    Game* game = Hooks::m_Game;
+    if (!game || !weapon || !game->m_Offsets || !game->m_Offsets->PhysicalGunOwner.valid ||
+        !game->m_Offsets->CBaseEntity_entindex.valid) return false;
+#ifdef _MSC_VER
+    __try
+#endif
+    {
+        using Owner = void* (__thiscall*)(void*);
+        using Index = int(__thiscall*)(void*);
+        void* owner = reinterpret_cast<Owner>(game->m_Offsets->PhysicalGunOwner.address)(weapon);
+        if (!owner) return false;
+        const int index = reinterpret_cast<Index>(game->m_Offsets->CBaseEntity_entindex.address)(owner);
+        if (!game->IsValidPlayerIndex(index)) return false;
+        const Player& player = game->m_PlayersVRInfo[index];
+        return player.isUsingVR && player.physicalReloadLedger.Blocks(reinterpret_cast<uintptr_t>(weapon));
+    }
+#ifdef _MSC_VER
+    __except (EXCEPTION_EXECUTE_HANDLER) { return false; }
+#endif
+}
+
+bool __fastcall Hooks::dPhysicalGunReload(void* ecx, void* edx)
+{
+    if (PhysicalNativeReloadIsBlocked(ecx)) return false;
+    return hkPhysicalGunReload.fOriginal(ecx);
+}
+bool __fastcall Hooks::dPhysicalShotgunReload(void* ecx, void* edx)
+{
+    if (PhysicalNativeReloadIsBlocked(ecx)) return false;
+    return hkPhysicalShotgunReload.fOriginal(ecx);
 }
 
 void* __fastcall Hooks::dManualCarryCreatePhysicsProp(void* ecx, void* edx)

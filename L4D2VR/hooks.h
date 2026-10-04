@@ -102,6 +102,7 @@ typedef void(__thiscall* tDoMeleeSwing)(void* thisptr);
 typedef void(__thiscall* tStartMeleeSwing)(void* thisptr, void* player, bool a3);
 typedef int(__thiscall* tPrimaryAttack)(void* thisptr);
 typedef void(__thiscall* tItemPostFrame)(void* thisptr);
+typedef bool(__thiscall* tPhysicalReload)(void* thisptr);
 typedef void* (__cdecl* tThrowableProjectileCreate)(const Vector& position, const QAngle& angles, const Vector& velocity, const Vector& angularVelocity, void* owner);
 typedef void* (__cdecl* tManualCarryCreateEntityByName)(const char* className, int forcedEdictIndex, bool runScriptHook);
 typedef void* (__thiscall* tManualCarryCreatePhysicsProp)(void* thisptr);
@@ -176,6 +177,8 @@ public:
 	static inline Hook<tThrowableProjectileCreate> hkPipeBombProjectileCreate;
 	static inline Hook<tThrowableProjectileCreate> hkVomitJarProjectileCreate;
 	static inline Hook<tManualCarryCreateEntityByName> hkManualCarryCreateEntityByName;
+    static inline Hook<tPhysicalReload> hkPhysicalGunReload;
+    static inline Hook<tPhysicalReload> hkPhysicalShotgunReload;
 	static inline Hook<tManualCarryCreatePhysicsProp> hkManualCarryCreatePhysicsProp;
 	static inline Hook<tCBaseEntityVPhysicsCollision> hkCBaseEntityVPhysicsCollision;
 	static inline Hook<tGetPrimaryAttackActivity> hkGetPrimaryAttackActivity;
@@ -268,6 +271,8 @@ public:
 	static void* __cdecl dPipeBombProjectileCreate(const Vector& position, const QAngle& angles, const Vector& velocity, const Vector& angularVelocity, void* owner);
 	static void* __cdecl dVomitJarProjectileCreate(const Vector& position, const QAngle& angles, const Vector& velocity, const Vector& angularVelocity, void* owner);
 	static void* __cdecl dManualCarryCreateEntityByName(const char* className, int forcedEdictIndex, bool runScriptHook);
+    static bool __fastcall dPhysicalGunReload(void* ecx, void* edx);
+    static bool __fastcall dPhysicalShotgunReload(void* ecx, void* edx);
 	static void* __fastcall dManualCarryCreatePhysicsProp(void* ecx, void* edx);
 	static void __fastcall dCBaseEntityVPhysicsCollision(void* ecx, void* edx, int index, void* collisionEvent);
 	static int __fastcall dGetPrimaryAttackActivity(void* ecx, void* edx, void* meleeInfo);

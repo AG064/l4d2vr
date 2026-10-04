@@ -4,6 +4,20 @@
 
 namespace l4d2vr_magazine
 {
+    class NativeReloadLedger
+    {
+    public:
+        void Observe(int command, std::uintptr_t weapon, bool block)
+        {
+            if (command <= m_Command) return;
+            m_Command = command;
+            m_Weapon = block ? weapon : 0u;
+        }
+        bool Blocks(std::uintptr_t weapon) const { return weapon != 0u && m_Weapon == weapon; }
+    private:
+        int m_Command = 0;
+        std::uintptr_t m_Weapon = 0u;
+    };
     inline bool IsLocalPlayerCommand(int playerIndex, int localPlayerIndex)
     {
         return playerIndex > 0 && localPlayerIndex > 0 && playerIndex == localPlayerIndex;

@@ -1762,6 +1762,10 @@ public:
 	Vector m_VrHandsLeftPoseRotationOffsetDeg = { 0.0f, 0.0f, 0.0f };
 	Vector m_VrHandsRightPoseOffsetMeters = { 0.0f, 0.0f, 0.0f };
 	Vector m_VrHandsRightPoseRotationOffsetDeg = { 0.0f, 0.0f, 0.0f };
+    Vector m_VrHandsRightFreePoseOffsetMeters{};
+    Vector m_VrHandsRightFreePoseRotationOffsetDeg{};
+    uintptr_t m_PhysicalReloadClipWeapon = 0u;
+    bool m_PhysicalReloadObservedEmpty = false;
 	// Left-handed mode uses gameplay-right for the physical left/gun hand and gameplay-left
 	// for the physical right/off hand. These offsets are named by physical hand.
 	Vector m_VrHandsLeftHandedLeftPoseOffsetMeters = { 0.0f, 0.0f, 0.0f };

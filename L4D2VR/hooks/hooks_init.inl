@@ -350,6 +350,8 @@ Hooks::Hooks(Game* game)
 	if (m_VR && m_VR->m_L4NNekoEnginePostLaunchEnabled &&
 		hkDrawScreenSpaceRectangle.pTarget)
 		hkDrawScreenSpaceRectangle.enableHook();
+    if (hkPhysicalGunReload.pTarget) hkPhysicalGunReload.enableHook();
+    if (hkPhysicalShotgunReload.pTarget) hkPhysicalShotgunReload.enableHook();
 	hkCreateMove.enableHook();
 	hkTestMeleeSwingCollisionClient.enableHook();
 	hkTestMeleeSwingCollisionServer.enableHook();
@@ -874,6 +876,13 @@ int Hooks::initSourceHooks()
 	}
 
 	hkCreateMove.createHook(clientModeVTable[27], dCreateMove);
+    if (m_Game->m_Offsets->PhysicalGunOwner.valid && m_Game->m_Offsets->CBaseEntity_entindex.valid)
+    {
+        if (m_Game->m_Offsets->PhysicalGunReload.valid)
+            hkPhysicalGunReload.createHook(reinterpret_cast<void*>(m_Game->m_Offsets->PhysicalGunReload.address), dPhysicalGunReload);
+        if (m_Game->m_Offsets->PhysicalShotgunReload.valid)
+            hkPhysicalShotgunReload.createHook(reinterpret_cast<void*>(m_Game->m_Offsets->PhysicalShotgunReload.address), dPhysicalShotgunReload);
+    }
 	return 1;
 }
 

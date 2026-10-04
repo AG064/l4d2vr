@@ -59,4 +59,12 @@ namespace l4d2vr_interaction
         return Finite(shell) && Finite(port) && std::isfinite(radius) && radius > 0.0f &&
             (shell - port).LengthSqr() <= radius * radius;
     }
+    inline float PointBoxDistance(const Vector& point, const Vector& mins, const Vector& maxs)
+    {
+        if (!Finite(point) || !Finite(mins) || !Finite(maxs) || mins.x > maxs.x || mins.y > maxs.y || mins.z > maxs.z)
+            return INFINITY;
+        const Vector closest(std::clamp(point.x, mins.x, maxs.x), std::clamp(point.y, mins.y, maxs.y),
+            std::clamp(point.z, mins.z, maxs.z));
+        return (point - closest).Length();
+    }
 }

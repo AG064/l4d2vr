@@ -23055,7 +23055,8 @@ namespace
             return false;
 
         const auto now = std::chrono::steady_clock::now();
-        return Hooks::m_VR->m_ServerUseControllerAimActive ||
+        return (Hooks::m_ServerCommandControllerAimOverride && Hooks::m_ServerCommandControllerAimReason == 8) ||
+            Hooks::m_VR->m_ServerUseControllerAimActive ||
             (Hooks::m_VR->m_ServerUseControllerAimUntil.time_since_epoch().count() != 0 &&
                 now <= Hooks::m_VR->m_ServerUseControllerAimUntil);
     }
@@ -23524,7 +23525,9 @@ Server_BaseEntity* Hooks::dFindUseEntity(void* ecx, void* edx, float radius, flo
                 controllerAngles.x, controllerAngles.y, controllerAngles.z);
         }
         ScopedServerUseControllerAimOverride useAim(ecx, controllerOrigin, controllerAngles);
-        return rememberPistol(hkFindUseEntity.fOriginal(ecx, radius, dotLimit, defaultDotLimit, traceResult, extra));
+        const bool grip = m_ServerCommandControllerAimReason == 8;
+        return rememberPistol(hkFindUseEntity.fOriginal(ecx, grip ? 0.24f * m_VR->m_VRScale : radius,
+            grip ? -1.0f : dotLimit, grip ? -1.0f : defaultDotLimit, traceResult, extra));
     }
 
     return rememberPistol(hkFindUseEntity.fOriginal(ecx, radius, dotLimit, defaultDotLimit, traceResult, extra));
@@ -23627,9 +23630,25 @@ static bool GripPickupCandidateTouchesHand(Game* game, VR* vr, C_BaseEntity* can
             }
             if (!pistol) return false;
         }
-        const Vector delta = candidate->GetAbsOrigin() -
-            (left ? vr->GetLeftControllerAbsPos() : vr->GetRightControllerAbsPos());
-        const float distance = delta.Length();
+        const Vector hand = left ? vr->GetLeftControllerAbsPos() : vr->GetRightControllerAbsPos();
+        float distance = (candidate->GetAbsOrigin() - hand).Length();
+        void* collider = reinterpret_cast<IClientUnknown*>(candidate)->GetCollideable();
+        if (collider)
+        {
+            using BoundsFn = const Vector& (__thiscall*)(void*);
+            void** table = *reinterpret_cast<void***>(collider);
+            if (table && IsReadableMemoryRange(table, 3 * sizeof(void*)))
+            {
+                const Vector mins = reinterpret_cast<BoundsFn>(table[1])(collider);
+                const Vector maxs = reinterpret_cast<BoundsFn>(table[2])(collider);
+                Vector f{}, r{}, u{};
+                QAngle::AngleVectors(candidate->GetAbsAngles(), &f, &r, &u);
+                const Vector delta = hand - candidate->GetAbsOrigin();
+                const Vector local(DotProduct(delta, f), -DotProduct(delta, r), DotProduct(delta, u));
+                if ((maxs - mins).Length() < 128.0f)
+                    distance = l4d2vr_interaction::PointBoxDistance(local, mins, maxs);
+            }
+        }
         return std::isfinite(distance) && std::isfinite(vr->m_VRScale) &&
             vr->m_VRScale > 0.001f && distance <= 0.18f * vr->m_VRScale;
     }
@@ -23677,7 +23696,10 @@ C_BaseEntity* Hooks::dClientFindUseEntity(void* ecx, void* edx, float radius, fl
                 controllerAngles.x, controllerAngles.y, controllerAngles.z);
         }
         ScopedClientUseControllerAimOverride useAim(ecx, controllerOrigin, controllerAngles);
-        return publishGripContact(hkClientFindUseEntity.fOriginal(ecx, radius, dotLimit, defaultDotLimit, traceResult, extra));
+        const bool grip = (m_VR->m_WeaponGripInputState.load(std::memory_order_acquire) & 2u) != 0u ||
+            m_VR->m_PistolUseLeft.load(std::memory_order_acquire);
+        return publishGripContact(hkClientFindUseEntity.fOriginal(ecx, grip ? 0.24f * m_VR->m_VRScale : radius,
+            grip ? -1.0f : dotLimit, grip ? -1.0f : defaultDotLimit, traceResult, extra));
     }
 
     // No controller pose means no physical contact offer, even if Source's

@@ -2065,6 +2065,10 @@ int Hooks::dReadUsercmd(void* buf, CUserCmd* move, CUserCmd* from)
 		move->upmove = 0;
 
 		constexpr int kIN_USE = (1 << 5);
+		const bool gripPickupCommand = move->impulse == l4d2vr_grip::kPickupImpulse;
+        const bool gripReleaseCommand = move->impulse == l4d2vr_grip::kReleaseImpulse;
+        const bool blockPhysicalNativeReload = move->impulse == l4d2vr_grip::kBlockNativeReloadImpulse;
+        if (gripPickupCommand || gripReleaseCommand || blockPhysicalNativeReload) move->impulse = 0;
 		const uint8_t objectPullCommand = move->impulse;
 		if (objectPullCommand >= VR::kObjectPullWireBegin &&
 			objectPullCommand <= VR::kObjectPullWireCancel)
@@ -2140,6 +2144,10 @@ int Hooks::dReadUsercmd(void* buf, CUserCmd* move, CUserCmd* from)
 		Server_WeaponCSBase* serverWeapon = nullptr;
 		int serverWeaponId = static_cast<int>(C_WeaponCSBase::WeaponID::NONE);
 		TryGetServerCurrentWeapon(serverWeapon, serverWeaponId);
+        if (vrPlayerState)
+            vrPlayerState->physicalReloadLedger.Observe(move->command_number,
+                reinterpret_cast<uintptr_t>(serverWeapon), blockPhysicalNativeReload &&
+                l4d2vr_calibration::IsFirearm(serverWeaponId));
 		// A remote player's command must not consume the host's queued reload.
 		const int localAmmoPlayerIndex = m_Game->m_EngineClient
 			? m_Game->m_EngineClient->GetLocalPlayer() : -1;
@@ -2275,6 +2283,13 @@ int Hooks::dReadUsercmd(void* buf, CUserCmd* move, CUserCmd* from)
 					encodedCarryWeaponId,
 					move->tick_count,
 					true);
+                if (prepared && gripReleaseCommand)
+                {
+                    auto& pending = vrPlayerState->manualThrowPending;
+                    pending.gripRelease = true;
+                    pending.origin = vrPlayerState->controllerPos;
+                    pending.velocity = {}; pending.angularVelocity = {};
+                }
                 if (pistolDropHand != l4d2vr_dual::Hand::None)
                 {
                     vrPlayerState->pistolDropLastCommand = move->command_number;
@@ -2315,6 +2330,11 @@ int Hooks::dReadUsercmd(void* buf, CUserCmd* move, CUserCmd* from)
 				vrPlayerState->throwableAimWeaponId = serverWeaponId;
 		}
 
+        if (gripPickupCommand && (move->buttons & kIN_USE) != 0)
+        {
+            commandControllerAim = true;
+            commandControllerAimReason = 8;
+        }
 		if (IsCurrentServerPlayerUsingMountedWeapon())
 		{
 			commandControllerAim = true;

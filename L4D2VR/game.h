@@ -8,6 +8,7 @@ class C_WeaponCSBase;
 #include <string>
 #include <cstdarg>
 #include <Windows.h>
+#include "vr_magazine_policy.h"
 
 #include "vector.h"
 
@@ -56,6 +57,7 @@ struct ManualThrowPending
     bool inventoryDrop = false;
     bool inventoryDropExecuted = false;
     unsigned pistolDropHand = 0u;
+    bool gripRelease = false;
     int weaponId = 0;
     int releaseTick = 0;
     void* owner = nullptr;
@@ -130,6 +132,7 @@ struct Player
     bool hasPrevControllerPose = false;
     bool dualPistolShotPose = false;
     int pistolDropLastCommand = 0;
+    l4d2vr_magazine::NativeReloadLedger physicalReloadLedger;
 
     bool isMeleeing = false;
     bool isNewSwing = false;

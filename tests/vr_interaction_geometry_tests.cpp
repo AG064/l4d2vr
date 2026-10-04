@@ -43,6 +43,12 @@ int main()
     Check(ShellTouchesPort(Vector(0.0f,0.0f,0.0f),Vector(0.0f,0.0f,0.059f),0.06f),"A shell entering the loading port must be accepted");
     Check(!ShellTouchesPort(Vector(0.0f,0.0f,0.0f),Vector(0.0f,0.0f,0.061f),0.06f),"A shell outside the loading port must not add ammo");
     const float nan=std::numeric_limits<float>::quiet_NaN();
+    Check(PointBoxDistance(Vector(0.0f,0.0f,0.0f),Vector(-2.0f,-1.0f,-1.0f),Vector(2.0f,1.0f,1.0f))==0.0f,
+        "Touching an item's body must not require touching its origin");
+    Check(PointBoxDistance(Vector(3.0f,0.0f,0.0f),Vector(-2.0f,-1.0f,-1.0f),Vector(2.0f,1.0f,1.0f))==1.0f,
+        "Contact range must be measured from the item's surface");
+    Check(!std::isfinite(PointBoxDistance(head,Vector(1.0f,0.0f,0.0f),Vector(-1.0f,1.0f,1.0f))),
+        "Invalid item bounds must never offer grip pickup");
     Check(!LocalHandPosition(Vector(nan,0.0f,0.0f),head,forward,up,local),"Invalid tracking must not complete a stroke");
     Check(!ShellTouchesPort(head,head,nan),"Invalid port calibration must not load a shell");
 }

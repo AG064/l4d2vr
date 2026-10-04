@@ -3046,6 +3046,8 @@ namespace
         // An older workshop sample must not remove supported interaction
         // settings added by this DLL when the game starts.
         sampleKeys.insert("GripReleaseDropEnabled");
+        sampleKeys.insert("VrHandsRightFreePoseOffsetMeters");
+        sampleKeys.insert("VrHandsRightFreePoseRotationOffsetDeg");
         sampleKeys.insert("MagazineReleaseButtonRequired");
         sampleKeys.insert("BodyGripInventoryEnabled");
         sampleKeys.insert("ManualPumpEnabled");
