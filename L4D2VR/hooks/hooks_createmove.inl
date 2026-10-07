@@ -107,6 +107,7 @@ bool __fastcall Hooks::dCreateMove(void* ecx, void* edx, float flInputSampleTime
         s_weaponGripRelease.ObserveSession(session.gameplay, session.weapon);
         if (!session.gameplay)
         {
+            if (m_VR) m_VR->CancelMeleeMotion();
             s_gripPickup.Reset(); s_leftPistolPickup.Reset();
             s_pendingGripAdoption = 0u;
             s_pistolOwnership.CancelInteractions();
@@ -2077,6 +2078,15 @@ bool __fastcall Hooks::dCreateMove(void* ecx, void* edx, float flInputSampleTime
 	if (m_Game && m_VR)
 		m_Game->PublishLocalVRPose(m_VR, localPlayerForAutoActions);
 
+    if (m_VR)
+    {
+        const bool meleeEligible = gripSession.gameplay && routingPistol &&
+            routingPistol->GetWeaponID() == C_WeaponCSBase::WeaponID::MELEE &&
+            m_VR->m_EncodeVRUsercmd && !m_VR->m_ForceNonVRServerMovement &&
+            !m_VR->m_AdjustingViewmodel && !m_VR->m_AdjustingScope;
+        m_VR->RecordMeleeCommand(cmd->command_number, meleeEligible,
+            reinterpret_cast<uintptr_t>(localPlayerForAutoActions), reinterpret_cast<uintptr_t>(routingPistol));
+    }
 	s_lastButtons = cmd->buttons;
 
 	return result;

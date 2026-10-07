@@ -79,6 +79,29 @@ Before a queued inventory drop executes, the server rechecks the living owner,
 weapon identity, active inventory selection and bounded command age. A weapon
 switch or an expired request cancels the transaction before inventory changes.
 
+Physical melee uses the tracked weapon hand without an attack-button press on
+a VR-aware server. Detection removes HMD translation and includes wrist rotation
+as estimated weapon-tip motion. Rest arms the next swing; tracking loss, menus,
+incapacitation and weapon/player changes require resting again before damage.
+Each real input command retains its hand pose and swing state, including when
+it is sent again as a backup. Stale tracking samples cannot start a swing.
+
+The server selects the newest decoded pose in each packet and rejects commands
+already used for a collision sweep. Weapon changes and long command gaps rebase
+the sweep rather than tracing between unrelated poses. Collision calls still
+use the native melee damage path and its per-swing hit list. This retains native
+damage/gore handling, but blade alignment, hit feedback and multiplayer results
+need a headset test. This is a directional native melee sweep, not a complete
+rigid-body blade simulation. Very short gestures between network packets still
+need evaluation. With `VrHandsDebugLog`, `[VR][PhysicalMelee]` identifies the
+server player and command that started a traced swing.
+
+For melee testing, release the attack trigger, rest the weapon hand briefly,
+then try horizontal, overhead, straight and wrist-led swings. Walking with the
+hand still should not attack. Check the same zombie across one continuous swing,
+then rest and swing again. Repeat after a weapon swap, opening a menu, revival
+and a map change. Compare damage and gore on the host and a joining VR client.
+
 For a headset test, start with both grips released, then grip each gun. Fire
 with each trigger and check its aim. Release one grip, confirm that a world
 pistol falls at that hand and the other pistol stays held, then grip the

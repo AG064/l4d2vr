@@ -95,6 +95,11 @@ Implemented offline: another player's command cannot consume the host's queued
 manual-reload ammo update. This is separate from the remaining pose-replication
 checks below.
 
+Further offline changes retain physical melee pose and swing intent per command,
+detect wrist-led swings, remove walking velocity, and reject repeated collision
+commands. Sweep history is scoped to a living owner and melee weapon. Native
+collision/gore calls are retained; headset and two-client outcomes remain untested.
+
 - Verify the committed listen-server acknowledgement with two VR clients,
   including a late join, compatibility fallback and map change.
 - Check both hands and melee sweeps on the other client. Physical swings must

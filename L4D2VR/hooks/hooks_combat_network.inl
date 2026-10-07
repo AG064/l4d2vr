@@ -1592,6 +1592,8 @@ float __fastcall Hooks::dProcessUsercmds(void* ecx, void* edx, edict_t* player,
 	m_Game->m_CurrentUsercmdID = index;
 
 	const bool preOriginalHasValidPlayer = m_Game->IsValidPlayerIndex(index);
+    if (preOriginalHasValidPlayer)
+        m_Game->m_PlayersVRInfo[index].packetMeleeCommand = {};
 	if (m_VR && preOriginalHasValidPlayer)
 	{
 		const auto now = std::chrono::steady_clock::now();
@@ -1734,14 +1736,41 @@ float __fastcall Hooks::dProcessUsercmds(void* ecx, void* edx, edict_t* player,
 	// difference between accepted movement and the physical HMD movement.
 	FinalizePendingRoomscaleServerCmdFallback(pPlayer, index);
 
-	// ===== 你原有的“近战挥砍检测/追踪”逻辑，保持不变 =====
+    // Re-decoded backup commands must not repeat damage. Use the newest pose
+    // in this packet, independently of the order in which ReadUsercmd ran.
 	const bool hasValidPlayer = m_Game->IsValidPlayerIndex(index);
+    l4d2vr_physical::MeleeSweepHistory::Result meleeFrame = l4d2vr_physical::MeleeSweepHistory::Ignore;
+    Vector decodedControllerPosition{};
+    QAngle decodedControllerAngles{};
+    bool meleePoseEligible = false;
+    if (hasValidPlayer)
+    {
+        Player& meleePlayer = m_Game->m_PlayersVRInfo[index];
+        decodedControllerPosition = meleePlayer.controllerPos;
+        decodedControllerAngles = meleePlayer.controllerAngle;
+        const auto& sample = meleePlayer.packetMeleeCommand;
+        meleePoseEligible = !ignore && !paused && sample.valid && sample.Finite() &&
+            activeWeaponReadSucceeded && activeWeaponAfterUsercmd &&
+            ManualEmptyHandsPlaceholderOwnerIsLiveSurvivor(pPlayer) &&
+            activeWeaponAfterUsercmd->GetWeaponID() == C_WeaponCSBase::WeaponID::MELEE;
+        meleeFrame = meleePlayer.meleeSweepHistory.Accept(reinterpret_cast<uintptr_t>(pPlayer),
+            reinterpret_cast<uintptr_t>(activeWeaponAfterUsercmd), sample.command, meleePoseEligible);
+        if (meleeFrame != l4d2vr_physical::MeleeSweepHistory::Ignore)
+        {
+            meleePlayer.controllerPos = Vector(sample.position[0], sample.position[1], sample.position[2]);
+            meleePlayer.controllerAngle = QAngle(sample.angles[0], sample.angles[1], sample.angles[2]);
+        }
+        if (meleeFrame == l4d2vr_physical::MeleeSweepHistory::Rebase || !meleePoseEligible)
+        {
+            meleePlayer.hasPrevControllerPose = false;
+            meleePlayer.isNewSwing = true;
+        }
+    }
 
-	if (hasValidPlayer && m_Game->m_PlayersVRInfo[index].isUsingVR && m_Game->m_PlayersVRInfo[index].isMeleeing)
+	if (meleePoseEligible && meleeFrame == l4d2vr_physical::MeleeSweepHistory::Sweep &&
+        m_Game->m_PlayersVRInfo[index].packetMeleeCommand.swinging)
 	{
-		typedef Server_WeaponCSBase* (__thiscall* tGetActiveWep)(void* thisptr);
-		static tGetActiveWep oGetActiveWep = (tGetActiveWep)(m_Game->m_Offsets->GetActiveWeapon.address);
-		Server_WeaponCSBase* curWep = oGetActiveWep(pPlayer);
+		Server_WeaponCSBase* curWep = activeWeaponAfterUsercmd;
 
 		if (curWep)
 		{
@@ -1750,6 +1779,9 @@ float __fastcall Hooks::dProcessUsercmds(void* ecx, void* edx, edict_t* player,
 			{
 				if (m_Game->m_PlayersVRInfo[index].isNewSwing)
 				{
+					if (m_VR && m_VR->m_VrHandsDebugLog)
+                        Game::logMsg("[VR][PhysicalMelee] swing player=%d command=%d weapon=%p", index,
+                            m_Game->m_PlayersVRInfo[index].packetMeleeCommand.command, curWep);
 					m_Game->m_PlayersVRInfo[index].isNewSwing = false;
 					curWep->entitiesHitThisSwing = 0;
 				}
@@ -1802,7 +1834,9 @@ float __fastcall Hooks::dProcessUsercmds(void* ecx, void* edx, edict_t* player,
                 // A straight thrust/swing can translate without rotating the
                 // controller. Trace its swept origins through the native melee
                 // damage path, which retains per-swing hit limits and gore.
-                if (sweepSamples > 0)
+				if (sweepSamples > 0 && meleeWepInfo &&
+                    m_Game->m_Hooks->hkGetPrimaryAttackActivity.fOriginal &&
+                    m_Game->m_Hooks->hkTestMeleeSwingCollisionServer.fOriginal)
                 {
 					m_Game->m_Hooks->hkGetPrimaryAttackActivity.fOriginal(curWep, meleeWepInfo); // Needed to call TestMeleeSwingCollision
 
@@ -1837,20 +1871,25 @@ float __fastcall Hooks::dProcessUsercmds(void* ecx, void* edx, edict_t* player,
 			}
 		}
 	}
-	else if (hasValidPlayer)
+	else if (hasValidPlayer && meleeFrame != l4d2vr_physical::MeleeSweepHistory::Ignore)
 	{
 		m_Game->m_PlayersVRInfo[index].isNewSwing = true;
 	}
 
-	if (hasValidPlayer)
+	if (hasValidPlayer && meleeFrame != l4d2vr_physical::MeleeSweepHistory::Ignore)
 	{
         Player& previousPose = m_Game->m_PlayersVRInfo[index];
         previousPose.prevControllerAngle = previousPose.controllerAngle;
         previousPose.prevControllerPos = previousPose.controllerPos;
-        previousPose.hasPrevControllerPose = previousPose.isUsingVR &&
+        previousPose.hasPrevControllerPose = meleePoseEligible &&
             std::isfinite(previousPose.controllerPos.x) && std::isfinite(previousPose.controllerPos.y) &&
             std::isfinite(previousPose.controllerPos.z);
 	}
+    if (hasValidPlayer)
+    {
+        m_Game->m_PlayersVRInfo[index].controllerPos = decodedControllerPosition;
+        m_Game->m_PlayersVRInfo[index].controllerAngle = decodedControllerAngles;
+    }
 
 	if (m_VR && hasValidPlayer && m_Game->m_EngineClient && m_Game->m_Offsets->GetActiveWeapon.address)
 	{
@@ -2384,6 +2423,20 @@ int Hooks::dReadUsercmd(void* buf, CUserCmd* move, CUserCmd* from)
 		}
 	}
 
+    if (hasValidPlayer && move && move->command_number > 0)
+    {
+        Player& vrPlayer = m_Game->m_PlayersVRInfo[i];
+        if (move->command_number > vrPlayer.packetMeleeCommand.command)
+        {
+            l4d2vr_physical::MeleeCommand sample{};
+            sample.command = move->command_number;
+            sample.valid = vrPlayer.isUsingVR;
+            sample.swinging = vrPlayer.isUsingVR && vrPlayer.isMeleeing;
+            sample.position = { vrPlayer.controllerPos.x, vrPlayer.controllerPos.y, vrPlayer.controllerPos.z };
+            sample.angles = { vrPlayer.controllerAngle.x, vrPlayer.controllerAngle.y, vrPlayer.controllerAngle.z };
+            l4d2vr_physical::SelectNewestMeleeCommand(vrPlayer.packetMeleeCommand, sample);
+        }
+    }
 	// If the planar SetOrigin sweep hit a stair or another obstruction, route this
 	// displacement through Source's ordinary server movement for one command.
 	InjectPendingRoomscaleServerCmdFallback(i, move);
@@ -2486,6 +2539,8 @@ int Hooks::dWriteUsercmd(void* buf, CUserCmd* to, CUserCmd* from)
 
 	Vector controllerPos{};
 	QAngle controllerAngles{};
+    l4d2vr_physical::MeleeCommand meleeCommand{};
+    const bool meleePose = !hasObjectPullCommand && m_VR->GetMeleeCommand(originalCommandNum, meleeCommand);
     l4d2vr_dual::Hand dualHand = l4d2vr_dual::Hand::None;
     const bool pistolPose = !objectPullOverridePose &&
         m_VR->GetDualPistolCommandPose(originalCommandNum, controllerPos, controllerAngles, dualHand);
@@ -2500,6 +2555,11 @@ int Hooks::dWriteUsercmd(void* buf, CUserCmd* to, CUserCmd* from)
                 ? l4d2vr_dual::kLeftShotMarker : l4d2vr_dual::kRightShotMarker;
             to->buttons = static_cast<int>((static_cast<uint32_t>(to->buttons) & ~(0x3fu << 26)) | (word << 26));
         }
+    }
+    else if (meleePose)
+    {
+        controllerPos = Vector(meleeCommand.position[0], meleeCommand.position[1], meleeCommand.position[2]);
+        controllerAngles = QAngle(meleeCommand.angles[0], meleeCommand.angles[1], meleeCommand.angles[2]);
     }
     else if (objectPullOverridePose)
 	{
@@ -2539,7 +2599,7 @@ int Hooks::dWriteUsercmd(void* buf, CUserCmd* to, CUserCmd* from)
 		activeWeaponIsFirearm = activeWeapon &&
 			l4d2vr_calibration::IsFirearm(static_cast<int>(activeWeapon->GetWeaponID()));
 	}
-	if (m_VR->CanCalibrateBulletAim() &&
+	if (!meleePose && m_VR->CanCalibrateBulletAim() &&
 		l4d2vr_calibration::ShouldEncodeRay(primaryAttack, activeWeaponIsFirearm,
 			localUsingMountedWeapon, m_VR->m_MouseModeEnabled, m_VR->IsScopeActive(),
 			objectPullOverridePose, dualShotPose))
@@ -2592,7 +2652,7 @@ int Hooks::dWriteUsercmd(void* buf, CUserCmd* to, CUserCmd* from)
 	// Signal to the server that this CUserCmd has VR info. The controller pose above
 	// belongs to this exact command, including when Source retransmits it as backup.
 	to->tick_count *= -1;
-	if (to && !dualShotPose && (to->buttons & (1 << 0)) != 0 && m_Game && m_Game->m_EngineClient)
+	if (to && !meleePose && !dualShotPose && (to->buttons & (1 << 0)) != 0 && m_Game && m_Game->m_EngineClient)
 	{
 		const int lpIdx = m_Game->m_EngineClient->GetLocalPlayer();
 		C_BasePlayer* localPlayer = (lpIdx > 0) ? reinterpret_cast<C_BasePlayer*>(m_Game->GetClientEntity(lpIdx)) : nullptr;
@@ -2607,7 +2667,7 @@ int Hooks::dWriteUsercmd(void* buf, CUserCmd* to, CUserCmd* from)
 	int rollEncoding = (((int)controllerAngles.z + 180) / 2 * 10000000);
 	to->command_number += rollEncoding;
 
-	if (VectorLength(m_VR->m_RightControllerPose.TrackedDeviceVel) > 1.1f)
+	if (meleePose && !pistolPose && meleeCommand.swinging)
 	{
 		to->command_number *= -1; // Signal to server that melee swing in motion
 	}

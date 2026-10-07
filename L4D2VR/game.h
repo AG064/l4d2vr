@@ -9,6 +9,7 @@ class C_WeaponCSBase;
 #include <cstdarg>
 #include <Windows.h>
 #include "vr_magazine_policy.h"
+#include "vr_physical_controls.h"
 
 #include "vector.h"
 
@@ -136,6 +137,8 @@ struct Player
 
     bool isMeleeing = false;
     bool isNewSwing = false;
+    l4d2vr_physical::MeleeCommand packetMeleeCommand{};
+    l4d2vr_physical::MeleeSweepHistory meleeSweepHistory;
 
     static constexpr size_t kManualThrowPoseSampleCount = 8;
     std::array<ManualThrowPoseSample, kManualThrowPoseSampleCount> manualThrowPoseSamples{};

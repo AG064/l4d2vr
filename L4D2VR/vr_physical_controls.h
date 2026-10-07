@@ -6,6 +6,103 @@
 
 namespace l4d2vr_physical
 {
+    struct MeleeCommand
+    {
+        int command = 0;
+        bool valid = false;
+        bool swinging = false;
+        std::array<float, 3> position{};
+        std::array<float, 3> angles{};
+
+        bool Finite() const
+        {
+            for (unsigned axis = 0; axis < 3; ++axis)
+                if (!std::isfinite(position[axis]) || !std::isfinite(angles[axis])) return false;
+            return true;
+        }
+    };
+
+    inline void SelectNewestMeleeCommand(MeleeCommand& latest, const MeleeCommand& sample)
+    {
+        if (sample.command > latest.command) latest = sample;
+    }
+
+    inline bool MeleeTrackingFresh(std::uint32_t now, std::uint32_t sampled)
+    {
+        return now - sampled <= 150u;
+    }
+
+    class MeleeCommands
+    {
+    public:
+        void Store(const MeleeCommand& sample)
+        {
+            if (sample.command > 0)
+                m_Samples[static_cast<unsigned>(sample.command) % m_Samples.size()] = sample;
+        }
+        bool Get(int command, MeleeCommand& result) const
+        {
+            if (command <= 0) return false;
+            const auto& sample = m_Samples[static_cast<unsigned>(command) % m_Samples.size()];
+            if (sample.command != command || !sample.valid || !sample.Finite()) return false;
+            result = sample;
+            return true;
+        }
+        void Reset() { m_Samples = {}; }
+    private:
+        std::array<MeleeCommand, 150> m_Samples{};
+    };
+
+    // Wrist rotation moves the weapon tip even when the controller translates
+    // very little. Walking velocity is removed before it reaches this gate.
+    class MeleeMotion
+    {
+    public:
+        bool Update(bool eligible, std::uintptr_t owner, std::uintptr_t weapon,
+            float relativeSpeed, float angularSpeedDegrees)
+        {
+            if (!eligible || !owner || !weapon || !std::isfinite(relativeSpeed) ||
+                !std::isfinite(angularSpeedDegrees) || relativeSpeed < 0.0f || angularSpeedDegrees < 0.0f)
+            { Reset(); return false; }
+            if (owner != m_Owner || weapon != m_Weapon)
+            { Reset(); m_Owner = owner; m_Weapon = weapon; }
+            constexpr float kTipRadiusMeters = 0.35f;
+            const float speed = relativeSpeed + angularSpeedDegrees * (3.14159265f / 180.0f) * kTipRadiusMeters;
+            if (!std::isfinite(speed)) { Reset(); return false; }
+            if (speed <= 0.45f) { m_Armed = true; m_Swinging = false; }
+            else if (m_Armed && speed >= 1.1f) { m_Armed = false; m_Swinging = true; }
+            return m_Swinging;
+        }
+        void Reset() { m_Owner = m_Weapon = 0u; m_Armed = m_Swinging = false; }
+    private:
+        std::uintptr_t m_Owner = 0u, m_Weapon = 0u;
+        bool m_Armed = false, m_Swinging = false;
+    };
+
+    // The packet reader may see backup commands in either order. Damage uses
+    // only a fresh command and never connects poses across a weapon/session gap.
+    class MeleeSweepHistory
+    {
+    public:
+        enum Result { Ignore, Rebase, Sweep };
+        Result Accept(std::uintptr_t owner, std::uintptr_t weapon, int command, bool eligible)
+        {
+            if (!owner || command <= 0) { BreakContinuity(); return Ignore; }
+            if (owner != m_Owner) { m_Owner = owner; m_LastCommand = 0; BreakContinuity(); }
+            if (command <= m_LastCommand) return Ignore;
+            const auto gap = static_cast<std::int64_t>(command) - m_LastCommand;
+            m_LastCommand = command;
+            if (!eligible || !weapon) { BreakContinuity(); return Rebase; }
+            const bool continuous = m_Weapon == weapon && gap <= 8;
+            m_Weapon = weapon;
+            return continuous ? Sweep : Rebase;
+        }
+        void BreakContinuity() { m_Weapon = 0u; }
+    private:
+        std::uintptr_t m_Owner = 0u, m_Weapon = 0u;
+        int m_LastCommand = 0;
+    };
+
     inline int MeleeSweepSamples(float translation, float angleDegrees, float unitsPerMeter)
     {
         if (!std::isfinite(translation) || !std::isfinite(angleDegrees) ||

@@ -83,6 +83,16 @@ struct TrackedDevicePoseData
 	QAngle TrackedDeviceAngVel;
 };
 
+struct VRMeleeTrackingSnapshot
+{
+    bool valid = false;
+    uint32_t sampledAtMs = 0;
+    Vector position{};
+    QAngle angles{};
+    Vector relativeVelocity{};
+    QAngle angularVelocity{};
+};
+
 // Coherent, anatomical (physical left/right) world-space tracking sample used
 // by the multiplayer pose publisher. Spatial fields are copied under a short
 // mutex so the HMD and both controllers always come from the same
@@ -1210,6 +1220,14 @@ public:
     void RecordDualPistolCommand(int command, l4d2vr_dual::Hand hand, bool firing = true);
     bool GetDualPistolCommandPose(int command, Vector& position, QAngle& angles, l4d2vr_dual::Hand& hand) const;
     bool GetLatestDualPistolShotPose(Vector& position, QAngle& angles) const;
+    mutable std::mutex m_MeleeCommandMutex;
+    l4d2vr_physical::MeleeCommands m_MeleeCommands;
+    l4d2vr_physical::MeleeMotion m_MeleeMotion;
+    int m_LastMeleeRecordedCommand = 0;
+    VRMeleeTrackingSnapshot m_MeleeTrackingSnapshot{};
+    void RecordMeleeCommand(int command, bool eligible, uintptr_t owner, uintptr_t weapon);
+    bool GetMeleeCommand(int command, l4d2vr_physical::MeleeCommand& sample) const;
+    void CancelMeleeMotion();
     l4d2vr_physical::PumpCycles m_ManualPumpCycles;
     std::mutex m_ManualPumpMutex;
     MagazineInteractionBoxSnapshot m_ManualPumpClosedBoltBox{};

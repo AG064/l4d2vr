@@ -3418,6 +3418,46 @@ bool VR::GetLatestDualPistolShotPose(Vector& position, QAngle& angles) const
     return true;
 }
 
+void VR::RecordMeleeCommand(int command, bool eligible, uintptr_t owner, uintptr_t weapon)
+{
+    if (command <= 0) return;
+    VRMeleeTrackingSnapshot tracking{};
+    {
+        std::lock_guard<std::mutex> lock(m_WorldPoseTrackingSnapshotMutex);
+        tracking = m_MeleeTrackingSnapshot;
+    }
+    l4d2vr_physical::MeleeCommand sample{};
+    sample.command = command;
+    sample.position = { tracking.position.x, tracking.position.y, tracking.position.z };
+    sample.angles = { tracking.angles.x, tracking.angles.y, tracking.angles.z };
+    sample.valid = eligible && tracking.valid && sample.Finite() &&
+        l4d2vr_physical::MeleeTrackingFresh(static_cast<uint32_t>(GetTickCount64()), tracking.sampledAtMs);
+    std::lock_guard<std::mutex> lock(m_MeleeCommandMutex);
+    if (command < m_LastMeleeRecordedCommand)
+    {
+        m_MeleeCommands.Reset(); m_MeleeMotion.Reset(); m_LastMeleeRecordedCommand = 0;
+    }
+    if (command == m_LastMeleeRecordedCommand) return;
+    m_LastMeleeRecordedCommand = command;
+    sample.swinging = m_MeleeMotion.Update(sample.valid, owner, weapon,
+        tracking.relativeVelocity.Length(), tracking.angularVelocity.Length());
+    m_MeleeCommands.Store(sample);
+}
+
+bool VR::GetMeleeCommand(int command, l4d2vr_physical::MeleeCommand& sample) const
+{
+    std::lock_guard<std::mutex> lock(m_MeleeCommandMutex);
+    return m_MeleeCommands.Get(command, sample);
+}
+
+void VR::CancelMeleeMotion()
+{
+    std::lock_guard<std::mutex> lock(m_MeleeCommandMutex);
+    m_MeleeMotion.Reset();
+    m_MeleeCommands.Reset();
+    m_LastMeleeRecordedCommand = 0;
+}
+
 void VR::RecordManualPumpShot()
 {
     if (!m_ManualPumpEnabled || !m_IsVREnabled || !m_Game || !m_Game->m_EngineClient)

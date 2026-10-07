@@ -23217,7 +23217,7 @@ Vector* Hooks::dEyePosition(void* ecx, void* edx, Vector* eyePos)
 
     Vector* result = hkEyePosition.fOriginal(ecx, eyePos);
 
-    if (m_Game->m_PerformingMelee)
+    if (m_Game->m_PerformingMelee && ecx == m_Game->m_CurrentUsercmdPlayer)
     {
         int i = m_Game->m_CurrentUsercmdID;
         if (m_Game->IsValidPlayerIndex(i))

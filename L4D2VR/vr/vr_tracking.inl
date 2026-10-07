@@ -757,6 +757,7 @@ void VR::UpdateTracking()
         {
             std::lock_guard<std::mutex> lock(m_WorldPoseTrackingSnapshotMutex);
             m_WorldPoseTrackingSnapshot = {};
+            m_MeleeTrackingSnapshot = {};
         }
         m_ScopeWeaponIsFirearm = false;
         // If we temporarily lose the local player (connect/disconnect/map change),
@@ -2596,6 +2597,22 @@ void VR::UpdateTracking()
         m_RenderViewParamsSeq.store(seq + 2, std::memory_order_release);
     }
 
+    // Publish one coherent gameplay-hand sample. CreateMove and network writes
+    // must not combine a new velocity with an older hand pose.
+    {
+        VRMeleeTrackingSnapshot sample{};
+        const auto handIndex = GetPhysicalControllerIndexForHand(m_LeftHanded);
+        sample.valid = handIndex < vr::k_unMaxTrackedDeviceCount &&
+            m_Poses[handIndex].bPoseIsValid &&
+            m_Poses[vr::k_unTrackedDeviceIndex_Hmd].bPoseIsValid;
+        sample.sampledAtMs = static_cast<uint32_t>(GetTickCount64());
+        sample.position = m_RightControllerPosAbs;
+        sample.angles = GetRightControllerAbsAngle();
+        sample.relativeVelocity = m_RightControllerPose.TrackedDeviceVel - m_HmdPose.TrackedDeviceVel;
+        sample.angularVelocity = m_RightControllerPose.TrackedDeviceAngVel;
+        std::lock_guard<std::mutex> lock(m_WorldPoseTrackingSnapshotMutex);
+        m_MeleeTrackingSnapshot = sample;
+    }
     UpdateMotionGestures(localPlayer);
 }
 

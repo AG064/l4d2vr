@@ -19,6 +19,70 @@ int main()
     Check(MeleeSweepSamples(19.0f, 180.0f, 40.0f) == 12);
     Check(MeleeSweepSamples(21.0f, 30.0f, 40.0f) == 0);
     Check(MeleeSweepSamples(std::numeric_limits<float>::infinity(), 1.0f, 40.0f) == 0);
+    MeleeMotion melee;
+    Check(!melee.Update(true, 100u, 10u, 2.0f, 0.0f)); // wait for rest on weapon adoption
+    Check(!melee.Update(true, 100u, 10u, 0.0f, 0.0f));
+    Check(melee.Update(true, 100u, 10u, 1.2f, 0.0f)); // no attack button involved
+    Check(melee.Update(true, 100u, 10u, 0.7f, 0.0f)); // retain the swing across threshold noise
+    Check(!melee.Update(true, 100u, 10u, 0.4f, 0.0f));
+    Check(melee.Update(true, 100u, 10u, 0.0f, 200.0f)); // a stationary wrist rotates the blade
+    Check(!melee.Update(false, 100u, 10u, 2.0f, 0.0f)); // tracking, menu or incap cancels
+    Check(!melee.Update(true, 100u, 10u, 2.0f, 0.0f));
+    Check(!melee.Update(true, 100u, 10u, 0.0f, 0.0f));
+    Check(melee.Update(true, 100u, 10u, 1.2f, 0.0f));
+    Check(!melee.Update(true, 100u, 20u, 1.2f, 0.0f)); // weapon swap cannot carry a swing
+    Check(!melee.Update(true, 100u, 20u, 0.0f, 0.0f));
+    Check(melee.Update(true, 100u, 20u, 1.2f, 0.0f));
+    Check(!melee.Update(true, 200u, 20u, 1.2f, 0.0f)); // player replacement
+    Check(!melee.Update(true, 200u, 20u, std::numeric_limits<float>::quiet_NaN(), 0.0f));
+    Check(!melee.Update(true, 200u, 20u, 0.0f, std::numeric_limits<float>::infinity()));
+    Check(MeleeTrackingFresh(100u, 100u));
+    Check(MeleeTrackingFresh(250u, 100u));
+    Check(!MeleeTrackingFresh(251u, 100u));
+    Check(!MeleeTrackingFresh(99u, 100u));
+    Check(MeleeTrackingFresh(20u, 0xfffffff0u)); // monotonic timer wraps
+
+    MeleeCommands meleeCommands;
+    MeleeCommand moving{100, true, true, {1.0f, 2.0f, 3.0f}, {20.0f, 30.0f, 40.0f}};
+    MeleeCommand resting{101, true, false, {4.0f, 5.0f, 6.0f}, {50.0f, 60.0f, 70.0f}};
+    meleeCommands.Store(moving);
+    meleeCommands.Store(resting);
+    MeleeCommand captured{};
+    Check(meleeCommands.Get(100, captured) && captured.swinging && captured.position[0] == 1.0f);
+    Check(meleeCommands.Get(101, captured) && !captured.swinging && captured.position[0] == 4.0f);
+    MeleeCommand latest{};
+    SelectNewestMeleeCommand(latest, resting);
+    SelectNewestMeleeCommand(latest, moving); // reversed decode order cannot restore the older swing
+    Check(latest.command == 101 && !latest.swinging);
+    latest = {};
+    SelectNewestMeleeCommand(latest, moving);
+    SelectNewestMeleeCommand(latest, resting);
+    Check(latest.command == 101 && !latest.swinging);
+    moving.command = 250; meleeCommands.Store(moving);
+    Check(!meleeCommands.Get(100, captured)); // ring replacement cannot impersonate a backup command
+    moving.command = 251; moving.position[0] = std::numeric_limits<float>::infinity();
+    meleeCommands.Store(moving);
+    Check(!meleeCommands.Get(251, captured));
+    resting.command = 252; resting.valid = false; meleeCommands.Store(resting);
+    Check(!meleeCommands.Get(252, captured));
+    meleeCommands.Reset();
+    Check(!meleeCommands.Get(250, captured));
+
+    MeleeSweepHistory history;
+    Check(history.Accept(100u, 10u, 100, true) == MeleeSweepHistory::Rebase);
+    Check(history.Accept(100u, 10u, 101, true) == MeleeSweepHistory::Sweep);
+    Check(history.Accept(100u, 10u, 101, true) == MeleeSweepHistory::Ignore);
+    Check(history.Accept(100u, 10u, 100, true) == MeleeSweepHistory::Ignore);
+    Check(history.Accept(100u, 20u, 102, true) == MeleeSweepHistory::Rebase);
+    Check(history.Accept(100u, 20u, 103, true) == MeleeSweepHistory::Sweep);
+    Check(history.Accept(100u, 20u, 112, true) == MeleeSweepHistory::Rebase); // command discontinuity
+    Check(history.Accept(100u, 20u, 113, false) == MeleeSweepHistory::Rebase);
+    Check(history.Accept(100u, 20u, 114, true) == MeleeSweepHistory::Rebase);
+    Check(history.Accept(100u, 20u, 115, true) == MeleeSweepHistory::Sweep);
+    Check(history.Accept(200u, 20u, 1, true) == MeleeSweepHistory::Rebase);
+    Check(history.Accept(200u, 20u, 2, true) == MeleeSweepHistory::Sweep);
+    Check(history.Accept(200u, 20u, 0, true) == MeleeSweepHistory::Ignore);
+    Check(history.Accept(200u, 20u, 3, true) == MeleeSweepHistory::Rebase);
     ContactLatch contact;
     Check(!contact.Update(true, true, false));
     Check(contact.Update(true, true, true));
