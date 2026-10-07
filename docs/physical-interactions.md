@@ -65,6 +65,22 @@ Manual pump movement uses a closed rest pose rebased onto the current gun;
 moving the pump hand does not steer the gun's aim. Native automatic pump
 sounds are muted, while the sound from an actual manual stroke is allowed.
 
+With empty-clip auto reload suppression enabled, chamber history is retained per
+weapon across ordinary inventory switches. Inserting a magazine or receiving a
+predicted clip refill does not clear an observed empty chamber. A completed
+slide/bolt cycle clears it. Native entity handles distinguish replacement guns
+at a reused address. When the handle cannot be resolved, history is limited to
+the current draw. Death, incapacitation, disabled physical reload and player
+replacement clear ownership; native dual-pistol reload remains separate.
+
+A shotgun with a chambered round can fire after a partial tube reload. Holding
+the next shell, cycling the action, an unfinished backend reload or a pending
+shell ammunition update blocks firing. Inserting a shell into an empty gun still
+requires a cycle. Shell insertion waits for a readable native ammo slot instead
+of guessing a reserve or overlapping a previous insertion. The short settlement
+gate clears on local server completion, session reset or a bounded timeout. Releasing a
+partly moved pump retains its position; the grab region follows that position.
+
 Grip pickup and release take priority over a simultaneous Object Pull packet,
 including the controller pose associated with the grip action. Object Pull
 and transient grip actions preserve the current reload gate for the same
@@ -101,6 +117,13 @@ then try horizontal, overhead, straight and wrist-led swings. Walking with the
 hand still should not attack. Check the same zombie across one continuous swing,
 then rest and swing again. Repeat after a weapon swap, opening a menu, revival
 and a map change. Compare damage and gore on the host and a joining VR client.
+
+For reload testing, empty a pistol, insert a magazine, switch away before cycling
+the slide, then draw it again and finish the cycle. Repeat with a different gun
+of the same type. With a loaded shotgun, insert one shell into a partly filled
+tube, release the shell grip and try firing after settlement. Check loading an
+empty gun and cycling it after one shell. Release and re-grab the pump midway
+through both strokes. These changes still need headset validation.
 
 For a headset test, start with both grips released, then grip each gun. Fire
 with each trigger and check its aim. Release one grip, confirm that a world

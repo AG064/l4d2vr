@@ -1,9 +1,80 @@
 #pragma once
 
 #include <cstdint>
+#include <array>
 
 namespace l4d2vr_magazine
 {
+    // Prediction can refill a clip before a physical slide has been cycled.
+    // Retain the empty chamber across inventory switches, using native handle
+    // serials to distinguish a replacement entity at the same address.
+    class ChamberHistory
+    {
+    public:
+        void ObserveOwner(bool active, std::uintptr_t owner)
+        {
+            if (!active || !owner || owner != m_Owner)
+            {
+                m_Entries = {}; m_Next = 0u; m_ActiveWeapon = 0u; m_ActiveHandle = 0u;
+                m_Owner = active ? owner : 0u;
+            }
+        }
+        bool Observe(std::uintptr_t weapon, std::uint32_t handle, int weaponId, int clip)
+        {
+            if (!m_Owner) return false;
+            if (weapon != m_ActiveWeapon || handle != m_ActiveHandle)
+                for (auto& entry : m_Entries)
+                    if (entry.handle == 0u) entry = {}; // no serial: retain only the current draw
+            m_ActiveWeapon = weapon; m_ActiveHandle = handle;
+            if (!weapon || weaponId <= 0 || clip < 0) return false;
+            Entry* selected = nullptr;
+            for (auto& entry : m_Entries)
+                if (entry.weapon == weapon && entry.handle == handle && entry.weaponId == weaponId)
+                { selected = &entry; break; }
+            if (!selected)
+            {
+                selected = &m_Entries[m_Next++ % m_Entries.size()];
+                *selected = {weapon, handle, weaponId, false};
+            }
+            if (clip == 0) selected->empty = true;
+            return selected->empty;
+        }
+        void Complete(std::uintptr_t weapon)
+        {
+            if (weapon != m_ActiveWeapon) return;
+            for (auto& entry : m_Entries)
+                if (entry.weapon == weapon && entry.handle == m_ActiveHandle) entry.empty = false;
+        }
+        void Forget(std::uintptr_t weapon)
+        {
+            for (auto& entry : m_Entries) if (entry.weapon == weapon) entry = {};
+            if (m_ActiveWeapon == weapon) { m_ActiveWeapon = 0u; m_ActiveHandle = 0u; }
+        }
+    private:
+        struct Entry
+        {
+            std::uintptr_t weapon = 0u;
+            std::uint32_t handle = 0u;
+            int weaponId = 0;
+            bool empty = false;
+        };
+        std::array<Entry, 16> m_Entries{};
+        unsigned m_Next = 0u;
+        std::uintptr_t m_Owner = 0u, m_ActiveWeapon = 0u;
+        std::uint32_t m_ActiveHandle = 0u;
+    };
+
+    inline bool ShellSettlementPending(std::uint64_t now, std::uint64_t expires)
+    {
+        return expires != 0u && now < expires;
+    }
+
+    inline bool ShotgunBlocksFire(bool chamberEmpty, bool shellHeld,
+        bool cycling, bool backendReload, bool ammoSettlement)
+    {
+        return chamberEmpty || shellHeld || cycling || backendReload || ammoSettlement;
+    }
+
     class NativeReloadLedger
     {
     public:

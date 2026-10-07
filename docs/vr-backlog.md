@@ -16,6 +16,10 @@ changes clear held-hand state, stale pose regions and old ammo updates. Normal
 reload completion retains its pending settlement. Gameplay recovery remains
 to be verified in a headset.
 
+Chamber history now retains an unfinished cycle across weapon switches when
+empty auto reload is suppressed. Native handle serials distinguish replacement
+entities; unavailable handle data falls back to the current draw only.
+
 - Audit stale weapon, magazine, bolt and support-grip ownership on weapon swap,
   downing, revival, death and map change.
 - Check a full and empty pistol, Magnum and SMG for ten consecutive reloads,
@@ -71,6 +75,11 @@ cycled automatically and the fore-end grab did not work reliably.
   automatic cycle.
 
 Related: [shotgun empty reload #385](https://github.com/keyou91/l4d2vr/issues/385).
+
+Further offline fixes allow a chambered shotgun to fire after a partial top-up,
+protect pending shell settlement from firing or a second insertion, and move
+the pump grab region with the visible fore-end. Unknown shell reserve data no
+longer causes a guessed clip increase. These paths await headset testing.
 
 ## VR-005: Stabilize body inventory and magazine poses
 
@@ -143,3 +152,20 @@ headset alignment and multiplayer outcomes still require validation.
 - Confirm saved settings persist on restart with an older sample config.
 
 Reference: [calibration PR #404](https://github.com/keyou91/l4d2vr/pull/404).
+
+## VR-010: Add authoritative remote physical ammunition requests
+
+Priority: high for friend-hosted play. Current shotgun shell loading requires a
+local native-server hook heartbeat. The physical-control acknowledgement does
+not provide a remote shell-insertion transaction. Client clip prediction alone
+cannot establish authoritative ammunition on the friend's host.
+
+- Define a separately negotiated request/acknowledgement for physical shell and
+  magazine completion, scoped to the player's actual owned weapon and entity
+  serial. Reject duplicate, stale and incompatible requests.
+- Read clip capacity and reserve on the server. Consume only confirmed physical
+  insertions and replicate the result without client-side reserve-slot guesses.
+- Preserve conventional reload on unsupported servers. Do not enable remote
+  shell loading by treating pose or grip acknowledgement as ammo support.
+- Test the guest and host separately, including backup commands, map/weapon
+  changes, interruption, no reserve ammo and a late join.

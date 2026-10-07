@@ -1783,7 +1783,7 @@ public:
 	Vector m_VrHandsRightPoseRotationOffsetDeg = { 0.0f, 0.0f, 0.0f };
     Vector m_VrHandsRightFreePoseOffsetMeters{};
     Vector m_VrHandsRightFreePoseRotationOffsetDeg{};
-    uintptr_t m_PhysicalReloadClipWeapon = 0u;
+    l4d2vr_magazine::ChamberHistory m_PhysicalReloadChambers;
     bool m_PhysicalReloadObservedEmpty = false;
 	// Left-handed mode uses gameplay-right for the physical left/gun hand and gameplay-left
 	// for the physical right/off hand. These offsets are named by physical hand.
@@ -2110,6 +2110,7 @@ public:
 	bool m_MagazineInteractionServerClipSettlementActive = false;
 	bool m_MagazineInteractionShotgunServerReloadAbortPending = false;
 	bool m_MagazineInteractionShotgunDirectShellCommitPending = false;
+    std::atomic<uint64_t> m_ShotgunShellSettlementExpiresAtMs{ 0u };
 	bool m_MagazineInteractionShotgunDirectShellServerClipCommitted = false;
 	bool m_MagazineInteractionShotgunDirectShellServerReserveCommitted = false;
 	bool m_MagazineInteractionServerClipCommitPending = false;
