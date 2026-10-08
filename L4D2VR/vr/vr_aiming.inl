@@ -1913,7 +1913,7 @@ void VR::UpdateAimingLaser(C_BasePlayer* localPlayer)
     const bool deferDebugAimOverlayForCleanMirror =
         !queued && m_DesktopMirrorHidePluginOverlays && m_DesktopMirrorEnabled && !m_ScopeRenderingPass;
     const bool d3dAimLineNeedsVisibleSegment =
-        m_D3DAimLineOverlayEnabled;
+        m_D3DAimLineOverlayEnabled || m_AdjustingViewmodel;
 
 
     C_WeaponCSBase* activeWeapon = nullptr;
@@ -3388,6 +3388,8 @@ void VR::UpdateAimLineEffectiveAttackRange(C_BasePlayer* localPlayer, C_WeaponCS
 
 bool VR::ShouldDrawAimLine(C_WeaponCSBase* weapon) const
 {
+    if (m_AdjustingViewmodel && weapon && l4d2vr_calibration::IsFirearm(static_cast<int>(weapon->GetWeaponID())))
+        return true;
     if (!m_AimLineOnlyWhenLaserSight)
         return true;
 
@@ -3435,6 +3437,10 @@ bool VR::ShouldShowAimLine(C_WeaponCSBase* weapon) const
 
     if (!weapon)
         return false;
+
+    // Manual throwing uses release velocity instead of a controller-forward ray,
+    if (m_AdjustingViewmodel && l4d2vr_calibration::IsFirearm(static_cast<int>(weapon->GetWeaponID())))
+        return true;
 
     // Manual throwing uses release velocity instead of a controller-forward ray,
     // so its trajectory cannot use the stock pitch-based preview. ObjectPull can
@@ -3884,7 +3890,8 @@ void VR::UpdateD3DAimLineOverlayForView(C_BasePlayer* localPlayer, const CViewSe
     const int queueMode = (m_Game != nullptr) ? m_Game->GetMatQueueMode() : 0;
     const bool queued = (queueMode != 0);
 
-    if (!m_D3DAimLineOverlayEnabled || !m_IsVREnabled || (!queued && !localPlayer))
+    const bool calibrationGuide = m_RenderWeaponCalibrationActive.load(std::memory_order_relaxed);
+    if ((!m_D3DAimLineOverlayEnabled && !calibrationGuide) || !m_IsVREnabled || (!queued && !localPlayer))
     {
         clearEye();
         return;
@@ -3921,7 +3928,7 @@ void VR::UpdateD3DAimLineOverlayForView(C_BasePlayer* localPlayer, const CViewSe
         && m_ThirdPersonFrontViewEnabled
         && m_IsThirdPersonCamera
         && m_ScopeWeaponIsFirearm;
-    if (scopeOnlyAimLine && !m_ScopeRenderingPass)
+    if (scopeOnlyAimLine && !m_ScopeRenderingPass && !calibrationGuide)
     {
         clearEye();
         return;

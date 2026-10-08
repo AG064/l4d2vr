@@ -1,3 +1,16 @@
+static bool IsClientAttachedToLadder(Game* game, C_BasePlayer* player)
+{
+    if (!game || !player) return false;
+    const int offset = game->FindRecvPropOffset("DT_BaseEntity", "movetype");
+    if (offset <= 0) return false;
+#ifdef _MSC_VER
+    __try { return ReadNetvar<uint8_t>(player, offset) == 9u; }
+    __except (EXCEPTION_EXECUTE_HANDLER) { return false; }
+#else
+    return ReadNetvar<uint8_t>(player, offset) == 9u;
+#endif
+}
+
 bool __fastcall Hooks::dCreateMove(void* ecx, void* edx, float flInputSampleTime, CUserCmd* cmd)
 {
 	// When returning from spectator/observer back to a live player entity ("rescued"),
@@ -1990,6 +2003,10 @@ bool __fastcall Hooks::dCreateMove(void* ecx, void* edx, float flInputSampleTime
 			manualThrowViewmodelInputState,
 			std::memory_order_release);
 	}
+
+    if (m_VR && m_VR->m_IsVREnabled && !m_VR->m_SuppressPlayerInput &&
+        IsClientAttachedToLadder(m_Game, localPlayerForAutoActions))
+        cmd->buttons = l4d2vr_ladder::DirectionButtons(cmd->buttons, cmd->forwardmove, cmd->sidemove);
 
     l4d2vr_dual::Hand dualShotHand = l4d2vr_dual::Hand::None;
     const unsigned pistolMask = m_VR ? m_VR->m_PistolOwnershipMask.load(std::memory_order_acquire) : 0u;

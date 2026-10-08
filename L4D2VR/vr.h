@@ -610,6 +610,7 @@ public:
 	// Aim-line gating computed on the update thread; render thread only consumes.
 	std::atomic<uint32_t> m_RenderAimLineAllowed{ 0 };
 	std::atomic<uint32_t> m_RenderAimLineShow{ 0 };
+    std::atomic<bool> m_RenderWeaponCalibrationActive{false};
 	std::atomic<uint32_t> m_RenderWeaponLaserSightActive{ 0 };
 
 

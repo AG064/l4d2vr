@@ -810,6 +810,7 @@ void VR::UpdateTracking()
 
     m_RenderAimLineAllowed.store(0, std::memory_order_relaxed);
     m_RenderAimLineShow.store(0, std::memory_order_relaxed);
+    m_RenderWeaponCalibrationActive.store(false, std::memory_order_relaxed);
     m_RenderWeaponLaserSightActive.store(0, std::memory_order_relaxed);
 
             m_RenderViewParamsSeq.store(seq + 2, std::memory_order_release);
@@ -2591,6 +2592,8 @@ void VR::UpdateTracking()
 
         m_RenderAimLineAllowed.store(__aimAllowed ? 1u : 0u, std::memory_order_relaxed);
         m_RenderAimLineShow.store(__aimShow ? 1u : 0u, std::memory_order_relaxed);
+        m_RenderWeaponCalibrationActive.store(m_AdjustingViewmodel && __activeWeapon &&
+            l4d2vr_calibration::IsFirearm(static_cast<int>(__activeWeapon->GetWeaponID())), std::memory_order_relaxed);
         m_RenderWeaponLaserSightActive.store(__weaponLaserSightActive ? 1u : 0u, std::memory_order_relaxed);
 
         // Mark write complete (even).
