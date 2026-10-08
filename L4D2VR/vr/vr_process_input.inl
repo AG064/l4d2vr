@@ -791,6 +791,13 @@ void VR::ProcessInput()
         supportHandDown,
         supportHandJustPressed,
         allowGameplayInputOnTwoHandedGripRelease);
+    const bool nativeMagazineReloadPulse = m_NativeMagazineReloadFallbackPulse.Update(
+        m_NativeMagazineReloadFallbackActive.load(std::memory_order_acquire) &&
+        m_FirstPersonControlReady.load(std::memory_order_acquire) && !m_MouseModeEnabled &&
+        !m_SuppressPlayerInput && !m_Game->m_EngineClient->IsPaused() &&
+        (!m_Game->m_VguiSurface || !m_Game->m_VguiSurface->IsCursorVisible()),
+        magazineReleaseJustPressed, m_MagazineInteractionSessionGeneration.load(std::memory_order_acquire),
+        static_cast<uint32_t>(GetTickCount64()));
     if (IsMagazineInteractionLeftHandActive())
     {
         if (reloadFromLeftHand)
@@ -1766,10 +1773,10 @@ void VR::ProcessInput()
         !suppressSecondaryAttack;
 
     const bool wantReload =
-        nativeDualReloadPulse || magazineInteractionReloadPulse ||
+        nativeDualReloadPulse || nativeMagazineReloadPulse || magazineInteractionReloadPulse ||
         (!crouchButtonDown && reloadButtonDown && !adjustViewmodelActive && !scopeAdjustActive);
     if (wantReload && !m_ReloadCmdOwned &&
-        (nativeDualReload || !m_MagazineInteractionUseButtonDisbleReloadCommand || !m_MagazineInteractionUseButtonGripInput || !m_MagazineInteractionEnabled || !magazineGripDown))
+        (nativeDualReload || nativeMagazineReloadPulse || !m_MagazineInteractionUseButtonDisbleReloadCommand || !m_MagazineInteractionUseButtonGripInput || !m_MagazineInteractionEnabled || !magazineGripDown))
     {
         m_Game->ClientCmd_Unrestricted("+reload");
         m_ReloadCmdOwned = true;
@@ -1781,7 +1788,7 @@ void VR::ProcessInput()
         MarkMagazineInteractionReloadCommandIssued();
     }
     else if (m_ReloadCmdOwned &&
-        (!wantReload || (!nativeDualReload && m_MagazineInteractionUseButtonDisbleReloadCommand && m_MagazineInteractionUseButtonGripInput && m_MagazineInteractionEnabled && magazineGripDown)))
+        (!wantReload || (!nativeDualReload && !nativeMagazineReloadPulse && m_MagazineInteractionUseButtonDisbleReloadCommand && m_MagazineInteractionUseButtonGripInput && m_MagazineInteractionEnabled && magazineGripDown)))
     {
         m_Game->ClientCmd_Unrestricted("-reload");
         m_ReloadCmdOwned = false;

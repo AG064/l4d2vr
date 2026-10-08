@@ -23022,7 +23022,6 @@ void Hooks::dItemPostFrameServer(void* ecx, void* edx)
         return;
     }
 
-    m_VR->TryApplyMagazineInteractionServerClipCommit(ecx, weaponId, serverPlayer);
 }
 
 int Hooks::dGetPrimaryAttackActivity(void* ecx, void* edx, void* meleeInfo)

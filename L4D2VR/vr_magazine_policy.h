@@ -10,6 +10,23 @@ namespace l4d2vr_magazine
     {
         return supported && detachable && !nativeDual && !leftHandPistol;
     }
+    class NativeFallbackPulse
+    {
+    public:
+        void Reset() { m_Active = false; m_HaveScope = false; }
+        bool Update(bool eligible, bool pressed, std::uint32_t generation, std::uint32_t now)
+        {
+            if (!m_HaveScope || generation != m_Generation)
+            { m_Active = false; m_Generation = generation; m_HaveScope = true; }
+            if (!eligible) { m_Active = false; return false; }
+            if (pressed) { m_Started = now; m_Active = true; }
+            if (m_Active && now - m_Started >= 350u) m_Active = false;
+            return m_Active;
+        }
+    private:
+        bool m_Active = false, m_HaveScope = false;
+        std::uint32_t m_Generation = 0u, m_Started = 0u;
+    };
     // Prediction can refill a clip before a physical slide has been cycled.
     // Retain the empty chamber across inventory switches, using native handle
     // serials to distinguish a replacement entity at the same address.

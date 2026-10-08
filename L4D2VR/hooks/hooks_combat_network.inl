@@ -1914,8 +1914,7 @@ float __fastcall Hooks::dProcessUsercmds(void* ecx, void* edx, edict_t* player,
 				m_VR->MarkMagazineInteractionServerHookSeen(weaponId);
 				if (MagazineInteractionWeaponIdIsShotgun(weaponId))
 					m_VR->TryApplyMagazineInteractionShotgunServerReloadAbort(curWep, weaponId, pPlayer);
-				else
-					m_VR->TryApplyMagazineInteractionServerClipCommit(curWep, weaponId, pPlayer);
+
 			}
 		}
 	}
@@ -2204,8 +2203,7 @@ int Hooks::dReadUsercmd(void* buf, CUserCmd* move, CUserCmd* from)
 		if (m_VR && serverWeapon && l4d2vr_magazine::IsLocalPlayerCommand(i, localAmmoPlayerIndex))
 		{
 			m_VR->MarkMagazineInteractionServerHookSeen(serverWeaponId);
-			if (!MagazineInteractionWeaponIdIsShotgun(serverWeaponId))
-				m_VR->TryApplyMagazineInteractionServerClipCommit(serverWeapon, serverWeaponId, m_Game->m_CurrentUsercmdPlayer);
+
 		}
 		const bool serverWeaponIsDummyPistol =
 			vrPlayerState &&

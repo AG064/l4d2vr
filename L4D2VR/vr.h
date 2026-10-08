@@ -2112,13 +2112,14 @@ public:
 	bool m_MagazineInteractionFreshMagazineContactActive = false;
 	bool m_MagazineInteractionBoltContactActive = false;
 	bool m_MagazineInteractionShotgunShellMode = false;
-	bool m_MagazineInteractionServerClipSettlementActive = false;
 	bool m_MagazineInteractionShotgunServerReloadAbortPending = false;
 	bool m_MagazineInteractionShotgunDirectShellCommitPending = false;
     std::atomic<uint64_t> m_ShotgunShellSettlementExpiresAtMs{ 0u };
     mutable std::mutex m_RemoteShellMutex;
     mutable std::mutex m_RemoteMagazineMutex;
     l4d2vr_remote_mag::ClientRequest m_RemoteMagazineRequest;
+    std::atomic<bool> m_NativeMagazineReloadFallbackActive{false};
+    l4d2vr_magazine::NativeFallbackPulse m_NativeMagazineReloadFallbackPulse;
     void OfferRemoteMagazineProtocol(unsigned version, uint32_t token);
     void ReceiveRemoteMagazineReply(const l4d2vr_remote_mag::Reply& reply);
     void DisconnectRemoteMagazineProtocol();
@@ -2142,10 +2143,6 @@ public:
         uintptr_t owner, uint32_t generation, int replicatedClip, int replicatedReserve, l4d2vr_shell::Reply& reply);
 	bool m_MagazineInteractionShotgunDirectShellServerClipCommitted = false;
 	bool m_MagazineInteractionShotgunDirectShellServerReserveCommitted = false;
-	bool m_MagazineInteractionServerClipCommitPending = false;
-	bool m_MagazineInteractionServerClipCommitted = false;
-	bool m_MagazineInteractionServerReserveCommitted = false;
-	bool m_MagazineInteractionServerClipReserveHoldActive = false;
 	int m_MagazineInteractionShotgunShellsLoadedThisSession = 0;
 	int m_MagazineInteractionShotgunLastInterruptedClip = -1;
 	int m_MagazineInteractionShotgunDirectShellTargetClip = -1;
@@ -2153,21 +2150,10 @@ public:
 	int m_MagazineInteractionShotgunDirectShellTargetReserve = -1;
 	int m_MagazineInteractionShotgunDirectShellExpectedPriorReserve = -1;
 	int m_MagazineInteractionShotgunDirectShellWeaponId = 0;
-	int m_MagazineInteractionServerClipTarget = -1;
-	int m_MagazineInteractionServerClipAmmoType = -1;
-	int m_MagazineInteractionServerClipTargetReserve = -1;
-	int m_MagazineInteractionServerClipWeaponId = 0;
-	int m_MagazineInteractionServerClipExpectedPrior = -1;
-	int m_MagazineInteractionServerClipOffset = 0;
-	int m_MagazineInteractionServerReserveExpectedPrior = -1;
-	int m_MagazineInteractionServerReserveOffset = 0;
-	int m_MagazineInteractionServerClipReserveHoldAmmoType = -1;
-	int m_MagazineInteractionServerClipReserveHoldReserve = -1;
-	int m_MagazineInteractionServerClipReserveHoldOffset = -1;
+    int m_MagazineInteractionShotgunServerReserveOffset = 0;
 	l4d2vr_magazine::SessionTracker m_MagazineInteractionSession;
 	std::atomic<uint32_t> m_MagazineInteractionSessionGeneration{ 0 };
 	std::mutex m_MagazineInteractionCommitMutex;
-	uint32_t m_MagazineInteractionServerClipGeneration = 0;
 	uint32_t m_MagazineInteractionShotgunDirectShellGeneration = 0;
 	uint32_t m_MagazineInteractionShotgunAbortGeneration = 0;
 	int m_MagazineInteractionShotgunAbortWeaponId = 0;
@@ -2226,7 +2212,6 @@ public:
 	std::chrono::steady_clock::time_point m_MagazineInteractionBoltGrabbedAt{};
 	std::chrono::steady_clock::time_point m_MagazineInteractionShotgunServerReloadAbortUntil{};
 	std::chrono::steady_clock::time_point m_MagazineInteractionShotgunDirectShellCommitUntil{};
-	std::chrono::steady_clock::time_point m_MagazineInteractionServerClipCommitUntil{};
 	std::chrono::steady_clock::time_point m_MagazineInteractionNativeReloadSuppressUntil{};
 	std::chrono::steady_clock::time_point m_MagazineInteractionViewmodelFreezeDeferredUntil{};
 	int m_MagazineInteractionNativeReloadSuppressWeaponId = 0;
@@ -3960,18 +3945,6 @@ public:
 	void MarkMagazineInteractionShotgunServerHookSeen(int serverWeaponId);
 	bool IsMagazineInteractionShotgunServerHookActive(int weaponId) const;
     bool IsMagazineInteractionShotgunLocalServerHookActive(int weaponId) const;
-	void QueueMagazineInteractionServerClipCommit(
-		int targetClip,
-		int ammoType,
-		int targetReserve,
-		int expectedPriorClip,
-		int expectedPriorReserve,
-		const char* reason,
-		float holdSeconds);
-	bool TryApplyMagazineInteractionServerClipCommit(
-		void* serverWeapon,
-		int serverWeaponId,
-		void* serverPlayer = nullptr);
 	void QueueMagazineInteractionShotgunServerReloadAbort(const char* reason);
 	void QueueMagazineInteractionShotgunDirectShellCommit(
 		int targetClip,

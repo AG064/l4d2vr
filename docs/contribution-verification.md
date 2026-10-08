@@ -103,6 +103,9 @@ still requires model work; this tool does not reconstruct it.
 - Remote magazines: loaded and empty ejection, partial reserve, native finite
   and infinite pistol ammo, insertion then slide cycling, weapon changes and
   both orders of result/replicated-ammo delivery.
+- Magazine fallback: unsupported and timed-out hosts must use stock ammo and
+  reload, including Magazine Release while the support grip is held. Check menu,
+  weapon/player changes and restoration of the negotiated physical path.
 
 Offline builds and tests do not confirm those headset or multiplayer results.
 Full body IK, independent dual-pistol magazines/chambers, complete missing mesh

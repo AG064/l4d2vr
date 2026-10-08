@@ -193,8 +193,11 @@ fallback. Discarded magazines do not retain ammunition for later pickup yet.
 The supported listen-host now uses the same magazine ledger as the guest,
 instead of filling a predicted clip to its default maximum. Tests include a
 partial reserve and spending the retained chamber between eject/insert.
-Backend changes fence old queued updates. The older local settlement fallback
-still needs replacement on layouts without the negotiated native protocol.
+Backend changes fence old queued updates. Single-magazine local prediction and
+its queued clip/reserve writers have been removed. Unsupported magazine backends
+use native reload, including the Magazine Release button, while retaining support
+grip and clearing virtual ammo/chamber state. Local shotgun shell settlement and
+its remaining reserve-offset search still need replacement.
 
 - Define a separately negotiated request/acknowledgement for physical shell and
   magazine completion, scoped to the player's actual owned weapon and entity

@@ -31,9 +31,14 @@ local weapon hooks are active. This avoids the old local full-clip prediction
 when only a partial reserve exists. A capability change starts a fresh reload
 session before choosing its backend; it cannot splice a local predicted
 ejection into an authoritative insertion. Native dual pistols and left-held
-single pistols retain their shared reload fallback. Older layouts without the
-protocol still use the legacy local/native path, which remains outside this
-transaction guarantee and needs further replacement.
+single pistols retain their shared reload fallback. Without the magazine
+protocol, Magazine Release requests a short native reload pulse; stock reload
+buttons and empty-clip automatic reload remain available. There is no virtual
+magazine, body ammo preview or physical empty-chamber latch in that fallback.
+Support grip remains available. Menus, unavailable gameplay control and session
+changes cancel the pulse. The old single-magazine predicted clip/reserve writers
+and clip-offset search have been removed. The older local shotgun shell writer
+and reserve-offset search still need migration to native shell transactions.
 
 An ejection acknowledgement confirms ammunition but does not clear a previously
 observed empty physical chamber. A predicted/native refill therefore cannot

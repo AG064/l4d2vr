@@ -71,6 +71,21 @@ int main()
     Check(!UseAuthoritativeMagazine(true, true, false, true), "A pistol retained in the left hand keeps its native fallback");
     Check(!UseAuthoritativeMagazine(true, false, false, false), "A shell-fed gun cannot enter the detachable-magazine path");
 
+    NativeFallbackPulse nativePulse;
+    Check(!nativePulse.Update(true, false, 10u, 100u), "Unsupported servers must not reload until a button request");
+    Check(nativePulse.Update(true, true, 10u, 200u), "Magazine Release requests stock reload without writing ammo");
+    Check(nativePulse.Update(true, false, 10u, 549u), "The request must survive an input frame until Source samples it");
+    Check(!nativePulse.Update(true, false, 10u, 550u), "A stock reload request has a bounded button hold");
+    Check(nativePulse.Update(true, true, 10u, 600u), "Another deliberate press starts a new reload request");
+    Check(!nativePulse.Update(true, false, 11u, 610u), "A gun/player/backend change cannot reload the newly selected gun");
+    Check(nativePulse.Update(true, true, 11u, 620u), "The new session can accept its own button request");
+    Check(!nativePulse.Update(false, false, 11u, 630u), "Menus and unavailable control cancel native fallback input");
+    Check(!nativePulse.Update(true, false, 11u, 640u), "Returning to gameplay cannot resume a stale native reload pulse");
+    Check(nativePulse.Update(true, true, 11u, 0xfffffff0u), "The pulse can start before a tick-count wrap");
+    Check(nativePulse.Update(true, false, 11u, 20u), "Tick-count wrap does not cancel a current short request");
+    nativePulse.Reset();
+    Check(!nativePulse.Update(true, false, 11u, 30u), "Session reset requires a fresh request even with the same generation");
+
     Check(IsLocalPlayerCommand(1, 1), "The host's command may settle the host's reload");
     for (int player = 2; player <= 32; ++player)
         Check(!IsLocalPlayerCommand(player, 1), "Other players must never consume the host's queued ammunition update");
