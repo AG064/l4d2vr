@@ -23,6 +23,12 @@ int main()
     CHECK(!IsShotMarker(kLeftShotMarker,false,true));
     CHECK(!IsShotMarker(kLeftShotMarker,true,false));
     CHECK(!IsShotMarker(2,true,true)); // ordinary pistol inventory-drop marker
+    // Preserve the input hint before weapon selection is simulated. Its use
+    // still depends on validating the actual firing weapon as a pistol.
+    CHECK(DecodeShotHand(kLeftShotMarker, true) == Hand::Left);
+    CHECK(DecodeShotHand(kRightShotMarker, true) == Hand::Right);
+    CHECK(DecodeShotHand(kLeftShotMarker, false) == Hand::None);
+    CHECK(DecodeShotHand(61u, true) == Hand::None);
     TriggerRouter router;
     CHECK(router.Update(true,false,true,30)==Hand::Left);
     CHECK(router.Update(true,false,true,29)==Hand::Left);

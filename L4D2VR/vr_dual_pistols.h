@@ -8,6 +8,11 @@ namespace l4d2vr_dual
     enum class Hand : unsigned { None, Right, Left };
     constexpr unsigned kRightShotMarker = 62u;
     constexpr unsigned kLeftShotMarker = 63u;
+    inline Hand DecodeShotHand(unsigned word, bool attack)
+    {
+        if (!attack) return Hand::None;
+        return word == kLeftShotMarker ? Hand::Left : word == kRightShotMarker ? Hand::Right : Hand::None;
+    }
     inline bool IsShotMarker(unsigned word, bool attack, bool pistol)
     {
         return attack && pistol && (word == kRightShotMarker || word == kLeftShotMarker);

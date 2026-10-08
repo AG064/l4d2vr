@@ -101,5 +101,23 @@ int main()
         CHECK(split.retained >= 0 && split.dropped >= 0 && split.retained <= 15 && split.dropped <= 15);
         CHECK(split.retained + split.dropped == clip);
     }
+    ledger.Reset(); pair.clip = 30;
+    after = pair; after.clip = 27;
+    CHECK(ledger.ObserveFire(pair, after, 200, Hand::Left, 0u, 3u));
+    CHECK(ledger.Split(after, Hand::Left, split, exact) && exact && split.dropped == 12 && split.retained == 15);
+    before = after; after.clip = 25;
+    CHECK(ledger.ObserveFire(before, after, 200, Hand::Left, 3u, 5u));
+    CHECK(ledger.Split(after, Hand::Left, split, exact) && exact && split.dropped == 10);
+    CHECK(!ledger.ObserveFire(before, after, 200, Hand::Left, 3u, 5u));
+    CHECK(ledger.Split(after, Hand::Left, split, exact) && exact && split.dropped == 10);
+    auto wrongGun = after; ++wrongGun.weaponSerial;
+    CHECK(!ledger.ObserveFire(before, wrongGun, 201, Hand::Right, 5u, 7u));
+    CHECK(ledger.Split(after, Hand::Left, split, exact) && exact && split.dropped == 10);
+    before = after; after.clip = 24;
+    CHECK(!ledger.ObserveFire(before, after, 201, Hand::Right, 5u, 7u)); // two events, one native round
+    CHECK(ledger.Split(after, Hand::Left, split, exact) && !exact && split.retained + split.dropped == 24);
+    CHECK(!ledger.ObserveFire(before, after, 202, Hand::Right, 7u, 5u)); // reversed counter
+    CHECK(!ledger.Shot(before, after, 202, Hand::Right, 0));
+    CHECK(!ledger.Shot(before, after, 202, Hand::Right, 16));
     std::puts("Pistol per-hand ammo conservation checks passed");
 }

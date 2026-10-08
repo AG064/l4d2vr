@@ -146,6 +146,15 @@ stripped before native gameplay input and carry a command-number watermark
 to reject duplicate backup commands. Switching the command pose between
 hands never contributes a spurious throwing velocity.
 
+An optional validated native gun-firing hook captures the pistol that actually
+fires after weapon selection. The decoder retains hand intent before that
+selection executes; the native bullet callback still validates pistol type.
+Bullet events must match the native clip decrease before per-hand accounting
+advances. Separate firing events within one command retain their ordinal, while
+replayed events cannot spend the same rounds again. Without the optional firing
+binding, the existing command-level accounting remains available. Execution
+scope is restored on normal return, C++ exceptions and structured exceptions.
+
 The pair still uses L4D2's shared clip, firing cadence, animations, and native
 reload. A split uses the stock single-pistol model, so the distinct left-hand
 Glock appearance is not retained after detachment. Independent magazines,

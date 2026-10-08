@@ -60,6 +60,12 @@ pistols keep their hand identity for another pickup. Actual per-hand reloads,
 chambers, empty-hand firing gates, capacity variants and gameplay acceptance
 remain unfinished.
 
+An optional native firing-boundary adapter now captures actual gun identity
+after weapon selection, correlating bullet events with clip consumption and
+retaining firing-event ordinals within a command. Hand intent is no longer
+discarded merely because packet decoding sees the previous weapon. Native
+timing, effects and client prediction still need headset/multiplayer acceptance.
+
 The server now has an optional native execution hook and per-command hand/pose
 history, so firing uses the simulated command rather than the latest decoded
 packet. Owner/edict serial, age, duplicates and ring rollover are covered offline.

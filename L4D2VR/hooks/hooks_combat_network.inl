@@ -1209,13 +1209,6 @@ namespace
         __except (EXCEPTION_EXECUTE_HANDLER) { return {}; }
 #endif
     }
-    struct ScopedServerPistolExecution
-    {
-        const ServerPistolExecution* previous;
-        explicit ScopedServerPistolExecution(const ServerPistolExecution& context)
-            : previous(g_ServerPistolExecution) { g_ServerPistolExecution = &context; }
-        ~ScopedServerPistolExecution() { g_ServerPistolExecution = previous; }
-    };
 }
 
 static bool TryGetExecutingReloadGate(void* owner, void* weapon, bool& blocked)
@@ -1262,11 +1255,11 @@ void __fastcall Hooks::dPistolPlayerRunCommand(void* owner, void*, CUserCmd* com
     }
     l4d2vr_pistol::AmmoSnapshot before{};
     int ammoIndex = -1;
-    const bool trackAmmo = context.poseValid && context.attack && m_VR && m_VR->m_DualPistolsIndependentHandsEnabled &&
+    const bool trackAmmo = !hkPistolGunFire.isEnabled && context.poseValid && context.attack && m_VR && m_VR->m_DualPistolsIndependentHandsEnabled &&
         ManualPistolReadAmmo(owner, reinterpret_cast<void*>(context.reloadWeapon.pointer), before, ammoIndex) &&
         ammoIndex == context.index;
-    ScopedServerPistolExecution scope(context);
-    hkPistolPlayerRunCommand.fOriginal(owner, command, moveHelper);
+    l4d2vr_native_scope::Run<const ServerPistolExecution>(g_ServerPistolExecution, &context,
+        [&]() { hkPistolPlayerRunCommand.fOriginal(owner, command, moveHelper); });
     if (trackAmmo)
     {
         l4d2vr_pistol::AmmoSnapshot after{};
@@ -1282,6 +1275,26 @@ void __fastcall Hooks::dPistolPlayerRunCommand(void* owner, void*, CUserCmd* com
     }
 }
 
+void __fastcall Hooks::dPistolGunFire(void* weapon, void*)
+{
+    const auto* context = g_ServerPistolExecution;
+    l4d2vr_pistol::AmmoSnapshot before{};
+    int index = -1;
+    const bool track = context && context->poseValid && context->attack && m_VR &&
+        m_VR->m_DualPistolsIndependentHandsEnabled && ManualPistolReadAmmo(context->owner, weapon, before, index) &&
+        index == context->index && before.ownerSerial == context->serial;
+    const unsigned firstBullet = track ? context->pistolBulletCalls : 0u;
+    hkPistolGunFire.fOriginal(weapon);
+    if (!track) return;
+    l4d2vr_pistol::AmmoSnapshot after{};
+    int afterIndex = -1;
+    if (!ManualPistolReadAmmo(context->owner, weapon, after, afterIndex) || afterIndex != index || !before.SameGun(after))
+        return;
+    std::lock_guard<std::mutex> lock(m_Game->m_PistolAmmoMutex);
+    m_Game->m_PistolAmmo[index].ObserveFire(before, after, context->command, context->pose.hand,
+        firstBullet, context->pistolBulletCalls);
+}
+
 int Hooks::dServerFireTerrorBullets(int playerId, const Vector& vecOrigin, const QAngle& vecAngles, int a4, int a5, int a6, float a7)
 {
 	Vector vecNewOrigin = vecOrigin;
@@ -1290,7 +1303,7 @@ int Hooks::dServerFireTerrorBullets(int playerId, const Vector& vecOrigin, const
     if (g_ServerPistolExecution && g_ServerPistolExecution->index == playerId &&
         g_ServerPistolExecution->poseValid && ServerExecutionWeaponIsPistol(*g_ServerPistolExecution))
     {
-        if (g_ServerPistolExecution->pistolBulletCalls < 2u) ++g_ServerPistolExecution->pistolBulletCalls;
+        if (g_ServerPistolExecution->pistolBulletCalls < 64u) ++g_ServerPistolExecution->pistolBulletCalls;
         const auto& pose = g_ServerPistolExecution->pose;
         const Vector position(pose.position[0], pose.position[1], pose.position[2]);
         const QAngle angles(pose.angles[0], pose.angles[1], pose.angles[2]);
@@ -2415,9 +2428,9 @@ int Hooks::dReadUsercmd(void* buf, CUserCmd* move, CUserCmd* from)
         if (vrPlayerState)
             vrPlayerState->dualPistolShotPose = l4d2vr_dual::IsShotMarker(encodedCarryValue,
                 attackDown, !serverWeaponIsDummyPistol && serverWeaponId == static_cast<int>(C_WeaponCSBase::WeaponID::PISTOL));
-        if (vrPlayerState && vrPlayerState->dualPistolShotPose)
-            decodedPistolHand = encodedCarryValue == l4d2vr_dual::kLeftShotMarker
-                ? l4d2vr_dual::Hand::Left : l4d2vr_dual::Hand::Right;
+        // Native weapon selection has not executed during packet decoding.
+        // Retain the hint now; the firing callback validates the actual gun.
+        decodedPistolHand = l4d2vr_dual::DecodeShotHand(encodedCarryValue, attackDown);
 		const bool activeWeaponIsThrowable = ServerWeaponIdIsThrowable(serverWeaponId);
 		const bool activeWeaponIsCarryThrowable = ServerWeaponIdIsManualCarryThrowable(serverWeaponId);
 		const bool encodedCarryRelease =

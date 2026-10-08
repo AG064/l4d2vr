@@ -11,7 +11,7 @@ friend-hosted shell and detachable-magazine transactions. See `physical-interact
 `manual-reload-input.md`, `weapon-calibration.md` and `vr-backlog.md` for their
 controls, limitations and remaining tests.
 
-The current runtime source passed 16 CTest suites and Windows Release x86
+The current runtime source passed 17 CTest suites and Windows Release x86
 DLL/pose-server builds with v143 in a temporary build tree. Seven native ammo
 signatures matched uniquely against the installed server binary. These are
 offline checks. Later documentation edits do not change the tested runtime.
@@ -97,6 +97,9 @@ still requires model work; this tool does not reconstruct it.
 - Pistol ammunition: join unequal clips, fire from one hand, and drop either
   pistol. Retained plus dropped ammunition must match the native shared total,
   including native reloads, weapon replacement, owner changes and unknown pairs.
+- Native firing boundary: switch to pistols and immediately fire either hand;
+  verify multi-shot frames, effects, native clip replication and optional-hook
+  fallback. Client/server per-hand ammo synchronization remains unfinished.
 - Native pistol execution: command-to-hand association across delayed commands,
   backup packets, weapon changes, two players and the optional-hook fallback.
 - Executed reload policy: packet batching, grip/pull commands, ordinary reload

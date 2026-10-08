@@ -75,23 +75,37 @@ namespace l4d2vr_pistol
             entry.capacity = pair.capacity;
             return true;
         }
-        bool Shot(const AmmoSnapshot& before, const AmmoSnapshot& after, int command, Hand hand)
+        bool Shot(const AmmoSnapshot& before, const AmmoSnapshot& after, int command, Hand hand,
+            int rounds = 1, unsigned ordinal = 0u)
         {
             if (!before.Valid() || !after.Valid() || !before.SameGun(after) || before.dual != after.dual ||
                 before.capacity != after.capacity ||
-                command <= 0 || Opposite(hand) == Hand::None || before.clip - after.clip != 1)
+                command <= 0 || Opposite(hand) == Hand::None || rounds <= 0 || rounds > before.capacity ||
+                before.clip - after.clip != rounds)
                 return false;
             Scope(before);
             Entry& entry = Find(before);
-            if (command <= entry.lastShot) { Observe(after); return false; }
+            if (command < entry.lastShot || (command == entry.lastShot && ordinal <= entry.lastOrdinal))
+            { Observe(after); return false; }
             Observe(before);
             entry.lastShot = command;
+            entry.lastOrdinal = ordinal;
             if (!before.dual)
                 return Single(after, hand);
             int& selected = hand == Hand::Right ? entry.right : entry.left;
-            if (!entry.exact || selected <= 0) { Observe(after); return false; }
-            --selected;
+            if (!entry.exact || selected < rounds) { Observe(after); return false; }
+            selected -= rounds;
             return entry.right + entry.left == after.clip;
+        }
+        bool ObserveFire(const AmmoSnapshot& before, const AmmoSnapshot& after, int command, Hand hand,
+            unsigned firstBullet, unsigned lastBullet)
+        {
+            if (!before.Valid() || !after.Valid() || !before.SameGun(after)) return false;
+            if (lastBullet > firstBullet && lastBullet - firstBullet <= static_cast<unsigned>(before.capacity) &&
+                Shot(before, after, command, hand, static_cast<int>(lastBullet - firstBullet), firstBullet + 1u))
+                return true;
+            Observe(after);
+            return false;
         }
         bool Split(const AmmoSnapshot& pair, Hand drop, AmmoSplit& result, bool& exact)
         {
@@ -108,6 +122,7 @@ namespace l4d2vr_pistol
         {
             std::uintptr_t weapon = 0u;
             unsigned serial = 0u;
+            unsigned lastOrdinal = 0u;
             int right = 0, left = 0, lastShot = 0, capacity = 15;
             bool dual = false, exact = true;
             Hand singleHand = Hand::Right;
