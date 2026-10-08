@@ -170,6 +170,10 @@ public:
     // ammo-definition result authoritative rather than assuming pistols are infinite.
     Offset PhysicalAmmoInfinite = { "server.dll", 0x0002D2C0,
         "55 8B EC 8B 45 08 83 F8 01 7C 29 3B 41 04 7D 24 6B C0 34 03 C8 8B 41 2C 83 F8 FF 75 0D 8B 49 38 85 C9 74 06 8B 41 1C 8B 40 30 83 F8 FE 0F 94 C0 5D C2 04 00", 0, true };
+    // CTerrorPlayer::PlayerRunCommand(CUserCmd*, IMoveHelper*), thiscall, ret 8.
+    // Native command execution is distinct from packet deserialization.
+    Offset PistolPlayerRunCommand = { "server.dll", 0x00319F50,
+        "55 8B EC 83 EC 18 A1 ? ? ? ? 53 33 DB 89 5D F8 89 5D FC 57 8B F9 39 58 08", 0, true };
     Offset PhysicalShellEdictAccessor = { "server.dll", 0x000ED4B0,
         "51 8B 0D ? ? ? ? 8B 11 8B 82 84 01 00 00 FF D0 C3", 0, true };
     Offset PhysicalShellReloadLayout = { "server.dll", 0x003C30C4,

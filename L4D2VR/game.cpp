@@ -1211,8 +1211,15 @@ bool Game::IsValidPlayerIndex(int index) const
     return index >= 0 && index < static_cast<int>(m_PlayersVRInfo.size());
 }
 
+void Game::ResetServerPistolCommands()
+{
+    std::lock_guard<std::mutex> lock(m_ServerPistolCommandsMutex);
+    for (auto& commands : m_ServerPistolCommands) commands.Reset();
+}
+
 void Game::ResetAllPlayerVRInfo()
 {
+    ResetServerPistolCommands();
     ResetRemoteShellServerClients();
     if (m_VR) m_VR->DisconnectRemoteShellProtocol();
     ResetRemoteMagazineServerClients();
@@ -1235,6 +1242,7 @@ void Game::ResetAllPlayerVRInfo()
 
 void Game::ResetVRPoseServerSession()
 {
+    ResetServerPistolCommands();
     ResetRemoteShellServerClients();
     if (m_VR) m_VR->DisconnectRemoteShellProtocol();
     ResetRemoteMagazineServerClients();

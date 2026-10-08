@@ -52,6 +52,13 @@ Object Pull conflicts and retain per-player reload ownership across them.
 Priority: high. Earlier dual pistols followed only the right controller and
 aimed both shots from that hand; the prototype also lost reload functionality.
 
+The server now has an optional native execution hook and per-command hand/pose
+history, so firing uses the simulated command rather than the latest decoded
+packet. Owner/edict serial, age, duplicates and ring rollover are covered offline.
+This is the execution prerequisite for per-hand ammo ownership; native shots,
+effects and actual independent magazines/chambers still need implementation and
+gameplay acceptance.
+
 Further offline fixes remove the dual-shot early return that skipped firing
 haptics and predicted hit feedback. The chosen ray is retained through the
 shared feedback path, and haptics select its firing hand. Live cached poses are

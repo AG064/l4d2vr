@@ -103,6 +103,7 @@ typedef void(__thiscall* tStartMeleeSwing)(void* thisptr, void* player, bool a3)
 typedef int(__thiscall* tPrimaryAttack)(void* thisptr);
 typedef void(__thiscall* tItemPostFrame)(void* thisptr);
 typedef bool(__thiscall* tPhysicalReload)(void* thisptr);
+typedef void(__thiscall* tPistolPlayerRunCommand)(void*, CUserCmd*, void*);
 typedef void* (__cdecl* tThrowableProjectileCreate)(const Vector& position, const QAngle& angles, const Vector& velocity, const Vector& angularVelocity, void* owner);
 typedef void* (__cdecl* tManualCarryCreateEntityByName)(const char* className, int forcedEdictIndex, bool runScriptHook);
 typedef void* (__thiscall* tManualCarryCreatePhysicsProp)(void* thisptr);
@@ -178,6 +179,7 @@ public:
 	static inline Hook<tThrowableProjectileCreate> hkVomitJarProjectileCreate;
 	static inline Hook<tManualCarryCreateEntityByName> hkManualCarryCreateEntityByName;
     static inline Hook<tPhysicalReload> hkPhysicalGunReload;
+    static inline Hook<tPistolPlayerRunCommand> hkPistolPlayerRunCommand;
     static inline Hook<tPhysicalReload> hkPhysicalShotgunReload;
 	static inline Hook<tManualCarryCreatePhysicsProp> hkManualCarryCreatePhysicsProp;
 	static inline Hook<tCBaseEntityVPhysicsCollision> hkCBaseEntityVPhysicsCollision;
@@ -267,6 +269,7 @@ public:
 	static void __fastcall dStartMeleeSwingServer(void* ecx, void* edx, void* player, bool a3);
 	static int __fastcall dPrimaryAttackServer(void* ecx, void* edx);
 	static void __fastcall dItemPostFrameServer(void* ecx, void* edx);
+    static void __fastcall dPistolPlayerRunCommand(void* ecx, void* edx, CUserCmd* command, void* moveHelper);
 	static void* __cdecl dMolotovProjectileCreate(const Vector& position, const QAngle& angles, const Vector& velocity, const Vector& angularVelocity, void* owner);
 	static void* __cdecl dPipeBombProjectileCreate(const Vector& position, const QAngle& angles, const Vector& velocity, const Vector& angularVelocity, void* owner);
 	static void* __cdecl dVomitJarProjectileCreate(const Vector& position, const QAngle& angles, const Vector& velocity, const Vector& angularVelocity, void* owner);

@@ -12,6 +12,7 @@ class C_WeaponCSBase;
 #include "vr_physical_controls.h"
 #include "vr_remote_shells.h"
 #include "vr_remote_magazines.h"
+#include "vr_server_pistol_commands.h"
 
 #include "vector.h"
 
@@ -240,6 +241,9 @@ public:
     // Matches Source's MAX_PLAYERS (65) to cover the full player index range.
     static constexpr size_t kMaxPlayers = 65;
     std::array<Player, kMaxPlayers> m_PlayersVRInfo;
+    std::mutex m_ServerPistolCommandsMutex;
+    std::array<l4d2vr_server_pistol::Commands, kMaxPlayers> m_ServerPistolCommands{};
+    void ResetServerPistolCommands();
     mutable std::mutex m_VRPoseMutex;
     std::atomic<bool> m_VRPoseServerCapable{ false };
     std::atomic<bool> m_VRPoseHelloSent{ false };

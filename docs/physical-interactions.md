@@ -106,6 +106,16 @@ available without it.
 
 With the supplied Quest binding:
 
+An optional native player-command hook now selects the dual-pistol ray from the
+command Source actually executes. The server stores each decoded command's hand
+and pose separately; a newer packet or altered duplicate cannot replace it.
+Execution context is scoped to the living native owner/edict serial and cleared
+after the native call. Missing/expired poses use the existing native path, and a
+signature mismatch retains the older packet-based compatibility path. This fixes
+the command-to-ray association in source and replay tests; actual host/guest
+firing, prediction and effects still need native gameplay verification. Per-hand
+magazine/chamber ammunition remains unfinished.
+
 - Right grip picks up inventory items and drops the held item on release.
 - Left grip can pick up a loose pistol when the pistol hand is free.
 - Each trigger aims and fires its own pistol while dual pistols are equipped.

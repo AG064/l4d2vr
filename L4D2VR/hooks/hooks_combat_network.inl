@@ -1125,12 +1125,95 @@ void __fastcall Hooks::dUpdateLaserSight(void* ecx, void* edx)
 	UpdateLocalWorldLaserParticle(ecx);
 }
 
+namespace
+{
+    struct ServerPistolExecution
+    {
+        void* owner = nullptr;
+        int index = -1, command = 0;
+        unsigned serial = 0;
+        bool attack = false, poseValid = false;
+        l4d2vr_dual::Shot pose{};
+    };
+    thread_local const ServerPistolExecution* g_ServerPistolExecution = nullptr;
+    bool ReadServerPistolExecution(void* owner, CUserCmd* command, ServerPistolExecution& result)
+    {
+        if (!Hooks::m_Game || !Hooks::m_Game->m_Offsets || !owner || !command ||
+            !Hooks::m_Game->m_Offsets->CBaseEntity_entindex.valid) return false;
+#ifdef _MSC_VER
+        __try
+        {
+#endif
+            auto* entity = *reinterpret_cast<edict_t**>(static_cast<unsigned char*>(owner) + 0x28);
+            const auto* bytes = static_cast<const unsigned char*>(owner);
+            if (bytes[0xf0] != 0u || *reinterpret_cast<const int*>(bytes + 0x238) != 2) return false;
+            using Index = int (__thiscall*)(void*);
+            const int index = reinterpret_cast<Index>(Hooks::m_Game->m_Offsets->CBaseEntity_entindex.address)(owner);
+            if (!entity || (entity->m_fStateFlags & 2u) != 0u || index <= 0 ||
+                !Hooks::m_Game->IsValidPlayerIndex(index) || entity->m_EdictIndex != index || command->command_number <= 0)
+                return false;
+            result.owner = owner; result.index = index; result.command = command->command_number;
+            result.serial = static_cast<unsigned short>(entity->m_NetworkSerialNumber);
+            result.attack = (command->buttons & 1) != 0;
+            return true;
+#ifdef _MSC_VER
+        }
+        __except (EXCEPTION_EXECUTE_HANDLER) { return false; }
+#endif
+    }
+    bool ServerExecutionWeaponIsPistol(const ServerPistolExecution& context)
+    {
+        if (!Hooks::m_Game || !Hooks::m_Game->m_Offsets || !Hooks::m_Game->m_Offsets->GetActiveWeapon.valid)
+            return false;
+#ifdef _MSC_VER
+        __try
+        {
+#endif
+            using Active = void* (__thiscall*)(void*);
+            auto* weapon = reinterpret_cast<Server_WeaponCSBase*>(
+                reinterpret_cast<Active>(Hooks::m_Game->m_Offsets->GetActiveWeapon.address)(context.owner));
+            return weapon && weapon->GetWeaponID() == static_cast<int>(C_WeaponCSBase::WeaponID::PISTOL);
+#ifdef _MSC_VER
+        }
+        __except (EXCEPTION_EXECUTE_HANDLER) { return false; }
+#endif
+    }
+    struct ScopedServerPistolExecution
+    {
+        const ServerPistolExecution* previous;
+        explicit ScopedServerPistolExecution(const ServerPistolExecution& context)
+            : previous(g_ServerPistolExecution) { g_ServerPistolExecution = &context; }
+        ~ScopedServerPistolExecution() { g_ServerPistolExecution = previous; }
+    };
+}
+
+void __fastcall Hooks::dPistolPlayerRunCommand(void* owner, void*, CUserCmd* command, void* moveHelper)
+{
+    ServerPistolExecution context{};
+    if (ReadServerPistolExecution(owner, command, context) && context.attack)
+    {
+        std::lock_guard<std::mutex> lock(m_Game->m_ServerPistolCommandsMutex);
+        context.poseValid = m_Game->m_ServerPistolCommands[context.index].Get(
+            reinterpret_cast<uintptr_t>(owner), context.serial, context.command, GetTickCount64(), context.pose);
+    }
+    ScopedServerPistolExecution scope(context);
+    hkPistolPlayerRunCommand.fOriginal(owner, command, moveHelper);
+}
+
 int Hooks::dServerFireTerrorBullets(int playerId, const Vector& vecOrigin, const QAngle& vecAngles, int a4, int a5, int a6, float a7)
 {
 	Vector vecNewOrigin = vecOrigin;
 	QAngle vecNewAngles = vecAngles;
 
-    if (m_Game->IsValidPlayerIndex(playerId))
+    if (g_ServerPistolExecution && g_ServerPistolExecution->index == playerId &&
+        g_ServerPistolExecution->poseValid && ServerExecutionWeaponIsPistol(*g_ServerPistolExecution))
+    {
+        const auto& pose = g_ServerPistolExecution->pose;
+        const Vector position(pose.position[0], pose.position[1], pose.position[2]);
+        const QAngle angles(pose.angles[0], pose.angles[1], pose.angles[2]);
+        return hkServerFireTerrorBullets.fOriginal(playerId, position, angles, a4, a5, a6, a7);
+    }
+    if (!hkPistolPlayerRunCommand.isEnabled && m_Game->IsValidPlayerIndex(playerId))
     {
         const auto& pistolPose = m_Game->m_PlayersVRInfo[playerId];
         if (pistolPose.isUsingVR && pistolPose.dualPistolShotPose)
@@ -2015,6 +2098,7 @@ namespace
 
 int Hooks::dReadUsercmd(void* buf, CUserCmd* move, CUserCmd* from)
 {
+    l4d2vr_dual::Hand decodedPistolHand = l4d2vr_dual::Hand::None;
 	m_ServerCommandControllerAimOverride = false;
 	m_ServerCommandControllerAimPlayer = nullptr;
 	m_ServerCommandControllerAimReason = 0;
@@ -2241,6 +2325,9 @@ int Hooks::dReadUsercmd(void* buf, CUserCmd* move, CUserCmd* from)
         if (vrPlayerState)
             vrPlayerState->dualPistolShotPose = l4d2vr_dual::IsShotMarker(encodedCarryValue,
                 attackDown, !serverWeaponIsDummyPistol && serverWeaponId == static_cast<int>(C_WeaponCSBase::WeaponID::PISTOL));
+        if (vrPlayerState && vrPlayerState->dualPistolShotPose)
+            decodedPistolHand = encodedCarryValue == l4d2vr_dual::kLeftShotMarker
+                ? l4d2vr_dual::Hand::Left : l4d2vr_dual::Hand::Right;
 		const bool activeWeaponIsThrowable = ServerWeaponIdIsThrowable(serverWeaponId);
 		const bool activeWeaponIsCarryThrowable = ServerWeaponIdIsManualCarryThrowable(serverWeaponId);
 		const bool encodedCarryRelease =
@@ -2431,6 +2518,18 @@ int Hooks::dReadUsercmd(void* buf, CUserCmd* move, CUserCmd* from)
     if (hasValidPlayer && move && move->command_number > 0)
     {
         Player& vrPlayer = m_Game->m_PlayersVRInfo[i];
+        ServerPistolExecution identity{};
+        if (ReadServerPistolExecution(m_Game->m_CurrentUsercmdPlayer, move, identity))
+        {
+            l4d2vr_dual::Shot shot{};
+            shot.command = move->command_number;
+            shot.hand = decodedPistolHand;
+            shot.position = {vrPlayer.controllerPos.x, vrPlayer.controllerPos.y, vrPlayer.controllerPos.z};
+            shot.angles = {vrPlayer.controllerAngle.x, vrPlayer.controllerAngle.y, vrPlayer.controllerAngle.z};
+            shot.capturedAtMs = GetTickCount64();
+            std::lock_guard<std::mutex> lock(m_Game->m_ServerPistolCommandsMutex);
+            m_Game->m_ServerPistolCommands[i].Store(reinterpret_cast<uintptr_t>(identity.owner), identity.serial, shot);
+        }
         if (static_cast<uint32_t>(move->command_number) > vrPlayer.lastDecodedUsercmd)
         {
             vrPlayer.lastDecodedUsercmd = static_cast<uint32_t>(move->command_number);
