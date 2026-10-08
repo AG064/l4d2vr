@@ -6,7 +6,9 @@ its actual owned weapon, script clip capacity and native reserve. One request
 transfers exactly one existing round, ends any earlier conventional reload, and
 marks the weapon and owner for Source replication. The guest waits for both a
 matching result and replicated clip/reserve values; it does not write predicted
-ammo for this path. The local listen-host shell settlement remains separate.
+ammo for this path. The listen-host uses the same transaction as the guest.
+Each physical insertion requests one shell; the older batch-insert setting does
+not cause multiple shells to be created by a single gesture on this path.
 
 Connection tokens, weapon network-handle serials, command freshness, expected
 ammo, sequence watermarks and a duplicate-response cache protect the transaction.
@@ -37,8 +39,12 @@ buttons and empty-clip automatic reload remain available. There is no virtual
 magazine, body ammo preview or physical empty-chamber latch in that fallback.
 Support grip remains available. Menus, unavailable gameplay control and session
 changes cancel the pulse. The old single-magazine predicted clip/reserve writers
-and clip-offset search have been removed. The older local shotgun shell writer
-and reserve-offset search still need migration to native shell transactions.
+and clip-offset search have been removed. Local shotgun clip/reserve prediction,
+its queued writer and reserve-offset search have also been removed. Shell
+transactions require the matching physical-control capability. Backend changes
+clear the current shell/pump interaction; unsupported or expired shell support
+uses stock reload and pumping, including native pump sounds. Support grip remains
+available, and Magazine Release requests native reload in that fallback too.
 
 An ejection acknowledgement confirms ammunition but does not clear a previously
 observed empty physical chamber. A predicted/native refill therefore cannot

@@ -1912,8 +1912,7 @@ float __fastcall Hooks::dProcessUsercmds(void* ecx, void* edx, edict_t* player,
 			{
 				const int weaponId = curWep->GetWeaponID();
 				m_VR->MarkMagazineInteractionServerHookSeen(weaponId);
-				if (MagazineInteractionWeaponIdIsShotgun(weaponId))
-					m_VR->TryApplyMagazineInteractionShotgunServerReloadAbort(curWep, weaponId, pPlayer);
+
 
 			}
 		}

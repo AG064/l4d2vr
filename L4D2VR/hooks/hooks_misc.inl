@@ -23018,7 +23018,6 @@ void Hooks::dItemPostFrameServer(void* ecx, void* edx)
     m_VR->MarkMagazineInteractionServerHookSeen(weaponId);
     if (MagazineInteractionWeaponIdIsShotgun(weaponId))
     {
-        m_VR->TryApplyMagazineInteractionShotgunServerReloadAbort(ecx, weaponId, serverPlayer);
         return;
     }
 

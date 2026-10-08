@@ -811,7 +811,7 @@ public:
 	bool m_QueuedRenderHmdYawUsesTurnPath = false;
 
 	// Queued (mat_queue_mode!=0) viewmodel stabilization: prevents first-person viewmodel ghosting
-	// when engine viewmodel bob/lag runs on a decoupled thread. 
+	// when engine viewmodel bob/lag runs on a decoupled thread.
 	bool m_QueuedViewmodelStabilize = true;
 	// Global viewmodel stabilization: hard-lock first-person viewmodel pose after engine calc
 	// in all queue modes (mat_queue_mode 0/1/2), useful to disable movement bob/sway.
@@ -2112,14 +2112,11 @@ public:
 	bool m_MagazineInteractionFreshMagazineContactActive = false;
 	bool m_MagazineInteractionBoltContactActive = false;
 	bool m_MagazineInteractionShotgunShellMode = false;
-	bool m_MagazineInteractionShotgunServerReloadAbortPending = false;
-	bool m_MagazineInteractionShotgunDirectShellCommitPending = false;
-    std::atomic<uint64_t> m_ShotgunShellSettlementExpiresAtMs{ 0u };
     mutable std::mutex m_RemoteShellMutex;
     mutable std::mutex m_RemoteMagazineMutex;
     l4d2vr_remote_mag::ClientRequest m_RemoteMagazineRequest;
-    std::atomic<bool> m_NativeMagazineReloadFallbackActive{false};
-    l4d2vr_magazine::NativeFallbackPulse m_NativeMagazineReloadFallbackPulse;
+    std::atomic<bool> m_NativeAmmoReloadFallbackActive{false};
+    l4d2vr_magazine::NativeFallbackPulse m_NativeAmmoReloadFallbackPulse;
     void OfferRemoteMagazineProtocol(unsigned version, uint32_t token);
     void ReceiveRemoteMagazineReply(const l4d2vr_remote_mag::Reply& reply);
     void DisconnectRemoteMagazineProtocol();
@@ -2141,22 +2138,11 @@ public:
         uintptr_t owner, uint32_t generation);
     l4d2vr_shell::ClientRequest::Poll PollRemoteShellReply(uint32_t handle, int weaponId,
         uintptr_t owner, uint32_t generation, int replicatedClip, int replicatedReserve, l4d2vr_shell::Reply& reply);
-	bool m_MagazineInteractionShotgunDirectShellServerClipCommitted = false;
-	bool m_MagazineInteractionShotgunDirectShellServerReserveCommitted = false;
 	int m_MagazineInteractionShotgunShellsLoadedThisSession = 0;
 	int m_MagazineInteractionShotgunLastInterruptedClip = -1;
-	int m_MagazineInteractionShotgunDirectShellTargetClip = -1;
-	int m_MagazineInteractionShotgunDirectShellAmmoType = -1;
-	int m_MagazineInteractionShotgunDirectShellTargetReserve = -1;
-	int m_MagazineInteractionShotgunDirectShellExpectedPriorReserve = -1;
-	int m_MagazineInteractionShotgunDirectShellWeaponId = 0;
-    int m_MagazineInteractionShotgunServerReserveOffset = 0;
 	l4d2vr_magazine::SessionTracker m_MagazineInteractionSession;
 	std::atomic<uint32_t> m_MagazineInteractionSessionGeneration{ 0 };
 	std::mutex m_MagazineInteractionCommitMutex;
-	uint32_t m_MagazineInteractionShotgunDirectShellGeneration = 0;
-	uint32_t m_MagazineInteractionShotgunAbortGeneration = 0;
-	int m_MagazineInteractionShotgunAbortWeaponId = 0;
 	MagazineInteractionManualState m_MagazineInteractionState = MagazineInteractionManualState::Idle;
 	C_WeaponCSBase* m_MagazineInteractionWeapon = nullptr;
 	int m_MagazineInteractionWeaponId = 0;
@@ -2210,8 +2196,6 @@ public:
 	std::chrono::steady_clock::time_point m_MagazineInteractionPostInsertStarted{};
 	std::chrono::steady_clock::time_point m_MagazineInteractionBoltStageStarted{};
 	std::chrono::steady_clock::time_point m_MagazineInteractionBoltGrabbedAt{};
-	std::chrono::steady_clock::time_point m_MagazineInteractionShotgunServerReloadAbortUntil{};
-	std::chrono::steady_clock::time_point m_MagazineInteractionShotgunDirectShellCommitUntil{};
 	std::chrono::steady_clock::time_point m_MagazineInteractionNativeReloadSuppressUntil{};
 	std::chrono::steady_clock::time_point m_MagazineInteractionViewmodelFreezeDeferredUntil{};
 	int m_MagazineInteractionNativeReloadSuppressWeaponId = 0;
@@ -3944,18 +3928,6 @@ public:
     bool IsMagazineInteractionDetachableBackendActive(int weaponId) const;
 	void MarkMagazineInteractionShotgunServerHookSeen(int serverWeaponId);
 	bool IsMagazineInteractionShotgunServerHookActive(int weaponId) const;
-    bool IsMagazineInteractionShotgunLocalServerHookActive(int weaponId) const;
-	void QueueMagazineInteractionShotgunServerReloadAbort(const char* reason);
-	void QueueMagazineInteractionShotgunDirectShellCommit(
-		int targetClip,
-		int ammoType,
-		int targetReserve,
-		int expectedPriorReserve,
-		const char* reason);
-	bool TryApplyMagazineInteractionShotgunServerReloadAbort(
-		void* serverWeapon,
-		int serverWeaponId,
-		void* serverPlayer = nullptr);
 	bool ApplyMagazineInteractionShotgunClientReloadAbort(
 		C_WeaponCSBase* clientWeapon,
 		int clientWeaponId,

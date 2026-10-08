@@ -70,6 +70,13 @@ int main()
     Check(!UseAuthoritativeMagazine(true, true, true, false), "Native dual pistols keep their explicit shared reload fallback");
     Check(!UseAuthoritativeMagazine(true, true, false, true), "A pistol retained in the left hand keeps its native fallback");
     Check(!UseAuthoritativeMagazine(true, false, false, false), "A shell-fed gun cannot enter the detachable-magazine path");
+    SessionTracker shellSession;
+    Check(shellSession.Observe(true, 1u, 3u, 3, 3u), "An unsupported shotgun begins with native controls");
+    const unsigned shellMode = 3u | kAuthoritativeShellInputMode;
+    Check(shellSession.Observe(true, 1u, 3u, 3, shellMode), "Shell capability starts fresh physical reload ownership");
+    Check(!shellSession.Observe(true, 1u, 3u, 3, shellMode), "Local server hooks do not change the native shell route");
+    Check(shellSession.Observe(true, 1u, 3u, 3, 3u), "A shell timeout clears held-ammo and pump interaction state");
+    Check((kAuthoritativeShellInputMode & kAuthoritativeMagazineInputMode) == 0u, "Shell and magazine session capabilities remain distinct");
 
     NativeFallbackPulse nativePulse;
     Check(!nativePulse.Update(true, false, 10u, 100u), "Unsupported servers must not reload until a button request");

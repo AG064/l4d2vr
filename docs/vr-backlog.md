@@ -196,8 +196,12 @@ partial reserve and spending the retained chamber between eject/insert.
 Backend changes fence old queued updates. Single-magazine local prediction and
 its queued clip/reserve writers have been removed. Unsupported magazine backends
 use native reload, including the Magazine Release button, while retaining support
-grip and clearing virtual ammo/chamber state. Local shotgun shell settlement and
-its remaining reserve-offset search still need replacement.
+grip and clearing virtual ammo/chamber state. The local shotgun writer and
+reserve-offset search have also been retired. Both host and guest load one
+native-confirmed shell per insertion. Unsupported/expired shell support restores
+stock reload, pumping and audio; changing the capability fences current hand
+state. Local command delivery, actual replication and physical cycling still
+require gameplay verification.
 
 - Define a separately negotiated request/acknowledgement for physical shell and
   magazine completion, scoped to the player's actual owned weapon and entity

@@ -69,6 +69,18 @@ int main()
     Check(ledger.Unsupported(next).status == Status::Unsupported);
     Check(ledger.Apply(next, state, 2600u, writer).status == Status::Unsupported && writes == 3);
 
+    // The host and guest both use this ledger. A native shot between the
+    // contact gesture and request cannot be overwritten by its old clip count.
+    ledger.Reset(40u);
+    state = {true, handle, 300u, 3, 4, 2, 8};
+    next = {40u, 1u, handle, 300u, 3, 4, 2};
+    state.clip = 3;
+    const int beforeShot = writes;
+    Check(ledger.Apply(next, state, 3000u, writer).status == Status::Stale && writes == beforeShot);
+    next.sequence = 2u; next.clip = 3;
+    Check(ledger.Apply(next, state, 3200u, writer).status == Status::Applied && clip == 4 && reserve == 1);
+    Check(ledger.Apply(next, state, 3400u, writer).status == Status::Applied && writes == beforeShot + 1);
+
     ClientRequest client;
     client.Offer(2u, 10u); Check(!client.Supported());
     client.Offer(kVersion, 10u); Check(client.Supported());

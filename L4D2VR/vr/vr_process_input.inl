@@ -791,8 +791,8 @@ void VR::ProcessInput()
         supportHandDown,
         supportHandJustPressed,
         allowGameplayInputOnTwoHandedGripRelease);
-    const bool nativeMagazineReloadPulse = m_NativeMagazineReloadFallbackPulse.Update(
-        m_NativeMagazineReloadFallbackActive.load(std::memory_order_acquire) &&
+    const bool nativeAmmoReloadPulse = m_NativeAmmoReloadFallbackPulse.Update(
+        m_NativeAmmoReloadFallbackActive.load(std::memory_order_acquire) &&
         m_FirstPersonControlReady.load(std::memory_order_acquire) && !m_MouseModeEnabled &&
         !m_SuppressPlayerInput && !m_Game->m_EngineClient->IsPaused() &&
         (!m_Game->m_VguiSurface || !m_Game->m_VguiSurface->IsCursorVisible()),
@@ -1160,7 +1160,7 @@ void VR::ProcessInput()
 
         // Anchor origin: estimate a more stable "body / pelvis" point (in body space).
         // IMPORTANT: Do NOT base this on m_HmdPosAbs, otherwise room-scale/head translation will make the anchors
-        // drift around as you move your head. m_CameraAnchor is the stable player/tracking anchor.     
+        // drift around as you move your head. m_CameraAnchor is the stable player/tracking anchor.
         Vector bodyOrigin = m_CameraAnchor
             + (invForward * (m_InventoryBodyOriginOffset.x * m_VRScale))
             + (invRight * (m_InventoryBodyOriginOffset.y * m_VRScale))
@@ -1773,10 +1773,10 @@ void VR::ProcessInput()
         !suppressSecondaryAttack;
 
     const bool wantReload =
-        nativeDualReloadPulse || nativeMagazineReloadPulse || magazineInteractionReloadPulse ||
+        nativeDualReloadPulse || nativeAmmoReloadPulse || magazineInteractionReloadPulse ||
         (!crouchButtonDown && reloadButtonDown && !adjustViewmodelActive && !scopeAdjustActive);
     if (wantReload && !m_ReloadCmdOwned &&
-        (nativeDualReload || nativeMagazineReloadPulse || !m_MagazineInteractionUseButtonDisbleReloadCommand || !m_MagazineInteractionUseButtonGripInput || !m_MagazineInteractionEnabled || !magazineGripDown))
+        (nativeDualReload || nativeAmmoReloadPulse || !m_MagazineInteractionUseButtonDisbleReloadCommand || !m_MagazineInteractionUseButtonGripInput || !m_MagazineInteractionEnabled || !magazineGripDown))
     {
         m_Game->ClientCmd_Unrestricted("+reload");
         m_ReloadCmdOwned = true;
@@ -1788,7 +1788,7 @@ void VR::ProcessInput()
         MarkMagazineInteractionReloadCommandIssued();
     }
     else if (m_ReloadCmdOwned &&
-        (!wantReload || (!nativeDualReload && !nativeMagazineReloadPulse && m_MagazineInteractionUseButtonDisbleReloadCommand && m_MagazineInteractionUseButtonGripInput && m_MagazineInteractionEnabled && magazineGripDown)))
+        (!wantReload || (!nativeDualReload && !nativeAmmoReloadPulse && m_MagazineInteractionUseButtonDisbleReloadCommand && m_MagazineInteractionUseButtonGripInput && m_MagazineInteractionEnabled && magazineGripDown)))
     {
         m_Game->ClientCmd_Unrestricted("-reload");
         m_ReloadCmdOwned = false;
