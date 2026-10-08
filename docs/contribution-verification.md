@@ -36,8 +36,10 @@ load its DLL, or modify the game installation.
 ```powershell
 $testRoot = Join-Path $env:TEMP ('l4d2vr-tests-' + [guid]::NewGuid().ToString('N'))
 cmake -S tests -B $testRoot -G 'Visual Studio 17 2022' -A Win32
-cmake --build $testRoot --config Release
+cmake --build $testRoot --config Release --clean-first
 ctest --test-dir $testRoot -C Release --output-on-failure
+cmake --build $testRoot --config Debug --target vr_hand_alignment_tests
+ctest --test-dir $testRoot -C Debug -R '^vr_hand_alignment$' --output-on-failure
 ```
 
 Python 3 is needed for the controller-profile and material tests. CMake reports
@@ -47,6 +49,13 @@ For a DLL build, use the repository's x86 build instructions. Its normal build
 has a post-build copy into a game installation. For offline verification, copy
 the source to a temporary directory, remove the `PostBuildEvent` from the staged
 project, and build that copy. Keep output and intermediate directories there.
+
+Use `Rebuild` for the staged DLL solution. MSBuild can omit dependencies under
+TEMP from its incremental tracking, so a header or `.inl` edit may otherwise
+leave old object code in a seemingly passing build. The final checks use clean
+test builds and a full DLL/pose-server rebuild. The Debug hand test enables
+the SDK's `VECTOR_PARANOIA` behavior, which seeds unspecified vector/angle
+values with NaN and detects accidental assumptions about zero defaults.
 
 The contribution changes were checked with the v143 compiler. The bundled
 MinHook archive was incompatible with that compiler's link-time code generation,
@@ -81,6 +90,8 @@ still requires model work; this tool does not reconstruct it.
   overrides behave correctly with the active models and skins.
 - Grip pickup/drop and body inventory: table contact, world placement, hand/ammo
   poses, snap turning, looking down and tracking-loss recovery.
+- Fresh ammo grip: repeat pickup at different wrist/gun angles, check the
+  configured grip rotation, palm contact and the same pose in queued rendering.
 - Dual pistols: each hand's aim, alternating/simultaneous triggers, detachment,
   pickup and the native shared-ammo reload fallback.
 - Pump shotguns: partial tube top-up, empty loading, rear/forward strokes,

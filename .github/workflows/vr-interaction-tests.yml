@@ -45,3 +45,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Test build failed' }
           ctest --test-dir $testRoot -C Release --output-on-failure --no-tests=error
           if ($LASTEXITCODE -ne 0) { throw 'Interaction tests failed' }
+          cmake --build $testRoot --config Debug --target vr_hand_alignment_tests -- /m:1 /nr:false
+          if ($LASTEXITCODE -ne 0) { throw 'Debug hand test build failed' }
+          ctest --test-dir $testRoot -C Debug -R '^vr_hand_alignment$' --output-on-failure --no-tests=error
+          if ($LASTEXITCODE -ne 0) { throw 'Poisoned-default hand test failed' }
