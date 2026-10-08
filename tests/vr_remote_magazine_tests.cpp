@@ -30,6 +30,18 @@ int main()
     insert.sequence = 3; insert.clip = state.clip; insert.reserve = state.reserve;
     Check(server.Apply(insert, state, 1700u, writer).status == Status::Weapon && writes == 2);
 
+    // The listen-host uses this same path even while its local weapon hooks
+    // are active. A shot spending the retained chamber is real native ammo.
+    server.Reset(40u); state = {true, handle, 300u, 2, 20, 2, 50, false};
+    eject = {40u, 1u, handle, 300u, 2, 20, 2, Action::Eject};
+    Check(server.Apply(eject, state, 1800u, writer).status == Status::Applied && state.clip == 1);
+    state.clip = 0; // native shot between ejection and insertion
+    insert = {40u, 2u, handle, 300u, 2, 1, 2, Action::Insert};
+    const int beforeShot = writes;
+    Check(server.Apply(insert, state, 2000u, writer).status == Status::Stale && writes == beforeShot);
+    insert.sequence = 3; insert.clip = 0;
+    Check(server.Apply(insert, state, 2200u, writer).status == Status::Applied && state.clip == 2 && state.reserve == 0);
+
     // An empty gun keeps no chambered round. Infinite ammo comes from the host,
     // not from the weapon ID or a client-controlled request flag.
     server.Reset(11u); state = {true, handle, 200u, 1, 0, 0, 15, false};

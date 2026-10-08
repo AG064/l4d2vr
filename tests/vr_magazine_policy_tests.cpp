@@ -25,6 +25,10 @@ int main()
     Check(ChamberRoundsAfterEject(1) == 1, "Removing a magazine must preserve the last existing chambered round");
     Check(ChamberRoundsAfterEject(15) == 1, "A tactical reload must preserve exactly one existing round");
     Check(ChamberRoundsAfterEject(30) == 1, "Clip capacity must not increase the retained chamber count");
+    Check(!l4d2vr_magazine::ChamberReadyAfterEject(true, 1), "An ejection ACK cannot cycle a previously empty physical chamber");
+    Check(l4d2vr_magazine::ChamberReadyAfterEject(false, 1), "An existing loaded chamber survives a tactical ejection ACK");
+    Check(!l4d2vr_magazine::ChamberReadyAfterEject(false, 0), "The native empty result cannot preserve a chambered round");
+    Check(!l4d2vr_magazine::ChamberReadyAfterEject(false, -1), "An unknown native count cannot ready the chamber");
     using namespace l4d2vr_magazine;
     ChamberHistory chambers;
     chambers.ObserveOwner(true, 100u);

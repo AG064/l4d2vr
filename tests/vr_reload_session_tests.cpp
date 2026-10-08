@@ -58,6 +58,19 @@ int main()
     Check(MayCommitAmmo(3, 3, 3, 4u, 4u), "A current shotgun shell update must remain valid");
     Check(!MayCommitAmmo(3, 8, 3, 4u, 4u), "A pump-shotgun update must not affect a Chrome shotgun");
 
+    SessionTracker ammoSession;
+    Check(ammoSession.Observe(true, 1u, 2u, 2, 3u), "A legacy local reload starts with its own session");
+    const unsigned authoritativeMode = 3u | kAuthoritativeMagazineInputMode;
+    Check(UseAuthoritativeMagazine(true, true, false, false), "A supported single gun uses native transactions on host and guest");
+    Check(ammoSession.Observe(true, 1u, 2u, 2, authoritativeMode), "A late ammo capability must fence the old predicted reload");
+    Check(!ammoSession.Observe(true, 1u, 2u, 2, authoritativeMode), "Local hook heartbeats must not move an authoritative reload back to prediction");
+    Check(!MayCommitAmmo(2, 2, 2, 7u, 8u), "A previously queued local clip write cannot cross the backend boundary");
+    Check(ammoSession.Observe(true, 1u, 2u, 2, 3u), "Losing the transaction lease must cancel its pending hand state");
+    Check(!UseAuthoritativeMagazine(false, true, false, false), "An absent capability cannot invent transaction support");
+    Check(!UseAuthoritativeMagazine(true, true, true, false), "Native dual pistols keep their explicit shared reload fallback");
+    Check(!UseAuthoritativeMagazine(true, true, false, true), "A pistol retained in the left hand keeps its native fallback");
+    Check(!UseAuthoritativeMagazine(true, false, false, false), "A shell-fed gun cannot enter the detachable-magazine path");
+
     Check(IsLocalPlayerCommand(1, 1), "The host's command may settle the host's reload");
     for (int player = 2; player <= 32; ++player)
         Check(!IsLocalPlayerCommand(player, 1), "Other players must never consume the host's queued ammunition update");

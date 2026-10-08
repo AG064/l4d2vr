@@ -26,6 +26,19 @@ waits for both the result and replicated ammunition. Empty reloads still need
 a physical slide cycle. A missing slide region is retried rather than completing
 the remote reload automatically. Native firing timers are preserved.
 
+The listen-server host now prefers that same magazine protocol even when its
+local weapon hooks are active. This avoids the old local full-clip prediction
+when only a partial reserve exists. A capability change starts a fresh reload
+session before choosing its backend; it cannot splice a local predicted
+ejection into an authoritative insertion. Native dual pistols and left-held
+single pistols retain their shared reload fallback. Older layouts without the
+protocol still use the legacy local/native path, which remains outside this
+transaction guarantee and needs further replacement.
+
+An ejection acknowledgement confirms ammunition but does not clear a previously
+observed empty physical chamber. A predicted/native refill therefore cannot
+skip the required slide cycle; a loaded tactical reload still keeps its round.
+
 Old magazines are currently discarded, including any rounds left in them; those
 rounds do not become reserve ammo. Keeping and recovering partially loaded
 magazines, independent dual-pistol ammunition and dedicated-server ammo support

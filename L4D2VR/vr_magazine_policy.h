@@ -5,6 +5,11 @@
 
 namespace l4d2vr_magazine
 {
+    constexpr unsigned kAuthoritativeMagazineInputMode = 64u;
+    inline bool UseAuthoritativeMagazine(bool supported, bool detachable, bool nativeDual, bool leftHandPistol)
+    {
+        return supported && detachable && !nativeDual && !leftHandPistol;
+    }
     // Prediction can refill a clip before a physical slide has been cycled.
     // Retain the empty chamber across inventory switches, using native handle
     // serials to distinguish a replacement entity at the same address.
@@ -161,5 +166,11 @@ namespace l4d2vr_magazine
         // Reserve ammunition cannot add a round to an empty chamber or
         // remove the round already loaded in a nonempty weapon.
         return clip > 0 ? 1 : 0;
+    }
+    inline bool ChamberReadyAfterEject(bool observedEmpty, int nativeRetainedClip)
+    {
+        // Source can refill its clip before the physical slide is cycled.
+        // A native count confirms ammunition, not completion of that cycle.
+        return !observedEmpty && nativeRetainedClip > 0;
     }
 }
