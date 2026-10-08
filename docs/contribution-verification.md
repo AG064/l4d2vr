@@ -24,6 +24,12 @@ This is an umbrella draft for maintainer feedback and can be divided into
 smaller contributions. Headset and two-client acceptance remain pending;
 compilation and state-machine tests do not establish gameplay success.
 
+`VR interaction tests` runs the offline CTest suites on Windows x86 for relevant
+pushes and pull requests, including drafts. Its build output is confined to the
+runner temporary directory. It uses a read-only token and does not load L4D2 or
+publish game binaries. Fork pull-request runs can require maintainer approval.
+The existing manually triggered DLL-build workflow is separate.
+
 Run the small offline tests in a temporary directory. They do not launch L4D2,
 load its DLL, or modify the game installation.
 
