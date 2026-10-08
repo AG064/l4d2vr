@@ -16,7 +16,8 @@ signatures gate support. A missing backend, unsupported layout or a 2.5-second
 reply/replication timeout preserves conventional reload and disables remote
 shell insertion for that lease. A new map/connection can negotiate again.
 
-Detachable-magazine weapons use a second negotiated protocol. Ejection retains
+Detachable-magazine weapons use a second negotiated protocol and require the
+matching physical-control capability for native reload suppression. Ejection retains
 at most one existing chambered round; insertion fills to the native capacity
 using available reserve. The host checks the engine's infinite-ammo rule,
 including when a pistol's ammo definition is finite. A preceding accepted

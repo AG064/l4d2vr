@@ -6,6 +6,7 @@
 #include "vr_hand_math.h"
 #include "vr_hand_vm_pose.h"
 #include "vr_magazine_policy.h"
+#include "vr_interaction_protocol.h"
 
 #include <d3d9.h>
 #include <d3d9_vr.h>
@@ -3528,7 +3529,9 @@ void VR::CancelRemoteMagazineRequest()
 }
 bool VR::RemoteMagazineProtocolSupported() const
 {
-    if (!m_IsVREnabled || !m_EncodeVRUsercmd || m_ForceNonVRServerMovement) return false;
+    if (!m_IsVREnabled || !m_EncodeVRUsercmd || m_ForceNonVRServerMovement ||
+        !l4d2vr_wire::SupportsPhysicalVersion(m_ServerPhysicalInteractionVersion.load(std::memory_order_acquire)))
+        return false;
     std::lock_guard<std::mutex> lock(m_RemoteMagazineMutex);
     return m_RemoteMagazineRequest.Supported();
 }
