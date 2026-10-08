@@ -10,6 +10,7 @@ class C_WeaponCSBase;
 #include <Windows.h>
 #include "vr_magazine_policy.h"
 #include "vr_physical_controls.h"
+#include "vr_remote_shells.h"
 
 #include "vector.h"
 
@@ -139,6 +140,8 @@ struct Player
     bool isNewSwing = false;
     l4d2vr_physical::MeleeCommand packetMeleeCommand{};
     l4d2vr_physical::MeleeSweepHistory meleeSweepHistory;
+    std::uint32_t lastDecodedUsercmd = 0u;
+    std::uint64_t lastDecodedUsercmdTickMs = 0u;
 
     static constexpr size_t kManualThrowPoseSampleCount = 8;
     std::array<ManualThrowPoseSample, kManualThrowPoseSampleCount> manualThrowPoseSamples{};
@@ -244,6 +247,17 @@ public:
     std::recursive_mutex m_BuiltinVRPoseRelayMutex;
     std::array<VRPoseRelayServerClient, kMaxPlayers>
         m_BuiltinVRPoseRelayClients{};
+    struct RemoteShellServerClient
+    {
+        edict_t* entity = nullptr;
+        std::int16_t serial = 0;
+        l4d2vr_shell::ServerLedger ledger;
+    };
+    std::mutex m_RemoteShellServerMutex;
+    std::array<RemoteShellServerClient, kMaxPlayers> m_RemoteShellServerClients{};
+    void OfferRemoteShellProtocol(edict_t* entity);
+    bool HandleRemoteShellCommand(edict_t* entity, const void* command);
+    void ResetRemoteShellServerClients();
 
     // === Weapon / Viewmodel State ===
     bool m_IsMeleeWeaponActive = false;

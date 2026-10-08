@@ -1,5 +1,37 @@
 # Experimental physical interactions
 
+Remote shotgun shell insertion is now implemented as a separately negotiated
+protocol. Both the guest and listen-server host need this build. The host reads
+its actual owned weapon, script clip capacity and native reserve. One request
+transfers exactly one existing round, ends any earlier conventional reload, and
+marks the weapon and owner for Source replication. The guest waits for both a
+matching result and replicated clip/reserve values; it does not write predicted
+ammo for this path. The local listen-host shell settlement remains separate.
+
+Connection tokens, weapon network-handle serials, command freshness, expected
+ammo, sequence watermarks and a duplicate-response cache protect the transaction.
+The token binds a session; it is not an authentication credential. A request
+cannot target someone else's gun or supply a desired clip count. Native function
+signatures gate support. A missing backend, unsupported layout or a 2.5-second
+reply/replication timeout preserves conventional reload and disables remote
+shell insertion for that lease. A new map/connection can negotiate again.
+
+This first protocol handles shotgun shells only. Remote detachable magazines,
+independent dual-pistol ammunition and dedicated-server ammo support are still
+unfinished. Native bindings and transaction tests passed offline; client/server
+delivery, Source replication ordering and interaction feel remain unverified.
+The edict notification and network-handle definitions follow the
+[L4D2 SDK headers](https://github.com/alliedmodders/hl2sdk/tree/l4d2/public).
+Handle serial comparison follows the SDK's
+[send proxy](https://github.com/alliedmodders/hl2sdk/blob/l4d2/game/server/sendproxy.cpp).
+
+For a future friend-hosted test, confirm `[VR][RemoteShell][client] protocol=1`
+on the guest. Load one shell into a partial and an empty shotgun, check both
+clip and reserve on the host, then test pumping and firing. Repeat with a weapon
+switch, downing/revival, no reserve ammo and a map change. Check server
+`[VR][RemoteShell][server]` and guest confirmation logs. Also test an older host
+and a deliberately interrupted connection for conventional reload recovery.
+
 This branch contains opt-in grip pickup/drop, body inventory access, manual
 pump cycling, and independently tracked dual pistols. These features have
 automated state and geometry coverage and compile in the Windows x86 Release

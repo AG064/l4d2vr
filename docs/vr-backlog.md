@@ -160,6 +160,14 @@ local native-server hook heartbeat. The physical-control acknowledgement does
 not provide a remote shell-insertion transaction. Client clip prediction alone
 cannot establish authoritative ammunition on the friend's host.
 
+Implemented offline on October 8: a separate one-shell protocol negotiates a
+connection token, validates the owned weapon's network serial and recent input,
+reads native server capacity/reserve, and transfers one existing round. The
+guest waits for a matching result and Source ammo replication. Duplicate requests
+reuse their result; stale or changed ammo/ownership is rejected. Unsupported or
+timed-out leases restore conventional reload. Friend-hosted delivery and native
+replication still need testing. Detachable magazines remain a follow-up.
+
 - Define a separately negotiated request/acknowledgement for physical shell and
   magazine completion, scoped to the player's actual owned weapon and entity
   serial. Reject duplicate, stale and incompatible requests.

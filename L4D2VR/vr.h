@@ -13,6 +13,7 @@
 #include "openvr.h"
 #include "vr_weapon_calibration.h"
 #include "vr_magazine_policy.h"
+#include "vr_remote_shells.h"
 #include "vr_physical_controls.h"
 #include "vr_interaction_geometry.h"
 #include "vr_dual_pistols.h"
@@ -245,7 +246,8 @@ enum class MagazineInteractionManualState
 	WaitingForBackendReload,
 	WaitingForBoltGrab,
 	HoldingBolt,
-	AutoBolting
+	AutoBolting,
+    WaitingForServerShell
 };
 
 struct MagazineInteractionBoxSnapshot
@@ -2111,6 +2113,18 @@ public:
 	bool m_MagazineInteractionShotgunServerReloadAbortPending = false;
 	bool m_MagazineInteractionShotgunDirectShellCommitPending = false;
     std::atomic<uint64_t> m_ShotgunShellSettlementExpiresAtMs{ 0u };
+    mutable std::mutex m_RemoteShellMutex;
+    l4d2vr_shell::ClientRequest m_RemoteShellRequest;
+    void OfferRemoteShellProtocol(unsigned version, uint32_t token);
+    void ReceiveRemoteShellReply(const l4d2vr_shell::Reply& reply);
+    void DisconnectRemoteShellProtocol();
+    void CancelRemoteShellRequest();
+    bool RemoteShellProtocolSupported() const;
+    bool RemoteShellRequestPending() const;
+    bool BeginRemoteShellRequest(uint32_t handle, int weaponId, int clip, int reserve,
+        uintptr_t owner, uint32_t generation);
+    l4d2vr_shell::ClientRequest::Poll PollRemoteShellReply(uint32_t handle, int weaponId,
+        uintptr_t owner, uint32_t generation, int replicatedClip, int replicatedReserve, l4d2vr_shell::Reply& reply);
 	bool m_MagazineInteractionShotgunDirectShellServerClipCommitted = false;
 	bool m_MagazineInteractionShotgunDirectShellServerReserveCommitted = false;
 	bool m_MagazineInteractionServerClipCommitPending = false;
@@ -3929,6 +3943,7 @@ public:
 	bool IsMagazineInteractionServerHookActive(int weaponId) const;
 	void MarkMagazineInteractionShotgunServerHookSeen(int serverWeaponId);
 	bool IsMagazineInteractionShotgunServerHookActive(int weaponId) const;
+    bool IsMagazineInteractionShotgunLocalServerHookActive(int weaponId) const;
 	void QueueMagazineInteractionServerClipCommit(
 		int targetClip,
 		int ammoType,

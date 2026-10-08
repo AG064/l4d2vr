@@ -846,6 +846,30 @@ namespace
             Game::logMsg("[VR][InteractionAck] server supports physical interaction protocol %lu", version);
     }
 
+    void __cdecl OnL4D2VRShellCapability(const SourceCCommand& command)
+    {
+        uint32_t version = 0u, token = 0u;
+        if (!g_Game || !g_Game->m_VR || !Hooks::s_ServerUnderstandsVR || command.ArgC() != 3 ||
+            !l4d2vr_shell::ParseNumber(command.Arg(1), 255u, version) ||
+            !l4d2vr_shell::ParseNumber(command.Arg(2), 0xffffffffu, token)) return;
+        g_Game->m_VR->OfferRemoteShellProtocol(version, token);
+    }
+    void __cdecl OnL4D2VRShellResult(const SourceCCommand& command)
+    {
+        if (!g_Game || !g_Game->m_VR || command.ArgC() != 11) return;
+        uint32_t values[10]{};
+        constexpr uint32_t limits[10] = {0xffffffffu, 0xffffffffu, (1u << 22) - 1u,
+            0x7fffffffu, 64u, 128u, 5000u, 7u, 128u, 5000u};
+        for (int arg = 1; arg <= 10; ++arg)
+            if (!l4d2vr_shell::ParseNumber(command.Arg(arg), limits[arg - 1], values[arg - 1])) return;
+        l4d2vr_shell::Reply reply{};
+        reply.request = {values[0], values[1], values[2], values[3], static_cast<int>(values[4]),
+            static_cast<int>(values[5]), static_cast<int>(values[6])};
+        reply.status = static_cast<l4d2vr_shell::Status>(values[7]);
+        reply.clip = static_cast<int>(values[8]); reply.reserve = static_cast<int>(values[9]);
+        g_Game->m_VR->ReceiveRemoteShellReply(reply);
+    }
+
     void __cdecl OnL4D2VRPoseReceiveCommand(const SourceCCommand& command)
     {
         unsigned long playerIndex = 0;
@@ -895,6 +919,12 @@ namespace
     SourceRegisteredConCommand g_L4D2VRInteractionAckCommand(
         kL4D2VRInteractionAckCommandName, &OnL4D2VRInteractionAckCommand,
         "Accepts the physical-interaction capability of a matching server build.", kFcvarServerCanExecute);
+    SourceRegisteredConCommand g_L4D2VRShellCapabilityCommand(
+        "l4d2vr_shell_capability", &OnL4D2VRShellCapability,
+        "Negotiate authoritative physical shell insertion.", kFcvarServerCanExecute);
+    SourceRegisteredConCommand g_L4D2VRShellResultCommand(
+        "l4d2vr_shell_result", &OnL4D2VRShellResult,
+        "Receive a physical shell transaction result.", kFcvarServerCanExecute);
     SourceRegisteredConCommand g_L4D2VRPoseReceiveCommand(
         kL4D2VRPoseReceiveCommandName,
         &OnL4D2VRPoseReceiveCommand,
@@ -925,6 +955,10 @@ namespace
                 cvar->RegisterConCommand(&g_L4D2VRServerAckCommand);
             if (!cvar->FindCommandBase(kL4D2VRInteractionAckCommandName))
                 cvar->RegisterConCommand(&g_L4D2VRInteractionAckCommand);
+            if (!cvar->FindCommandBase("l4d2vr_shell_capability"))
+                cvar->RegisterConCommand(&g_L4D2VRShellCapabilityCommand);
+            if (!cvar->FindCommandBase("l4d2vr_shell_result"))
+                cvar->RegisterConCommand(&g_L4D2VRShellResultCommand);
             if (!cvar->FindCommandBase(kL4D2VRPoseAckCommandName))
                 cvar->RegisterConCommand(&g_L4D2VRPoseAckCommand);
             if (!cvar->FindCommandBase(kL4D2VRPoseReceiveCommandName))
@@ -1144,6 +1178,8 @@ bool Game::IsValidPlayerIndex(int index) const
 
 void Game::ResetAllPlayerVRInfo()
 {
+    ResetRemoteShellServerClients();
+    if (m_VR) m_VR->DisconnectRemoteShellProtocol();
     if (m_VR) m_VR->m_ServerPhysicalInteractionVersion.store(0u, std::memory_order_release);
     {
         std::lock_guard<std::mutex> lock(m_VRPoseMutex);
@@ -1162,6 +1198,8 @@ void Game::ResetAllPlayerVRInfo()
 
 void Game::ResetVRPoseServerSession()
 {
+    ResetRemoteShellServerClients();
+    if (m_VR) m_VR->DisconnectRemoteShellProtocol();
     if (m_VR) m_VR->m_ServerPhysicalInteractionVersion.store(0u, std::memory_order_release);
     {
         std::lock_guard<std::mutex> lock(m_VRPoseMutex);
@@ -1617,6 +1655,8 @@ namespace
     }
 }
 
+#include "game_remote_shells.inl"
+
 void Game::ObserveBuiltinVRPoseRelayClient(
     int playerIndex,
     edict_t* entity)
@@ -1675,6 +1715,7 @@ void Game::ObserveBuiltinVRPoseRelayClient(
     if (poseAckSent && Hooks::hkPhysicalGunReload.isEnabled && Hooks::hkPhysicalShotgunReload.isEnabled &&
         m_Offsets && m_Offsets->ManualInventoryWeaponDrop.valid && m_Offsets->PistolRemoveDualWeapons.valid)
         VRPoseRelaySendClientCommand(m_ServerPluginHelpers, entity, "l4d2vr_interaction_ack 1\n");
+    if (poseAckSent) OfferRemoteShellProtocol(entity);
     if (poseAckSent && client.ackAttempts == 1)
     {
         Game::logMsg(

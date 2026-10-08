@@ -160,6 +160,20 @@ public:
         "55 8B EC 83 EC 08 56 57 8B F1 E8 ? ? ? ? 8B F8 85 FF 0F 84 ? ? ? ? 8B 87 B4 1C 00 00", 0, true };
     Offset PhysicalGunOwner = { "server.dll", 0x003EC5D0,
         "56 E8 ? ? ? ? 8B F0 85 F6 74 14 8B 06 8B 90 68 01 00 00 8B CE FF D2 84 C0 74 04 8B C6 5E C3", 0, true };
+    // Native shell transaction proofs. Literal displacements validate the
+    // server ammo array (0x1874), weapon script handle and clip-capacity field.
+    Offset PhysicalShellAmmoCount = { "server.dll", 0x00046DF0,
+        "55 8B EC 56 8B 75 08 57 8B F9 83 FE FF 75 08 5F 33 C0 5E 5D C2 04 00 56 E8 ? ? ? ? 8B C8 E8 ? ? ? ? 84 C0 B8 E7 03 00 00 75 07 8B 84 B7 74 18 00 00 5F 5E 5D C2 04 00", 0, true };
+    Offset PhysicalShellMaxClip = { "server.dll", 0x0004A810,
+        "0F B7 81 68 14 00 00 50 E8 ? ? ? ? 8B 80 60 01 00 00 83 C4 04 C3", 0, true };
+    Offset PhysicalShellEdictAccessor = { "server.dll", 0x000ED4B0,
+        "51 8B 0D ? ? ? ? 8B 11 8B 82 84 01 00 00 FF D0 C3", 0, true };
+    Offset PhysicalShellReloadLayout = { "server.dll", 0x003C30C4,
+        "8B 86 0C 14 00 00 50 8B CF E8 ? ? ? ? 8B 16 8B 9E 14 14 00 00 89 45 F8 8B 82 0C 05 00 00 8B CE FF D0 2B C3", 0, true };
+    Offset PhysicalShellReloadState = { "server.dll", 0x003C2FF6,
+        "83 BE F0 17 00 00 00 53 0F 85 ? ? ? ?", 0, true };
+    Offset PhysicalShellActiveHandle = { "server.dll", 0x000464F0,
+        "8B 81 D4 19 00 00 83 F8 FF 74 23 8B 15 ? ? ? ? 8B C8 81 E1 FF 0F 00 00", 0, true };
     // CBaseCombatCharacter::RemovePlayerItem and UTIL_Remove. Empty-hand mode
     // uses them to destroy only the hidden placeholder pistol before a pickup.
     Offset ManualEmptyHandsRemovePlayerItem = { "server.dll", 0x00045200,

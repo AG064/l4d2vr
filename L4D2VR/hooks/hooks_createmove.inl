@@ -2072,7 +2072,9 @@ bool __fastcall Hooks::dCreateMove(void* ecx, void* edx, float flInputSampleTime
         !m_VR->IsMagazineInteractionReloadCommandActive() &&
         (m_VR->m_DualPistolNativeReloadState.load(std::memory_order_acquire) & 1u) == 0u &&
         !m_VR->m_RenderPlayerIncap.load(std::memory_order_acquire) &&
-        l4d2vr_calibration::IsFirearm(static_cast<int>(routingPistol->GetWeaponID())))
+        l4d2vr_calibration::IsFirearm(static_cast<int>(routingPistol->GetWeaponID())) &&
+        (!l4d2vr_shell::IsShotgun(static_cast<int>(routingPistol->GetWeaponID())) ||
+            m_VR->IsMagazineInteractionShotgunServerHookActive(static_cast<int>(routingPistol->GetWeaponID()))))
         cmd->impulse = l4d2vr_grip::kBlockNativeReloadImpulse;
 
 	if (m_Game && m_VR)

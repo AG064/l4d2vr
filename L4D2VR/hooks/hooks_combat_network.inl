@@ -1551,6 +1551,7 @@ void __fastcall Hooks::dServerGameClientsClientCommand(
 	const void* sourceCommand)
 {
 	(void)edx;
+    if (m_Game && m_Game->HandleRemoteShellCommand(player, sourceCommand)) return;
 	if (m_Game &&
 		m_Game->HandleBuiltinVRPoseRelayCommand(
 			player,
@@ -2426,6 +2427,11 @@ int Hooks::dReadUsercmd(void* buf, CUserCmd* move, CUserCmd* from)
     if (hasValidPlayer && move && move->command_number > 0)
     {
         Player& vrPlayer = m_Game->m_PlayersVRInfo[i];
+        if (static_cast<uint32_t>(move->command_number) > vrPlayer.lastDecodedUsercmd)
+        {
+            vrPlayer.lastDecodedUsercmd = static_cast<uint32_t>(move->command_number);
+            vrPlayer.lastDecodedUsercmdTickMs = GetTickCount64();
+        }
         if (move->command_number > vrPlayer.packetMeleeCommand.command)
         {
             l4d2vr_physical::MeleeCommand sample{};

@@ -3437,6 +3437,73 @@ bool VR::GetLatestDualPistolShotPose(Vector& position, QAngle& angles) const
     return true;
 }
 
+void VR::OfferRemoteShellProtocol(unsigned version, uint32_t token)
+{
+    std::lock_guard<std::mutex> lock(m_RemoteShellMutex);
+    m_RemoteShellRequest.Offer(version, token);
+    if (m_RemoteShellRequest.Supported())
+        Game::logMsg("[VR][RemoteShell][client] protocol=%u offered", version);
+}
+void VR::ReceiveRemoteShellReply(const l4d2vr_shell::Reply& reply)
+{
+    std::lock_guard<std::mutex> lock(m_RemoteShellMutex);
+    m_RemoteShellRequest.Receive(reply);
+}
+void VR::DisconnectRemoteShellProtocol()
+{
+    std::lock_guard<std::mutex> lock(m_RemoteShellMutex);
+    m_RemoteShellRequest.Disconnect();
+}
+void VR::CancelRemoteShellRequest()
+{
+    std::lock_guard<std::mutex> lock(m_RemoteShellMutex);
+    m_RemoteShellRequest.Cancel();
+}
+bool VR::RemoteShellProtocolSupported() const
+{
+    if (!m_IsVREnabled || !m_EncodeVRUsercmd || m_ForceNonVRServerMovement) return false;
+    std::lock_guard<std::mutex> lock(m_RemoteShellMutex);
+    return m_RemoteShellRequest.Supported();
+}
+bool VR::RemoteShellRequestPending() const
+{
+    std::lock_guard<std::mutex> lock(m_RemoteShellMutex);
+    return m_RemoteShellRequest.Pending();
+}
+bool VR::BeginRemoteShellRequest(uint32_t handle, int id, int clip, int reserve,
+    uintptr_t owner, uint32_t generation)
+{
+    if (!RemoteShellProtocolSupported() || !m_Game || !m_Game->m_EngineClient ||
+        m_Game->m_EngineClient->IsPaused() || m_MouseModeEnabled || m_SuppressPlayerInput ||
+        !m_FirstPersonControlReady.load(std::memory_order_acquire) ||
+        m_RenderPlayerIncap.load(std::memory_order_acquire) ||
+        m_RenderPlayerControlledBySI.load(std::memory_order_acquire) ||
+        (m_Game->m_VguiSurface && m_Game->m_VguiSurface->IsCursorVisible())) return false;
+    VRWorldPoseTrackingSnapshot pose{};
+    if (!ReadWorldPoseTrackingSnapshot(pose) || !pose.hmdValid || !pose.leftHandValid || !pose.rightHandValid)
+        return false;
+    l4d2vr_shell::Request request{};
+    {
+        std::lock_guard<std::mutex> lock(m_RemoteShellMutex);
+        if (m_CurrentPredictedHitFeedbackCmdNumber <= 0 || !m_RemoteShellRequest.Begin(handle, id, clip, reserve,
+            static_cast<uint32_t>(m_CurrentPredictedHitFeedbackCmdNumber), owner, generation, GetTickCount64(), request))
+            return false;
+    }
+    char command[192]{};
+    std::snprintf(command, sizeof(command), "l4d2vr_shell_insert_v1 %u %u %u %u %d %d %d\n",
+        request.token, request.sequence, request.handle, request.command, id, clip, reserve);
+    m_Game->ServerCmd(command, true);
+    Game::logMsg("[VR][RemoteShell][client] requested seq=%u weaponId=%d clip=%d reserve=%d",
+        request.sequence, id, clip, reserve);
+    return true;
+}
+l4d2vr_shell::ClientRequest::Poll VR::PollRemoteShellReply(uint32_t handle, int id,
+    uintptr_t owner, uint32_t generation, int clip, int reserve, l4d2vr_shell::Reply& reply)
+{
+    std::lock_guard<std::mutex> lock(m_RemoteShellMutex);
+    return m_RemoteShellRequest.Update(handle, id, owner, generation, GetTickCount64(), reply, clip, reserve);
+}
+
 void VR::RecordMeleeCommand(int command, bool eligible, uintptr_t owner, uintptr_t weapon)
 {
     if (command <= 0) return;
@@ -3679,6 +3746,7 @@ void VR::GetLoadedPlayerModelMaterialsSnapshots(
 
 bool VR::IsMagazineInteractionLeftHandActive() const
 {
+    if (m_MagazineInteractionState == MagazineInteractionManualState::WaitingForServerShell) return true;
     if (m_MagazineInteractionShotgunShellMode &&
         m_MagazineInteractionState == MagazineInteractionManualState::WaitingForFreshMagazine &&
         m_MagazineInteractionShotgunShellsLoadedThisSession > 0)
@@ -3777,6 +3845,8 @@ bool VR::ShouldSuppressMagazineInteractionEmptyClipAutoReload(C_BasePlayer* loca
 
     const bool usesShotgunShells =
         MagazineInteractionWeaponUsesShotgunShells(activeWeaponId);
+    if (usesShotgunShells && !IsMagazineInteractionShotgunServerHookActive(static_cast<int>(activeWeaponId)))
+        return false; // conventional empty reload on a server without a physical shell backend
     const bool forceShotgunMagazineInteraction =
         usesShotgunShells && m_MagazineInteractionShotgunShellMode;
     if (!m_MagazineInteractionSuppressEmptyClipAutoReload &&
@@ -3806,6 +3876,7 @@ bool VR::IsMagazineInteractionBlockingFire() const
     if ((nativeDualReload & 1u) != 0u) return (nativeDualReload & 2u) != 0u;
     if (m_ManualPumpBlockingFire.load(std::memory_order_acquire))
         return true;
+    if (RemoteShellRequestPending()) return true;
     const bool shellSettlement = l4d2vr_magazine::ShellSettlementPending(GetTickCount64(),
         m_ShotgunShellSettlementExpiresAtMs.load(std::memory_order_acquire));
     if (shellSettlement) return true;
@@ -3818,7 +3889,8 @@ bool VR::IsMagazineInteractionBlockingFire() const
         return l4d2vr_magazine::ShotgunBlocksFire(m_MagazineInteractionChamberEmpty,
             m_MagazineInteractionState == MagazineInteractionManualState::HoldingFreshMagazine,
             cycling, m_MagazineInteractionReloadTriggered ||
-                m_MagazineInteractionState == MagazineInteractionManualState::WaitingForBackendReload,
+                m_MagazineInteractionState == MagazineInteractionManualState::WaitingForBackendReload ||
+                m_MagazineInteractionState == MagazineInteractionManualState::WaitingForServerShell,
             shellSettlement);
     }
 
@@ -3972,6 +4044,12 @@ void VR::MarkMagazineInteractionShotgunServerHookSeen(int serverWeaponId)
 }
 
 bool VR::IsMagazineInteractionShotgunServerHookActive(int weaponId) const
+{
+    return IsMagazineInteractionShotgunLocalServerHookActive(weaponId) ||
+        (l4d2vr_shell::IsShotgun(weaponId) && RemoteShellProtocolSupported());
+}
+
+bool VR::IsMagazineInteractionShotgunLocalServerHookActive(int weaponId) const
 {
     if (weaponId <= 0 ||
         m_MagazineInteractionShotgunServerHookWeaponId != weaponId ||
@@ -4589,6 +4667,7 @@ bool VR::GetMagazineInteractionBoltWorld(VrHandMatrix4& outWorld) const
 
 void VR::ResetMagazineInteractionSession()
 {
+    CancelRemoteShellRequest();
     // Fence old updates before waiting for a server-side settlement in progress.
     m_MagazineInteractionSessionGeneration.fetch_add(1, std::memory_order_acq_rel);
     CancelMagazineInteractionManual();
@@ -6914,6 +6993,43 @@ bool VR::UpdateMagazineInteraction(
 
     enableServerHookClipSettlementIfAvailable("server-hook-active");
 
+    if (m_MagazineInteractionState == MagazineInteractionManualState::WaitingForServerShell)
+    {
+        ApplyMagazineInteractionShotgunClientReloadAbort(activeWeapon, activeWeaponIdInt, "remote-shell-pending");
+        l4d2vr_shell::Reply reply{};
+        int ammoType = -1, replicatedReserve = -1;
+        if (MagazineInteractionTryReadValue(activeWeapon, kPrimaryAmmoTypeOffset, ammoType) && ammoType >= 0 && ammoType < 32)
+            MagazineInteractionTryReadValue(localPlayer, kAmmoArrayOffset + ammoType * static_cast<int>(sizeof(int)), replicatedReserve);
+        const auto poll = PollRemoteShellReply(activeWeaponHandle, activeWeaponIdInt,
+            reinterpret_cast<uintptr_t>(localPlayer),
+            m_MagazineInteractionSessionGeneration.load(std::memory_order_acquire), activeClip, replicatedReserve, reply);
+        if (poll == l4d2vr_shell::ClientRequest::Poll::Waiting) return false;
+        m_MagazineInteractionLeftHandHolding = false;
+        m_MagazineInteractionLeftHandPoseActive.store(0, std::memory_order_relaxed);
+        m_MagazineInteractionFreshPickupBasisValid = false;
+        m_MagazineInteractionState = MagazineInteractionManualState::WaitingForFreshMagazine;
+        if (poll != l4d2vr_shell::ClientRequest::Poll::Result || reply.status != l4d2vr_shell::Status::Applied)
+        {
+            Game::logMsg("[VR][RemoteShell][client] insertion ended poll=%u status=%u",
+                static_cast<unsigned>(poll), static_cast<unsigned>(reply.status));
+            return false;
+        }
+        // Both the acknowledgement and Source's replicated ammo must arrive.
+        // Remote shell loading never writes predicted client ammunition.
+        ++m_MagazineInteractionShotgunShellsLoadedThisSession;
+        m_MagazineInteractionShotgunLastInterruptedClip = activeClip;
+        m_MagazineInteractionStartClip = activeClip;
+        m_MagazineInteractionReloadTriggered = false;
+        ApplyMagazineInteractionShotgunClientReloadAbort(activeWeapon, activeWeaponIdInt, "remote-shell-confirmed");
+        triggerMagazineInteractionBothHandsHaptic(0.026f, 105.0f, 0.42f, 2);
+        MagazineInteractionPlayClipInSound(this);
+        Game::logMsg("[VR][RemoteShell][client] confirmed seq=%u clip=%d reserve=%d", reply.request.sequence, reply.clip, reply.reserve);
+        const int maxClip = MagazineInteractionDefaultMaxClip(activeWeaponId, m_MagazineInteractionMagazineModelName);
+        if (maxClip > 0 && activeClip >= maxClip && !beginBoltStage(activeWeaponId, "remote-shell-full"))
+            CancelMagazineInteractionManual();
+        return false;
+    }
+
     if (IsMagazineInteractionManualActive() &&
         m_MagazineInteractionShotgunShellMode &&
         !activeShotgunManualReloadAvailable)
@@ -7694,6 +7810,18 @@ bool VR::UpdateMagazineInteraction(
                 const bool reserveKnown =
                     readClientAmmoForDirectClipSettlement(ammoType, reserve, reserveOffset, false);
                 if (!reserveKnown) return false; // retain the held shell until its actual ammo slot is readable
+                if (RemoteShellProtocolSupported() && !IsMagazineInteractionShotgunLocalServerHookActive(activeWeaponIdInt))
+                {
+                    if (BeginRemoteShellRequest(activeWeaponHandle, activeWeaponIdInt, activeClip, reserve,
+                        reinterpret_cast<uintptr_t>(localPlayer),
+                        m_MagazineInteractionSessionGeneration.load(std::memory_order_acquire)))
+                    {
+                        m_MagazineInteractionState = MagazineInteractionManualState::WaitingForServerShell;
+                        m_MagazineInteractionLeftHandHolding = false;
+                        m_MagazineInteractionLeftHandPoseActive.store(0, std::memory_order_relaxed);
+                    }
+                    return false;
+                }
                 if (reserve <= 0)
                 {
                     m_MagazineInteractionState = MagazineInteractionManualState::WaitingForFreshMagazine;
