@@ -102,11 +102,12 @@ namespace l4d2vr_magazine
     class NativeReloadLedger
     {
     public:
-        void Observe(int command, std::uintptr_t weapon, bool block, bool preserve = false, std::uintptr_t owner = 0u)
+        void Observe(int command, std::uintptr_t weapon, bool block, bool preserve = false,
+            std::uintptr_t owner = 0u, unsigned serial = 0u)
         {
-            if (owner != m_Owner)
+            if (owner != m_Owner || serial != m_Serial)
             {
-                m_Owner = owner; m_Command = 0; m_Weapon = 0u;
+                m_Owner = owner; m_Serial = serial; m_Command = 0; m_Weapon = 0u;
             }
             if (command <= m_Command) return;
             m_Command = command;
@@ -122,6 +123,7 @@ namespace l4d2vr_magazine
         int m_Command = 0;
         std::uintptr_t m_Weapon = 0u;
         std::uintptr_t m_Owner = 0u;
+        unsigned m_Serial = 0u;
     };
     inline bool IsLocalPlayerCommand(int playerIndex, int localPlayerIndex)
     {

@@ -149,6 +149,15 @@ First-person bone retargeting does not yet separate remote world-model
 pistols. Body inventory follows tracked head position and yaw; full body IK
 and character-specific avatar fitting remain separate work.
 
+When the optional native command-execution hook is available, physical reload
+suppression follows the command being simulated, including commands without a
+shot. Grip and Object Pull commands retain the preceding simulated policy only
+for the same weapon and edict generation. Replayed commands keep their original
+decision. Switching or replacing weapons during a command cannot apply the old
+weapon's gate to the new weapon.
+Without that optional hook, the existing decoded-command fallback remains.
+Native timing, weapon switches and two-client reloads still need gameplay tests.
+
 Grip release places the item at the tracked hand with no throwing impulse.
 Trigger-release throwing remains separate. Grip pickup uses nearby native
 item selection with surface contact and controller aim on the server.

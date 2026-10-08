@@ -243,6 +243,7 @@ public:
     std::array<Player, kMaxPlayers> m_PlayersVRInfo;
     std::mutex m_ServerPistolCommandsMutex;
     std::array<l4d2vr_server_pistol::Commands, kMaxPlayers> m_ServerPistolCommands{};
+    std::array<l4d2vr_server_pistol::Reloads, kMaxPlayers> m_ServerReloadCommands{};
     void ResetServerPistolCommands();
     mutable std::mutex m_VRPoseMutex;
     std::atomic<bool> m_VRPoseServerCapable{ false };

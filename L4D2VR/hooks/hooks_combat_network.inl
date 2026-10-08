@@ -1133,6 +1133,8 @@ namespace
         int index = -1, command = 0;
         unsigned serial = 0;
         bool attack = false, poseValid = false;
+        bool reloadValid = false, reloadBlocked = false;
+        l4d2vr_server_pistol::Weapon reloadWeapon{};
         l4d2vr_dual::Shot pose{};
     };
     thread_local const ServerPistolExecution* g_ServerPistolExecution = nullptr;
@@ -1178,6 +1180,31 @@ namespace
         __except (EXCEPTION_EXECUTE_HANDLER) { return false; }
 #endif
     }
+    l4d2vr_server_pistol::Weapon ReadServerReloadWeapon(void* owner)
+    {
+        if (!Hooks::m_Game || !Hooks::m_Game->m_Offsets || !owner ||
+            !Hooks::m_Game->m_Offsets->GetActiveWeapon.valid ||
+            !Hooks::m_Game->m_Offsets->CBaseEntity_entindex.valid) return {};
+#ifdef _MSC_VER
+        __try
+        {
+#endif
+            using Active = void* (__thiscall*)(void*);
+            auto* weapon = reinterpret_cast<Server_WeaponCSBase*>(
+                reinterpret_cast<Active>(Hooks::m_Game->m_Offsets->GetActiveWeapon.address)(owner));
+            if (!weapon || !l4d2vr_calibration::IsFirearm(weapon->GetWeaponID())) return {};
+            auto* entity = *reinterpret_cast<edict_t**>(reinterpret_cast<unsigned char*>(weapon) + 0x28);
+            using Index = int (__thiscall*)(void*);
+            if (!entity || (entity->m_fStateFlags & 2u) != 0u || (entity->m_fStateFlags & 4u) == 0u ||
+                entity->m_EdictIndex <= 0 || reinterpret_cast<Index>(
+                    Hooks::m_Game->m_Offsets->CBaseEntity_entindex.address)(weapon) != entity->m_EdictIndex)
+                return {};
+            return {reinterpret_cast<uintptr_t>(weapon), static_cast<unsigned short>(entity->m_NetworkSerialNumber)};
+#ifdef _MSC_VER
+        }
+        __except (EXCEPTION_EXECUTE_HANDLER) { return {}; }
+#endif
+    }
     struct ScopedServerPistolExecution
     {
         const ServerPistolExecution* previous;
@@ -1187,14 +1214,37 @@ namespace
     };
 }
 
+static bool TryGetExecutingReloadGate(void* owner, void* weapon, bool& blocked)
+{
+    if (!g_ServerPistolExecution || g_ServerPistolExecution->owner != owner) return false;
+    const auto& context = *g_ServerPistolExecution;
+    blocked = context.reloadValid && context.reloadBlocked &&
+        context.reloadWeapon.pointer != 0u && context.reloadWeapon.pointer == reinterpret_cast<uintptr_t>(weapon) &&
+        ReadServerReloadWeapon(owner) == context.reloadWeapon;
+    return true;
+}
+
 void __fastcall Hooks::dPistolPlayerRunCommand(void* owner, void*, CUserCmd* command, void* moveHelper)
 {
     ServerPistolExecution context{};
-    if (ReadServerPistolExecution(owner, command, context) && context.attack)
+    context.owner = owner;
+    if (ReadServerPistolExecution(owner, command, context))
     {
+        context.reloadWeapon = ReadServerReloadWeapon(owner);
         std::lock_guard<std::mutex> lock(m_Game->m_ServerPistolCommandsMutex);
-        context.poseValid = m_Game->m_ServerPistolCommands[context.index].Get(
-            reinterpret_cast<uintptr_t>(owner), context.serial, context.command, GetTickCount64(), context.pose);
+        l4d2vr_server_pistol::Input input{};
+        const bool found = m_Game->m_ServerPistolCommands[context.index].GetInput(
+            reinterpret_cast<uintptr_t>(owner), context.serial, context.command, GetTickCount64(), input);
+        if (found && context.attack && input.shot.hand != l4d2vr_dual::Hand::None)
+        { context.pose = input.shot; context.poseValid = true; }
+        context.reloadValid = m_Game->m_ServerReloadCommands[context.index].Execute(
+            reinterpret_cast<uintptr_t>(owner), context.serial, context.command, context.reloadWeapon,
+            found ? input.reload : l4d2vr_server_pistol::ReloadPolicy::Native, context.reloadBlocked);
+        // Outside the command scope, retain only the most recently simulated
+        // policy. Decode must not advance this ledger while this hook is active.
+        m_Game->m_PlayersVRInfo[context.index].physicalReloadLedger.Observe(context.command,
+            context.reloadWeapon.pointer, context.reloadValid && context.reloadBlocked, false,
+            reinterpret_cast<uintptr_t>(owner), context.serial);
     }
     ScopedServerPistolExecution scope(context);
     hkPistolPlayerRunCommand.fOriginal(owner, command, moveHelper);
@@ -2099,6 +2149,7 @@ namespace
 int Hooks::dReadUsercmd(void* buf, CUserCmd* move, CUserCmd* from)
 {
     l4d2vr_dual::Hand decodedPistolHand = l4d2vr_dual::Hand::None;
+    auto decodedReload = l4d2vr_server_pistol::ReloadPolicy::Native;
 	m_ServerCommandControllerAimOverride = false;
 	m_ServerCommandControllerAimPlayer = nullptr;
 	m_ServerCommandControllerAimReason = 0;
@@ -2198,6 +2249,9 @@ int Hooks::dReadUsercmd(void* buf, CUserCmd* move, CUserCmd* from)
 		const bool gripPickupCommand = move->impulse == l4d2vr_grip::kPickupImpulse;
         const bool gripReleaseCommand = move->impulse == l4d2vr_grip::kReleaseImpulse;
         const bool blockPhysicalNativeReload = move->impulse == l4d2vr_grip::kBlockNativeReloadImpulse;
+        decodedReload = blockPhysicalNativeReload ? l4d2vr_server_pistol::ReloadPolicy::Block :
+            (l4d2vr_wire::KeepNativeReloadGate(incomingInteractionImpulse)
+                ? l4d2vr_server_pistol::ReloadPolicy::Preserve : l4d2vr_server_pistol::ReloadPolicy::Native);
         if (gripPickupCommand || gripReleaseCommand || blockPhysicalNativeReload) move->impulse = 0;
 		const uint8_t objectPullCommand = move->impulse;
 		if (objectPullCommand >= VR::kObjectPullWireBegin &&
@@ -2274,7 +2328,7 @@ int Hooks::dReadUsercmd(void* buf, CUserCmd* move, CUserCmd* from)
 		Server_WeaponCSBase* serverWeapon = nullptr;
 		int serverWeaponId = static_cast<int>(C_WeaponCSBase::WeaponID::NONE);
 		TryGetServerCurrentWeapon(serverWeapon, serverWeaponId);
-        if (vrPlayerState)
+        if (vrPlayerState && !hkPistolPlayerRunCommand.isEnabled)
             vrPlayerState->physicalReloadLedger.Observe(move->command_number,
                 reinterpret_cast<uintptr_t>(serverWeapon), blockPhysicalNativeReload &&
                 l4d2vr_calibration::IsFirearm(serverWeaponId),
@@ -2528,7 +2582,8 @@ int Hooks::dReadUsercmd(void* buf, CUserCmd* move, CUserCmd* from)
             shot.angles = {vrPlayer.controllerAngle.x, vrPlayer.controllerAngle.y, vrPlayer.controllerAngle.z};
             shot.capturedAtMs = GetTickCount64();
             std::lock_guard<std::mutex> lock(m_Game->m_ServerPistolCommandsMutex);
-            m_Game->m_ServerPistolCommands[i].Store(reinterpret_cast<uintptr_t>(identity.owner), identity.serial, shot);
+            m_Game->m_ServerPistolCommands[i].Store(
+                reinterpret_cast<uintptr_t>(identity.owner), identity.serial, shot, decodedReload);
         }
         if (static_cast<uint32_t>(move->command_number) > vrPlayer.lastDecodedUsercmd)
         {

@@ -96,6 +96,8 @@ still requires model work; this tool does not reconstruct it.
   pickup and the native shared-ammo reload fallback.
 - Native pistol execution: command-to-hand association across delayed commands,
   backup packets, weapon changes, two players and the optional-hook fallback.
+- Executed reload policy: packet batching, grip/pull commands, ordinary reload
+  permission, weapon switching, revival and the optional-hook fallback.
 - Pump shotguns: partial tube top-up, empty loading, rear/forward strokes,
   continuous support grip and re-grabbing a partially moved fore-end.
 - Physical melee: trigger released, wrist-led and translated swings, native

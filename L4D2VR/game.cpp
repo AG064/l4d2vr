@@ -1215,6 +1215,7 @@ void Game::ResetServerPistolCommands()
 {
     std::lock_guard<std::mutex> lock(m_ServerPistolCommandsMutex);
     for (auto& commands : m_ServerPistolCommands) commands.Reset();
+    for (auto& reloads : m_ServerReloadCommands) reloads.Reset();
 }
 
 void Game::ResetAllPlayerVRInfo()

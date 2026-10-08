@@ -105,4 +105,9 @@ int main()
     local.Observe(2, 40u, false, false, 2u);
     local.Observe(1, 40u, true, false, 2u);
     Check(!local.Blocks(40u), "Backup commands from the current player must still be rejected");
+    local.Observe(200, 40u, true, false, 2u, 1u);
+    local.Observe(1, 40u, false, false, 2u, 2u);
+    Check(!local.Blocks(40u), "Reusing a player address with a new edict serial must clear the old reload gate");
+    local.Observe(2, 50u, true, false, 2u, 2u);
+    Check(local.Blocks(50u), "The replacement edict must accept its own command sequence");
 }

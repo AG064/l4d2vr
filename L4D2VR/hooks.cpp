@@ -2626,6 +2626,8 @@ static inline bool ShouldForceThirdPersonByState(const C_BasePlayer* player,
 	return dbg.dead || observer || dbg.ledge || dbg.tongue || dbg.pinned || dbg.selfMedkit;
 }
 
+static bool TryGetExecutingReloadGate(void* owner, void* weapon, bool& blocked);
+
 #include "hooks/hooks_init.inl"
 #include "hooks/hooks_render.inl"
 #include "hooks/hooks_createmove.inl"

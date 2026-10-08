@@ -4172,6 +4172,8 @@ static bool PhysicalNativeReloadIsBlocked(void* weapon)
         using Index = int(__thiscall*)(void*);
         void* owner = reinterpret_cast<Owner>(game->m_Offsets->PhysicalGunOwner.address)(weapon);
         if (!owner) return false;
+        bool blocked = false;
+        if (TryGetExecutingReloadGate(owner, weapon, blocked)) return blocked;
         const int index = reinterpret_cast<Index>(game->m_Offsets->CBaseEntity_entindex.address)(owner);
         if (!game->IsValidPlayerIndex(index)) return false;
         const Player& player = game->m_PlayersVRInfo[index];

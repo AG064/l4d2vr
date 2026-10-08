@@ -59,6 +59,12 @@ This is the execution prerequisite for per-hand ammo ownership; native shots,
 effects and actual independent magazines/chambers still need implementation and
 gameplay acceptance.
 
+Physical reload suppression now consumes the same immutable command history.
+Transient grip/pull input preserves the last simulated gate for the same weapon;
+later decoded packets cannot grant or suppress an earlier command's reload.
+Replay decisions, player/weapon edict replacement and weapon changes are checked
+offline. Native execution timing and multiplayer reloads remain unverified.
+
 Further offline fixes remove the dual-shot early return that skipped firing
 haptics and predicted hit feedback. The chosen ray is retained through the
 shared feedback path, and haptics select its firing hand. Live cached poses are
