@@ -11,7 +11,7 @@ friend-hosted shell and detachable-magazine transactions. See `physical-interact
 `manual-reload-input.md`, `weapon-calibration.md` and `vr-backlog.md` for their
 controls, limitations and remaining tests.
 
-The current runtime source passed 15 CTest suites and Windows Release x86
+The current runtime source passed 16 CTest suites and Windows Release x86
 DLL/pose-server builds with v143 in a temporary build tree. Seven native ammo
 signatures matched uniquely against the installed server binary. These are
 offline checks. Later documentation edits do not change the tested runtime.
@@ -94,6 +94,9 @@ still requires model work; this tool does not reconstruct it.
   configured grip rotation, palm contact and the same pose in queued rendering.
 - Dual pistols: each hand's aim, alternating/simultaneous triggers, detachment,
   pickup and the native shared-ammo reload fallback.
+- Pistol ammunition: join unequal clips, fire from one hand, and drop either
+  pistol. Retained plus dropped ammunition must match the native shared total,
+  including native reloads, weapon replacement, owner changes and unknown pairs.
 - Native pistol execution: command-to-hand association across delayed commands,
   backup packets, weapon changes, two players and the optional-hook fallback.
 - Executed reload policy: packet batching, grip/pull commands, ordinary reload

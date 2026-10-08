@@ -134,8 +134,13 @@ magazine/chamber ammunition remains unfinished.
 
 Pistol splitting uses the native `CPistol::RemoveDualWeapons` function after
 preparing a world pistol. Signature and clip-layout checks disable the
-transaction if the server binary differs. Clips are partitioned without
-adding rounds. A scoped native pickup hook restores the sum of the two clips
+transaction if the server binary differs. A server ledger retains the contents
+of each hand after confirmed pickup and observed native shots. When that
+partition is known, detachment preserves the selected pistol's count instead
+of halving both clips. Unknown partial pairs and unexplained native ammunition
+changes use the existing balanced partition; the shared total is conserved.
+Player and weapon edict generations scope that ledger. A scoped native pickup
+hook restores the sum of the two clips
 when an existing single pistol becomes a pair. Drop markers 60 and 61 are
 stripped before native gameplay input and carry a command-number watermark
 to reject duplicate backup commands. Switching the command pose between
@@ -145,6 +150,11 @@ The pair still uses L4D2's shared clip, firing cadence, animations, and native
 reload. A split uses the stock single-pistol model, so the distinct left-hand
 Glock appearance is not retained after detachment. Independent magazines,
 chambers, safeties, and per-pistol cosmetic identity remain unfinished.
+Per-hand accounting currently controls detachment, using validated native script
+capacities up to 15 rounds per pistol. Larger capacities retain the legacy
+split path. It does not enforce an independently empty hand or replace the shared
+reload. Pickup-hand metadata is consumed from the simulated grip command;
+older hosts ignore that metadata and retain their existing pickup behavior.
 First-person bone retargeting does not yet separate remote world-model
 pistols. Body inventory follows tracked head position and yaw; full body IK
 and character-specific avatar fitting remain separate work.

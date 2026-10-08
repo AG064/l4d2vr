@@ -2627,6 +2627,7 @@ static inline bool ShouldForceThirdPersonByState(const C_BasePlayer* player,
 }
 
 static bool TryGetExecutingReloadGate(void* owner, void* weapon, bool& blocked);
+static bool TryGetExecutingPistolPickup(void* owner, int& index, l4d2vr_pistol::Hand& hand);
 
 #include "hooks/hooks_init.inl"
 #include "hooks/hooks_render.inl"

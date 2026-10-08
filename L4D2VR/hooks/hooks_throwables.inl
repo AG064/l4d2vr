@@ -2178,6 +2178,72 @@ namespace
 #endif
 	}
 
+    static bool ManualPistolReadAmmo(void* owner, void* weapon, l4d2vr_pistol::AmmoSnapshot& result, int& index)
+    {
+        auto* game = Hooks::m_Game;
+        if (!game || !game->m_Offsets || !owner || !weapon || !ManualPistolLayoutIsVerified() ||
+            !game->m_Offsets->PhysicalGunOwner.valid || !game->m_Offsets->PhysicalShellMaxClip.valid ||
+            !game->m_Offsets->CBaseEntity_entindex.valid ||
+            !ManualEmptyHandsPlaceholderOwnerIsLiveSurvivor(owner)) return false;
+#ifdef _MSC_VER
+        __try
+        {
+#endif
+            using Owner = void* (__thiscall*)(void*);
+            using Index = int (__thiscall*)(void*);
+            using Capacity = int (__thiscall*)(void*);
+            if (reinterpret_cast<Owner>(game->m_Offsets->PhysicalGunOwner.address)(weapon) != owner ||
+                reinterpret_cast<Server_WeaponCSBase*>(weapon)->GetWeaponID() != static_cast<int>(C_WeaponCSBase::WeaponID::PISTOL))
+                return false;
+            const auto* bytes = reinterpret_cast<const unsigned char*>(weapon);
+            auto* ownerEdict = *reinterpret_cast<edict_t**>(reinterpret_cast<unsigned char*>(owner) + 0x28);
+            auto* weaponEdict = *reinterpret_cast<edict_t* const*>(bytes + 0x28);
+            const auto entindex = reinterpret_cast<Index>(game->m_Offsets->CBaseEntity_entindex.address);
+            index = entindex(owner);
+            if (!ownerEdict || !weaponEdict || !game->IsValidPlayerIndex(index) || index <= 0 ||
+                ownerEdict->m_EdictIndex != index || weaponEdict->m_EdictIndex <= 0 ||
+                entindex(weapon) != weaponEdict->m_EdictIndex || (ownerEdict->m_fStateFlags & 2u) != 0u ||
+                (weaponEdict->m_fStateFlags & 2u) != 0u || (weaponEdict->m_fStateFlags & 4u) == 0u ||
+                bytes[0x17DD] > 1u || bytes[0x17DC] > 1u) return false;
+            result = {reinterpret_cast<uintptr_t>(owner), reinterpret_cast<uintptr_t>(weapon),
+                static_cast<unsigned short>(ownerEdict->m_NetworkSerialNumber),
+                static_cast<unsigned short>(weaponEdict->m_NetworkSerialNumber),
+                *reinterpret_cast<const int*>(bytes + 0x1414), bytes[0x17DD] != 0u,
+                reinterpret_cast<Capacity>(game->m_Offsets->PhysicalShellMaxClip.address)(weapon)};
+            return result.Valid();
+#ifdef _MSC_VER
+        }
+        __except (EXCEPTION_EXECUTE_HANDLER) { return false; }
+#endif
+    }
+    static bool ManualPistolSelectAmmo(int index, const l4d2vr_pistol::AmmoSnapshot& source,
+        l4d2vr_pistol::Hand drop, l4d2vr_pistol::AmmoSplit& ammo, bool& exact)
+    {
+        if (!Hooks::m_Game || !Hooks::m_Game->IsValidPlayerIndex(index)) return false;
+        std::lock_guard<std::mutex> lock(Hooks::m_Game->m_PistolAmmoMutex);
+        return Hooks::m_Game->m_PistolAmmo[index].Split(source, drop, ammo, exact);
+    }
+    static void ManualPistolRetainAmmo(int index, const l4d2vr_pistol::AmmoSnapshot& before,
+        l4d2vr_pistol::Hand drop, int retained)
+    {
+        if (!Hooks::m_Game || !Hooks::m_Game->IsValidPlayerIndex(index)) return;
+        auto after = before; after.dual = false; after.clip = retained;
+        std::lock_guard<std::mutex> lock(Hooks::m_Game->m_PistolAmmoMutex);
+        Hooks::m_Game->m_PistolAmmo[index].Single(after, l4d2vr_pistol::Opposite(drop));
+    }
+    static bool ManualPistolClipIsWritable(void* weapon)
+    {
+        const auto address = reinterpret_cast<uintptr_t>(weapon) + 0x1414u;
+        MEMORY_BASIC_INFORMATION region{};
+        if (!VirtualQuery(reinterpret_cast<void*>(address), &region, sizeof(region)) || region.State != MEM_COMMIT ||
+            (region.Protect & (PAGE_GUARD | PAGE_NOACCESS)) != 0u ||
+            (region.Protect & (PAGE_READWRITE | PAGE_WRITECOPY | PAGE_EXECUTE_READWRITE | PAGE_EXECUTE_WRITECOPY)) == 0u)
+            return false;
+        const auto base = reinterpret_cast<uintptr_t>(region.BaseAddress);
+        return address >= base && address - base <= region.RegionSize &&
+            sizeof(int) <= region.RegionSize - (address - base);
+    }
+
 	// 0: a single pistol uses the normal inventory drop. 1: split committed.
 	// -1: failed closed. All fallible spawn work precedes the native conversion.
 	static int ManualPistolExecuteSplit(int playerIndex, void* owner, const ManualThrowPending& pending)
@@ -2199,6 +2265,9 @@ namespace
 		using RemoveFn = void(__cdecl*)(void*);
 		const auto remove = reinterpret_cast<RemoveFn>(offsets->ManualEmptyHandsUtilRemove.address);
 		l4d2vr_pistol::AmmoSplit ammo{};
+        l4d2vr_pistol::AmmoSnapshot snapshot{};
+        int snapshotIndex = -1;
+        bool exactAmmo = false;
 #ifdef _MSC_VER
 		__try
 		{
@@ -2210,6 +2279,9 @@ namespace
 			if (source[0x17DD] != 1u || source[0x17DC] > 1u ||
 				!l4d2vr_pistol::SplitAmmo(*reinterpret_cast<int*>(source + 0x1414), ammo))
 				return -1;
+            if (!ManualPistolClipIsWritable(pending.sourceWeapon)) return -1;
+            if (ManualPistolReadAmmo(owner, pending.sourceWeapon, snapshot, snapshotIndex) && snapshotIndex == playerIndex)
+                ManualPistolSelectAmmo(playerIndex, snapshot, static_cast<l4d2vr_pistol::Hand>(pending.pistolDropHand), ammo, exactAmmo);
 			created = Hooks::hkManualCarryCreateEntityByName.fOriginal("weapon_pistol", -1, true);
 			if (created)
 			{
@@ -2217,11 +2289,30 @@ namespace
 				const int spawned = reinterpret_cast<SpawnFn>(offsets->DispatchSpawn_Server.address)(created, true);
 				if (spawned >= 0 && ManualThrowReadEntityVtable(created) &&
 					ManualCarryThrowTeleportDroppedEntity(created, pending, true))
-				{
+                {
+                    bool capacityFits = true;
+                    if (exactAmmo)
+                    {
+                        using Capacity = int (__thiscall*)(void*);
+                        const int capacity = reinterpret_cast<Capacity>(offsets->PhysicalShellMaxClip.address)(created);
+                        capacityFits = capacity > 0 && ammo.dropped <= capacity;
+                    }
+                    if (capacityFits)
+                    {
 					// Spawn has initialized this native CPistol. Set its clip before
 					// the first network snapshot; it has no inventory owner.
 					*reinterpret_cast<int*>(reinterpret_cast<unsigned char*>(created) + 0x1414) = ammo.dropped;
 					committed = reinterpret_cast<RemoveDualFn>(offsets->PistolRemoveDualWeapons.address)(pending.sourceWeapon, true);
+                    if (committed)
+                    {
+                        // Native conversion has dirtied the clip and updated
+                        // ownership/models. Publish the retained hand's count.
+                        *reinterpret_cast<int*>(source + 0x1414) = ammo.retained;
+                        if (snapshotIndex == playerIndex)
+                            ManualPistolRetainAmmo(playerIndex, snapshot,
+                                static_cast<l4d2vr_pistol::Hand>(pending.pistolDropHand), ammo.retained);
+                    }
+                    }
 				}
 			}
 #ifdef _MSC_VER
@@ -2240,8 +2331,9 @@ namespace
 			remove(created);
 #endif
 		}
-		Game::logMsg("[VR][PistolDetach] split player=%d hand=%u committed=%d retained=%d dropped=%d source=%p world=%p",
-			playerIndex, pending.pistolDropHand, committed ? 1 : 0, ammo.retained, ammo.dropped, pending.sourceWeapon, committed ? created : nullptr);
+		Game::logMsg("[VR][PistolDetach] split player=%d hand=%u committed=%d retained=%d dropped=%d exactAmmo=%d source=%p world=%p",
+			playerIndex, pending.pistolDropHand, committed ? 1 : 0, ammo.retained, ammo.dropped, exactAmmo ? 1 : 0,
+            pending.sourceWeapon, committed ? created : nullptr);
 		return committed ? 1 : -1;
 	}
 

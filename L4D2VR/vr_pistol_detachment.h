@@ -13,6 +13,12 @@ namespace l4d2vr_pistol
         if (attack) return Hand::None;
         return word == kRightDropMarker ? Hand::Right : word == kLeftDropMarker ? Hand::Left : Hand::None;
     }
+    inline Hand DecodePickup(unsigned word, unsigned char impulse, bool use, bool attack)
+    {
+        if (impulse != l4d2vr_grip::kPickupImpulse || !use || attack) return Hand::None;
+        return word == l4d2vr_dual::kRightShotMarker ? Hand::Right :
+            word == l4d2vr_dual::kLeftShotMarker ? Hand::Left : Hand::None;
+    }
     struct AmmoSplit { int retained = 0; int dropped = 0; };
     inline bool SplitAmmo(int clip, AmmoSplit& result)
     {

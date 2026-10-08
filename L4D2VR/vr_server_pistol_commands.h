@@ -12,6 +12,7 @@ namespace l4d2vr_server_pistol
     {
         l4d2vr_dual::Shot shot{};
         ReloadPolicy reload = ReloadPolicy::Native;
+        l4d2vr_dual::Hand pickup = l4d2vr_dual::Hand::None;
     };
     struct Weapon
     {
@@ -25,9 +26,11 @@ namespace l4d2vr_server_pistol
     public:
         void Reset() { *this = {}; }
         bool Store(std::uintptr_t owner, unsigned serial, const l4d2vr_dual::Shot& shot,
-            ReloadPolicy reload = ReloadPolicy::Native)
+            ReloadPolicy reload = ReloadPolicy::Native, l4d2vr_dual::Hand pickup = l4d2vr_dual::Hand::None)
         {
-            if (!owner || shot.command <= 0 || !ValidReloadPolicy(reload)) return false;
+            if (!owner || shot.command <= 0 || !ValidReloadPolicy(reload) ||
+                (pickup != l4d2vr_dual::Hand::None && pickup != l4d2vr_dual::Hand::Right &&
+                    pickup != l4d2vr_dual::Hand::Left)) return false;
             if (owner != m_Owner || serial != m_Serial)
             { Reset(); m_Owner = owner; m_Serial = serial; }
             for (unsigned axis = 0; axis < 3; ++axis)
@@ -36,7 +39,7 @@ namespace l4d2vr_server_pistol
                 return false;
             auto& entry = m_Shots[static_cast<unsigned>(shot.command) % m_Shots.size()];
             if (entry.shot.command == shot.command) return false; // first decoded backup owns its exact input
-            entry = {shot, reload};
+            entry = {shot, reload, pickup};
             if (shot.command > m_Latest) m_Latest = shot.command;
             return true;
         }

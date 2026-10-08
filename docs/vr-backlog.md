@@ -52,6 +52,14 @@ Object Pull conflicts and retain per-player reload ownership across them.
 Priority: high. Earlier dual pistols followed only the right controller and
 aimed both shots from that hand; the prototype also lost reload functionality.
 
+Confirmed single-to-pair pickup contents and executed native shot deltas now
+feed a per-player/per-weapon ammunition ledger. Known partitions preserve the
+selected pistol's ammunition when splitting; unknown partial pairs and native
+ammunition changes fall back to a conservative balanced split. Retained single
+pistols keep their hand identity for another pickup. Actual per-hand reloads,
+chambers, empty-hand firing gates, capacity variants and gameplay acceptance
+remain unfinished.
+
 The server now has an optional native execution hook and per-command hand/pose
 history, so firing uses the simulated command rather than the latest decoded
 packet. Owner/edict serial, age, duplicates and ring rollover are covered offline.

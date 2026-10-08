@@ -15,7 +15,7 @@ int main()
     left.angles = {10.0f, 20.0f, 30.0f}; left.capturedAtMs = 1000u;
     Shot right = left; right.command = 101; right.hand = Hand::Right; right.position[0] = 9.0f;
     using l4d2vr_server_pistol::ReloadPolicy;
-    CHECK(commands.Store(10u, 3u, left, ReloadPolicy::Block));
+    CHECK(commands.Store(10u, 3u, left, ReloadPolicy::Block, Hand::Left));
     CHECK(commands.Store(10u, 3u, right));
     Shot selected{};
     CHECK(commands.Get(10u, 3u, 100, 1100u, selected) && selected.hand == Hand::Left && selected.position[0] == 1.0f);
@@ -26,6 +26,7 @@ int main()
     CHECK(!commands.Store(10u, 3u, altered));
     l4d2vr_server_pistol::Input input{};
     CHECK(commands.GetInput(10u, 3u, 100, 1200u, input) && input.reload == ReloadPolicy::Block);
+    CHECK(input.pickup == Hand::Left);
     CHECK(commands.GetInput(10u, 3u, 101, 1200u, input) && input.reload == ReloadPolicy::Native);
     CHECK(commands.Get(10u, 3u, 100, 1200u, selected) && selected.hand == Hand::Left && selected.position[0] == 1.0f);
     CHECK(!commands.Get(11u, 3u, 100, 1200u, selected));
@@ -49,6 +50,7 @@ int main()
     commands.Reset(); CHECK(!commands.Get(10u, 4u, 100, 1100u, selected));
     CHECK(!commands.Store(0u, 4u, left));
     CHECK(!commands.Store(10u, 4u, left, static_cast<ReloadPolicy>(99u)));
+    CHECK(!commands.Store(10u, 4u, left, ReloadPolicy::Native, static_cast<Hand>(99u)));
 
     // A packet decodes future reload permission before Source simulates the
     // preceding blocked command. Each simulation must consume its own policy.

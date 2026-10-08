@@ -23329,6 +23329,9 @@ namespace
         void* held = nullptr;
         void* heldVtable = nullptr;
         int heldClip = -1, incomingClip = -1;
+        int index = -1;
+        l4d2vr_pistol::Hand pickup = l4d2vr_pistol::Hand::None;
+        l4d2vr_pistol::AmmoSnapshot before{};
     };
     thread_local PistolPickupAmmoContext* g_PistolPickupAmmo = nullptr;
     static void* PistolPickupSecondary(void* owner)
@@ -23340,11 +23343,19 @@ namespace
     static void BeginPistolPickupAmmo(void* owner, PistolPickupAmmoContext& context)
     {
         if (!Hooks::m_VR || !Hooks::m_Game || !Hooks::m_VR->m_DualPistolsIndependentHandsEnabled ||
-            !Hooks::m_VR->m_GripReleaseDropEnabled || !ManualPistolLayoutIsVerified() ||
-            owner != Hooks::m_Game->m_CurrentUsercmdPlayer || !Hooks::m_ServerProcessingUsercmd ||
-            !Hooks::m_Game->IsValidPlayerIndex(Hooks::m_Game->m_CurrentUsercmdID)) return;
-        const Player& player = Hooks::m_Game->m_PlayersVRInfo[Hooks::m_Game->m_CurrentUsercmdID];
-        if (!player.isUsingVR || !ManualEmptyHandsPlaceholderOwnerIsLiveSurvivor(owner)) return;
+            !Hooks::m_VR->m_GripReleaseDropEnabled || !ManualPistolLayoutIsVerified()) return;
+        int index = -1;
+        l4d2vr_pistol::Hand pickup = l4d2vr_pistol::Hand::None;
+        const bool executing = TryGetExecutingPistolPickup(owner, index, pickup);
+        if (!executing)
+        {
+            if (owner != Hooks::m_Game->m_CurrentUsercmdPlayer || !Hooks::m_ServerProcessingUsercmd) return;
+            index = Hooks::m_Game->m_CurrentUsercmdID;
+        }
+        if (!Hooks::m_Game->IsValidPlayerIndex(index)) return;
+        const Player& player = Hooks::m_Game->m_PlayersVRInfo[index];
+        if ((!executing && !player.isUsingVR) || !ManualEmptyHandsPlaceholderOwnerIsLiveSurvivor(owner)) return;
+        context.owner = owner; context.index = index; context.pickup = pickup;
 #ifdef _MSC_VER
         __try
 #endif
@@ -23355,7 +23366,9 @@ namespace
             const auto* bytes = reinterpret_cast<const unsigned char*>(held);
             const int clip = *reinterpret_cast<const int*>(bytes + 0x1414);
             if (bytes[0x17DD] != 0u || clip < 0 || clip > 15) return;
-            context.owner = owner; context.held = held;
+            int snapshotIndex = -1;
+            if (!ManualPistolReadAmmo(owner, held, context.before, snapshotIndex) || snapshotIndex != index) return;
+            context.held = held;
             context.heldVtable = ManualThrowReadEntityVtable(held); context.heldClip = clip;
         }
 #ifdef _MSC_VER
@@ -23381,21 +23394,48 @@ namespace
         __except (EXCEPTION_EXECUTE_HANDLER) { context->incomingClip = -1; }
 #endif
     }
+    static void PublishPistolPickupSingleAmmo(int index, const l4d2vr_pistol::AmmoSnapshot& after, l4d2vr_pistol::Hand pickup)
+    {
+        if (!Hooks::m_Game || !Hooks::m_Game->IsValidPlayerIndex(index)) return;
+        std::lock_guard<std::mutex> lock(Hooks::m_Game->m_PistolAmmoMutex);
+        Hooks::m_Game->m_PistolAmmo[index].Single(after, pickup);
+    }
+    static void PublishPistolPickupJoinedAmmo(int index, const l4d2vr_pistol::AmmoSnapshot& after,
+        int held, int incoming, l4d2vr_pistol::Hand pickup)
+    {
+        if (!Hooks::m_Game || !Hooks::m_Game->IsValidPlayerIndex(index)) return;
+        std::lock_guard<std::mutex> lock(Hooks::m_Game->m_PistolAmmoMutex);
+        Hooks::m_Game->m_PistolAmmo[index].Joined(after, held, incoming, pickup);
+    }
     static void CompletePistolPickupAmmo(const PistolPickupAmmoContext& context)
     {
         int clip = -1;
-        if (!context.held || !l4d2vr_pistol::JoinAmmo(context.heldClip, context.incomingClip, clip)) return;
+        if (!context.owner || !Hooks::m_Game || !Hooks::m_Game->IsValidPlayerIndex(context.index)) return;
 #ifdef _MSC_VER
         __try
 #endif
         {
-            if (PistolPickupSecondary(context.owner) != context.held ||
+            void* owned = PistolPickupSecondary(context.owner);
+            l4d2vr_pistol::AmmoSnapshot after{};
+            int snapshotIndex = -1;
+            if (!ManualPistolReadAmmo(context.owner, owned, after, snapshotIndex) || snapshotIndex != context.index) return;
+            if (!context.held)
+            {
+                if (!after.dual && context.pickup != l4d2vr_pistol::Hand::None)
+                    PublishPistolPickupSingleAmmo(context.index, after, context.pickup);
+                return;
+            }
+            if (!l4d2vr_pistol::JoinAmmo(context.heldClip, context.incomingClip, clip) ||
+                context.heldClip > after.capacity || context.incomingClip > after.capacity ||
+                owned != context.held || !context.before.SameGun(after) ||
                 ManualThrowReadEntityVtable(context.held) != context.heldVtable) return;
             auto* bytes = reinterpret_cast<unsigned char*>(context.held);
-            if (bytes[0x17DD] != 1u) return;
+            if (bytes[0x17DD] != 1u || !ManualPistolClipIsWritable(context.held)) return;
             // Native AddDualWeapons has already updated models and dirtied the
             // network state. Replace its clip multiplication with both real clips.
             *reinterpret_cast<int*>(bytes + 0x1414) = clip;
+            after.clip = clip;
+            PublishPistolPickupJoinedAmmo(context.index, after, context.heldClip, context.incomingClip, context.pickup);
             Game::logMsg("[VR][PistolPickup] native merge conserved ammo held=%d incoming=%d total=%d",
                 context.heldClip, context.incomingClip, clip);
         }

@@ -13,6 +13,7 @@ class C_WeaponCSBase;
 #include "vr_remote_shells.h"
 #include "vr_remote_magazines.h"
 #include "vr_server_pistol_commands.h"
+#include "vr_pistol_ammo.h"
 
 #include "vector.h"
 
@@ -245,6 +246,9 @@ public:
     std::array<l4d2vr_server_pistol::Commands, kMaxPlayers> m_ServerPistolCommands{};
     std::array<l4d2vr_server_pistol::Reloads, kMaxPlayers> m_ServerReloadCommands{};
     void ResetServerPistolCommands();
+    std::mutex m_PistolAmmoMutex;
+    std::array<l4d2vr_pistol::AmmoLedger, kMaxPlayers> m_PistolAmmo{};
+    void ResetPistolAmmo();
     mutable std::mutex m_VRPoseMutex;
     std::atomic<bool> m_VRPoseServerCapable{ false };
     std::atomic<bool> m_VRPoseHelloSent{ false };

@@ -1133,6 +1133,9 @@ namespace
         int index = -1, command = 0;
         unsigned serial = 0;
         bool attack = false, poseValid = false;
+        bool use = false;
+        l4d2vr_pistol::Hand pickup = l4d2vr_pistol::Hand::None;
+        mutable unsigned pistolBulletCalls = 0u;
         bool reloadValid = false, reloadBlocked = false;
         l4d2vr_server_pistol::Weapon reloadWeapon{};
         l4d2vr_dual::Shot pose{};
@@ -1157,6 +1160,7 @@ namespace
             result.owner = owner; result.index = index; result.command = command->command_number;
             result.serial = static_cast<unsigned short>(entity->m_NetworkSerialNumber);
             result.attack = (command->buttons & 1) != 0;
+            result.use = (command->buttons & (1 << 5)) != 0;
             return true;
 #ifdef _MSC_VER
         }
@@ -1224,6 +1228,15 @@ static bool TryGetExecutingReloadGate(void* owner, void* weapon, bool& blocked)
     return true;
 }
 
+static bool TryGetExecutingPistolPickup(void* owner, int& index, l4d2vr_pistol::Hand& hand)
+{
+    if (!g_ServerPistolExecution || g_ServerPistolExecution->owner != owner || !g_ServerPistolExecution->use ||
+        g_ServerPistolExecution->index <= 0 || g_ServerPistolExecution->pickup == l4d2vr_pistol::Hand::None)
+        return false;
+    index = g_ServerPistolExecution->index; hand = g_ServerPistolExecution->pickup;
+    return true;
+}
+
 void __fastcall Hooks::dPistolPlayerRunCommand(void* owner, void*, CUserCmd* command, void* moveHelper)
 {
     ServerPistolExecution context{};
@@ -1237,6 +1250,7 @@ void __fastcall Hooks::dPistolPlayerRunCommand(void* owner, void*, CUserCmd* com
             reinterpret_cast<uintptr_t>(owner), context.serial, context.command, GetTickCount64(), input);
         if (found && context.attack && input.shot.hand != l4d2vr_dual::Hand::None)
         { context.pose = input.shot; context.poseValid = true; }
+        if (found && context.use) context.pickup = input.pickup;
         context.reloadValid = m_Game->m_ServerReloadCommands[context.index].Execute(
             reinterpret_cast<uintptr_t>(owner), context.serial, context.command, context.reloadWeapon,
             found ? input.reload : l4d2vr_server_pistol::ReloadPolicy::Native, context.reloadBlocked);
@@ -1246,8 +1260,26 @@ void __fastcall Hooks::dPistolPlayerRunCommand(void* owner, void*, CUserCmd* com
             context.reloadWeapon.pointer, context.reloadValid && context.reloadBlocked, false,
             reinterpret_cast<uintptr_t>(owner), context.serial);
     }
+    l4d2vr_pistol::AmmoSnapshot before{};
+    int ammoIndex = -1;
+    const bool trackAmmo = context.poseValid && context.attack && m_VR && m_VR->m_DualPistolsIndependentHandsEnabled &&
+        ManualPistolReadAmmo(owner, reinterpret_cast<void*>(context.reloadWeapon.pointer), before, ammoIndex) &&
+        ammoIndex == context.index;
     ScopedServerPistolExecution scope(context);
     hkPistolPlayerRunCommand.fOriginal(owner, command, moveHelper);
+    if (trackAmmo)
+    {
+        l4d2vr_pistol::AmmoSnapshot after{};
+        int afterIndex = -1;
+        if (ManualPistolReadAmmo(owner, reinterpret_cast<void*>(before.weapon), after, afterIndex) &&
+            afterIndex == ammoIndex && before.SameGun(after))
+        {
+            std::lock_guard<std::mutex> lock(m_Game->m_PistolAmmoMutex);
+            auto& ammo = m_Game->m_PistolAmmo[ammoIndex];
+            if (context.pistolBulletCalls != 1u || !ammo.Shot(before, after, context.command, context.pose.hand))
+                ammo.Observe(after);
+        }
+    }
 }
 
 int Hooks::dServerFireTerrorBullets(int playerId, const Vector& vecOrigin, const QAngle& vecAngles, int a4, int a5, int a6, float a7)
@@ -1258,6 +1290,7 @@ int Hooks::dServerFireTerrorBullets(int playerId, const Vector& vecOrigin, const
     if (g_ServerPistolExecution && g_ServerPistolExecution->index == playerId &&
         g_ServerPistolExecution->poseValid && ServerExecutionWeaponIsPistol(*g_ServerPistolExecution))
     {
+        if (g_ServerPistolExecution->pistolBulletCalls < 2u) ++g_ServerPistolExecution->pistolBulletCalls;
         const auto& pose = g_ServerPistolExecution->pose;
         const Vector position(pose.position[0], pose.position[1], pose.position[2]);
         const QAngle angles(pose.angles[0], pose.angles[1], pose.angles[2]);
@@ -2149,6 +2182,7 @@ namespace
 int Hooks::dReadUsercmd(void* buf, CUserCmd* move, CUserCmd* from)
 {
     l4d2vr_dual::Hand decodedPistolHand = l4d2vr_dual::Hand::None;
+    l4d2vr_pistol::Hand decodedPickupHand = l4d2vr_pistol::Hand::None;
     auto decodedReload = l4d2vr_server_pistol::ReloadPolicy::Native;
 	m_ServerCommandControllerAimOverride = false;
 	m_ServerCommandControllerAimPlayer = nullptr;
@@ -2361,6 +2395,8 @@ int Hooks::dReadUsercmd(void* buf, CUserCmd* move, CUserCmd* from)
 			(static_cast<uint32_t>(move->buttons) & kManualCarryThrowWeaponMask) >>
 			kManualCarryThrowWeaponShift;
         const auto pistolDropHand = l4d2vr_pistol::DecodeDrop(encodedCarryValue, (move->buttons & kIN_ATTACK) != 0);
+        decodedPickupHand = l4d2vr_pistol::DecodePickup(encodedCarryValue, incomingInteractionImpulse,
+            (move->buttons & kIN_USE) != 0, (move->buttons & kIN_ATTACK) != 0);
 		const int encodedCarryWeaponId = pistolDropHand != l4d2vr_dual::Hand::None
             ? static_cast<int>(C_WeaponCSBase::WeaponID::PISTOL) : encodedCarryValue > 0u
 			? static_cast<int>(encodedCarryValue - 1u)
@@ -2583,7 +2619,7 @@ int Hooks::dReadUsercmd(void* buf, CUserCmd* move, CUserCmd* from)
             shot.capturedAtMs = GetTickCount64();
             std::lock_guard<std::mutex> lock(m_Game->m_ServerPistolCommandsMutex);
             m_Game->m_ServerPistolCommands[i].Store(
-                reinterpret_cast<uintptr_t>(identity.owner), identity.serial, shot, decodedReload);
+                reinterpret_cast<uintptr_t>(identity.owner), identity.serial, shot, decodedReload, decodedPickupHand);
         }
         if (static_cast<uint32_t>(move->command_number) > vrPlayer.lastDecodedUsercmd)
         {
@@ -2713,7 +2749,7 @@ int Hooks::dWriteUsercmd(void* buf, CUserCmd* to, CUserCmd* from)
     {
         // Both markers are outside supported inventory/carry weapon IDs and
         // are stripped by the existing decoder before native gameplay input.
-        if (dualShotPose)
+        if (dualShotPose || (originalImpulse == l4d2vr_grip::kPickupImpulse && (to->buttons & (1 << 5)) != 0))
         {
             const uint32_t word = dualHand == l4d2vr_dual::Hand::Left
                 ? l4d2vr_dual::kLeftShotMarker : l4d2vr_dual::kRightShotMarker;

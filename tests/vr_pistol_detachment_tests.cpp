@@ -10,6 +10,12 @@ int main()
     CHECK(DecodeDrop(61u, false) == Hand::Left);
     CHECK(DecodeDrop(61u, true) == Hand::None);
     CHECK(DecodeDrop(62u, false) == Hand::None);
+    CHECK(DecodePickup(62u, l4d2vr_grip::kPickupImpulse, true, false) == Hand::Right);
+    CHECK(DecodePickup(63u, l4d2vr_grip::kPickupImpulse, true, false) == Hand::Left);
+    CHECK(DecodePickup(63u, l4d2vr_grip::kReleaseImpulse, true, false) == Hand::None);
+    CHECK(DecodePickup(63u, l4d2vr_grip::kPickupImpulse, false, false) == Hand::None);
+    CHECK(DecodePickup(63u, l4d2vr_grip::kPickupImpulse, true, true) == Hand::None);
+    CHECK(DecodePickup(60u, l4d2vr_grip::kPickupImpulse, true, false) == Hand::None);
     AmmoSplit ammo{};
     for (int clip = 0; clip <= 30; ++clip)
     {
