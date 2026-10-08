@@ -54,6 +54,10 @@ With the supplied Quest binding:
 - Right grip picks up inventory items and drops the held item on release.
 - Left grip can pick up a loose pistol when the pistol hand is free.
 - Each trigger aims and fires its own pistol while dual pistols are equipped.
+- Both pistol hands use the common predicted hit-feedback path. Firing haptics
+  select the firing gameplay hand and follow the left-handed input mapping.
+  Cached live shot rays are scoped to the current player/weapon and expire;
+  they cannot redirect feedback for a subsequently selected gun.
 - Releasing either grip splits a pair into a retained single pistol and a
   stock world `weapon_pistol`. The retained pistol stays in the other hand.
 - Releasing both grips queues the second drop until the native split is

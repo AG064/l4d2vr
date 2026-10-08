@@ -1079,6 +1079,7 @@ static bool IsLocalClientUsingMountedWeapon()
 
 struct GripGameplaySession
 {
+    uintptr_t owner = 0u;
     uintptr_t weapon = 0u;
     bool liveInventory = false;
     bool gameplay = false;
@@ -1100,6 +1101,7 @@ static GripGameplaySession ReadGripGameplaySession(VR* vr, Game* game)
         HooksFirstPersonBodyLocalState local{};
         if (!player || !HooksFirstPersonBodyReadLocalStateSafe(player, &local))
         { state.blocked = 4u; return state; }
+        state.owner = reinterpret_cast<uintptr_t>(player);
         if (local.team != 2 || local.lifeState != 0 || local.observerMode != 0) state.blocked |= 8u;
         if (local.incapacitated) state.blocked |= 16u;
         state.weapon = reinterpret_cast<uintptr_t>(player->GetActiveWeapon());

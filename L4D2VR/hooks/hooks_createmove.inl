@@ -2032,7 +2032,8 @@ bool __fastcall Hooks::dCreateMove(void* ecx, void* edx, float flInputSampleTime
         const auto poseHand = dualShotHand != l4d2vr_dual::Hand::None ? dualShotHand :
             pistolInteractionHand != l4d2vr_dual::Hand::None ? pistolInteractionHand :
             dualEquipped && pistolMask == 2u ? l4d2vr_dual::Hand::Left : l4d2vr_dual::Hand::None;
-        m_VR->RecordDualPistolCommand(cmd->command_number, poseHand, dualShotHand != l4d2vr_dual::Hand::None);
+        m_VR->RecordDualPistolCommand(cmd->command_number, poseHand, dualShotHand != l4d2vr_dual::Hand::None,
+            reinterpret_cast<uintptr_t>(localPlayerForAutoActions), reinterpret_cast<uintptr_t>(routingPistol));
     }
 
 	bool manualThrowPoseRelevant = false;

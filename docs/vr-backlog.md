@@ -52,6 +52,12 @@ Object Pull conflicts and retain per-player reload ownership across them.
 Priority: high. Earlier dual pistols followed only the right controller and
 aimed both shots from that hand; the prototype also lost reload functionality.
 
+Further offline fixes remove the dual-shot early return that skipped firing
+haptics and predicted hit feedback. The chosen ray is retained through the
+shared feedback path, and haptics select its firing hand. Live cached poses are
+scoped to the player/weapon with a bounded age. Exact prediction replay timing,
+native muzzle effects, animations and headset feedback remain to be verified.
+
 - Complete independent hand tracking, shot aim, effects and haptics. Preserve
   the selected hand on retransmitted input commands.
 - Define magazine and chamber handling for two pistols while respecting the

@@ -70,7 +70,18 @@ namespace l4d2vr_dual
         Hand hand = Hand::None;
         std::array<float, 3> position{};
         std::array<float, 3> angles{};
+        std::uintptr_t owner = 0u, weapon = 0u;
+        std::uint64_t capturedAtMs = 0u;
     };
+
+    inline bool LiveShotMatches(const Shot& shot, std::uintptr_t owner, std::uintptr_t weapon, std::uint64_t now)
+    {
+        if (!owner || !weapon || shot.owner != owner || shot.weapon != weapon || shot.command <= 0 ||
+            shot.hand == Hand::None || now < shot.capturedAtMs || now - shot.capturedAtMs > 350u) return false;
+        for (unsigned axis = 0; axis < 3; ++axis)
+            if (!std::isfinite(shot.position[axis]) || !std::isfinite(shot.angles[axis])) return false;
+        return true;
+    }
 
     class CommandShots
     {

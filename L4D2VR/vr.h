@@ -1219,9 +1219,10 @@ public:
     mutable std::mutex m_DualPistolShotMutex;
     l4d2vr_dual::CommandShots m_DualPistolCommandShots;
     l4d2vr_dual::Shot m_LatestDualPistolShot{};
-    void RecordDualPistolCommand(int command, l4d2vr_dual::Hand hand, bool firing = true);
+    void RecordDualPistolCommand(int command, l4d2vr_dual::Hand hand, bool firing, uintptr_t owner, uintptr_t weapon);
     bool GetDualPistolCommandPose(int command, Vector& position, QAngle& angles, l4d2vr_dual::Hand& hand) const;
-    bool GetLatestDualPistolShotPose(Vector& position, QAngle& angles) const;
+    bool GetLatestDualPistolShotPose(uintptr_t owner, uintptr_t weapon, Vector& position,
+        QAngle& angles, l4d2vr_dual::Hand& hand) const;
     mutable std::mutex m_MeleeCommandMutex;
     l4d2vr_physical::MeleeCommands m_MeleeCommands;
     l4d2vr_physical::MeleeMotion m_MeleeMotion;

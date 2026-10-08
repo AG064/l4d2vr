@@ -1245,12 +1245,14 @@ int Hooks::dClientFireTerrorBullets(
         m_VR->RecordManualPumpShot();
 	Vector vecNewOrigin = vecOrigin;
 	QAngle vecNewAngles = vecAngles;
-
-    if (m_VR->m_IsVREnabled && playerId == m_Game->m_EngineClient->GetLocalPlayer() &&
+    l4d2vr_dual::Hand dualShotHand = l4d2vr_dual::Hand::None;
+    const int localIndex = m_Game && m_Game->m_EngineClient ? m_Game->m_EngineClient->GetLocalPlayer() : -1;
+    const bool dualCandidate = m_VR && m_VR->m_IsVREnabled && playerId == localIndex &&
         (m_VR->m_DualPistolsActive.load(std::memory_order_acquire) ||
-            m_VR->m_LeftHandPistolActive.load(std::memory_order_acquire)) &&
-        m_VR->GetLatestDualPistolShotPose(vecNewOrigin, vecNewAngles))
-        return hkClientFireTerrorBullets.fOriginal(playerId, vecNewOrigin, vecNewAngles, a4, a5, a6, a7);
+            m_VR->m_LeftHandPistolActive.load(std::memory_order_acquire));
+    const auto shotSession = dualCandidate ? ReadGripGameplaySession(m_VR, m_Game) : GripGameplaySession{};
+    const bool dualShotPose = dualCandidate && shotSession.gameplay &&
+        m_VR->GetLatestDualPistolShotPose(shotSession.owner, shotSession.weapon, vecNewOrigin, vecNewAngles, dualShotHand);
 
 	// 只改本地玩家的“本地预测/表现”
 	if (m_VR->m_IsVREnabled && playerId == m_Game->m_EngineClient->GetLocalPlayer())
@@ -1278,7 +1280,10 @@ int Hooks::dClientFireTerrorBullets(
 				if (enabled)
 					VR::t_UseRenderFrameSnapshot = prev;
 			}
-		} tlsGuard(queueMode == 2);
+		} tlsGuard(!dualShotPose && queueMode == 2);
+
+        if (!dualShotPose)
+        {
 
 
 		if (!m_VR->m_ForceNonVRServerMovement)
@@ -1497,6 +1502,7 @@ int Hooks::dClientFireTerrorBullets(
 		C_BasePlayer* localPlayerForSpread = (m_Game != nullptr) ? (C_BasePlayer*)m_Game->GetClientEntity(playerId) : nullptr;
 		C_WeaponCSBase* activeWeaponForSpread = localPlayerForSpread ? (C_WeaponCSBase*)localPlayerForSpread->GetActiveWeapon() : nullptr;
 		m_VR->NotifyVrHandsRealBulletSpreadClientShot(localPlayerForSpread, activeWeaponForSpread, vecNewOrigin, vecNewAngles, a7);
+        }
 		const Vector predictedHitOrigin = vecNewOrigin;
 		const QAngle predictedHitAngles = vecNewAngles;
 
@@ -1511,7 +1517,7 @@ int Hooks::dClientFireTerrorBullets(
 				if (activeWeapon)
 					weaponId = (int)activeWeapon->GetWeaponID();
 			}
-			m_VR->TriggerWeaponFireHaptics(weaponId, false);
+			m_VR->TriggerWeaponFireHaptics(weaponId, dualShotPose && dualShotHand == l4d2vr_dual::Hand::Left);
 		}
 
 		// RightAmmoHUD: hit-based target HP bar has been removed.

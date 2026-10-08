@@ -43,6 +43,20 @@ int main()
     CHECK(cache.Get(102,copy) && copy.hand==Hand::Right && copy.angles[1]==-90);
     CHECK(cache.Get(101,copy) && copy.position[0]==-5); // backup retransmission
     CHECK(!cache.Get(103,copy));
+
+    Shot feedback{104,Hand::Left,{-5,2,3},{0,90,0},100u,10u,1000u};
+    CHECK(LiveShotMatches(feedback,100u,10u,1000u));
+    CHECK(LiveShotMatches(feedback,100u,10u,1350u));
+    CHECK(!LiveShotMatches(feedback,100u,10u,1351u));
+    CHECK(!LiveShotMatches(feedback,100u,10u,999u));
+    CHECK(!LiveShotMatches(feedback,200u,10u,1001u)); // player replacement cannot reuse the old ray
+    CHECK(!LiveShotMatches(feedback,100u,20u,1001u)); // switching away cannot aim the new weapon from this pistol
+    CHECK(!LiveShotMatches(feedback,0u,10u,1001u));
+    feedback.hand=Hand::None;
+    CHECK(!LiveShotMatches(feedback,100u,10u,1001u));
+    feedback.hand=Hand::Right;
+    feedback.position[0]=std::numeric_limits<float>::quiet_NaN();
+    CHECK(!LiveShotMatches(feedback,100u,10u,1001u));
     cache.Store({251,Hand::None,{},{}});
     CHECK(!cache.Get(101,copy));
     cache.Store({103,Hand::Left,{std::numeric_limits<float>::infinity(),0,0},{}});

@@ -3393,11 +3393,13 @@ bool VR::GetMagazineInteractionNativeLeftWristAnchor(VrHandMatrix4& outWorld) co
     return MagazineInteractionMatrixLooksRenderable(outWorld);
 }
 
-void VR::RecordDualPistolCommand(int command, l4d2vr_dual::Hand hand, bool firing)
+void VR::RecordDualPistolCommand(int command, l4d2vr_dual::Hand hand, bool firing, uintptr_t owner, uintptr_t weapon)
 {
     l4d2vr_dual::Shot shot{};
     shot.command = command;
     shot.hand = hand;
+    shot.owner = owner; shot.weapon = weapon;
+    shot.capturedAtMs = GetTickCount64();
     if (hand != l4d2vr_dual::Hand::None)
     {
         const bool left = hand == l4d2vr_dual::Hand::Left;
@@ -3425,15 +3427,15 @@ bool VR::GetDualPistolCommandPose(int command, Vector& position, QAngle& angles,
     return true;
 }
 
-bool VR::GetLatestDualPistolShotPose(Vector& position, QAngle& angles) const
+bool VR::GetLatestDualPistolShotPose(uintptr_t owner, uintptr_t weapon, Vector& position,
+    QAngle& angles, l4d2vr_dual::Hand& hand) const
 {
     std::lock_guard<std::mutex> lock(m_DualPistolShotMutex);
     const auto& shot = m_LatestDualPistolShot;
-    if (shot.hand == l4d2vr_dual::Hand::None) return false;
-    for (unsigned axis = 0; axis < 3; ++axis)
-        if (!std::isfinite(shot.position[axis]) || !std::isfinite(shot.angles[axis])) return false;
+    if (!l4d2vr_dual::LiveShotMatches(shot, owner, weapon, GetTickCount64())) return false;
     position = Vector(shot.position[0], shot.position[1], shot.position[2]);
     angles = QAngle(shot.angles[0], shot.angles[1], shot.angles[2]);
+    hand = shot.hand;
     return true;
 }
 
