@@ -14,6 +14,7 @@
 #include "vr_weapon_calibration.h"
 #include "vr_magazine_policy.h"
 #include "vr_remote_shells.h"
+#include "vr_remote_magazines.h"
 #include "vr_physical_controls.h"
 #include "vr_interaction_geometry.h"
 #include "vr_dual_pistols.h"
@@ -247,7 +248,8 @@ enum class MagazineInteractionManualState
 	WaitingForBoltGrab,
 	HoldingBolt,
 	AutoBolting,
-    WaitingForServerShell
+    WaitingForServerShell,
+    WaitingForServerMagazine
 };
 
 struct MagazineInteractionBoxSnapshot
@@ -2115,6 +2117,18 @@ public:
 	bool m_MagazineInteractionShotgunDirectShellCommitPending = false;
     std::atomic<uint64_t> m_ShotgunShellSettlementExpiresAtMs{ 0u };
     mutable std::mutex m_RemoteShellMutex;
+    mutable std::mutex m_RemoteMagazineMutex;
+    l4d2vr_remote_mag::ClientRequest m_RemoteMagazineRequest;
+    void OfferRemoteMagazineProtocol(unsigned version, uint32_t token);
+    void ReceiveRemoteMagazineReply(const l4d2vr_remote_mag::Reply& reply);
+    void DisconnectRemoteMagazineProtocol();
+    void CancelRemoteMagazineRequest();
+    bool RemoteMagazineProtocolSupported() const;
+    bool RemoteMagazineRequestPending() const;
+    bool BeginRemoteMagazineRequest(uint32_t handle, int weaponId, int clip, int reserve,
+        l4d2vr_remote_mag::Action action, uintptr_t owner, uint32_t generation);
+    l4d2vr_remote_mag::ClientRequest::Poll PollRemoteMagazineReply(uint32_t handle, int weaponId,
+        uintptr_t owner, uint32_t generation, int clip, int reserve, l4d2vr_remote_mag::Reply& reply);
     l4d2vr_shell::ClientRequest m_RemoteShellRequest;
     void OfferRemoteShellProtocol(unsigned version, uint32_t token);
     void ReceiveRemoteShellReply(const l4d2vr_shell::Reply& reply);
@@ -3942,6 +3956,7 @@ public:
 	void MarkMagazineInteractionServerHookSeen(int serverWeaponId);
 	bool IsMagazineInteractionAnyServerHookActive() const;
 	bool IsMagazineInteractionServerHookActive(int weaponId) const;
+    bool IsMagazineInteractionDetachableBackendActive(int weaponId) const;
 	void MarkMagazineInteractionShotgunServerHookSeen(int serverWeaponId);
 	bool IsMagazineInteractionShotgunServerHookActive(int weaponId) const;
     bool IsMagazineInteractionShotgunLocalServerHookActive(int weaponId) const;

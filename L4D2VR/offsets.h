@@ -165,7 +165,11 @@ public:
     Offset PhysicalShellAmmoCount = { "server.dll", 0x00046DF0,
         "55 8B EC 56 8B 75 08 57 8B F9 83 FE FF 75 08 5F 33 C0 5E 5D C2 04 00 56 E8 ? ? ? ? 8B C8 E8 ? ? ? ? 84 C0 B8 E7 03 00 00 75 07 8B 84 B7 74 18 00 00 5F 5E 5D C2 04 00", 0, true };
     Offset PhysicalShellMaxClip = { "server.dll", 0x0004A810,
-        "0F B7 81 68 14 00 00 50 E8 ? ? ? ? 8B 80 60 01 00 00 83 C4 04 C3", 0, true };
+          "0F B7 81 68 14 00 00 50 E8 ? ? ? ? 8B 80 60 01 00 00 83 C4 04 C3", 0, true };
+    // CAmmoDef::IsInfiniteAmmo, also called by native GetAmmoCount. Keep the
+    // ammo-definition result authoritative rather than assuming pistols are infinite.
+    Offset PhysicalAmmoInfinite = { "server.dll", 0x0002D2C0,
+        "55 8B EC 8B 45 08 83 F8 01 7C 29 3B 41 04 7D 24 6B C0 34 03 C8 8B 41 2C 83 F8 FF 75 0D 8B 49 38 85 C9 74 06 8B 41 1C 8B 40 30 83 F8 FE 0F 94 C0 5D C2 04 00", 0, true };
     Offset PhysicalShellEdictAccessor = { "server.dll", 0x000ED4B0,
         "51 8B 0D ? ? ? ? 8B 11 8B 82 84 01 00 00 FF D0 C3", 0, true };
     Offset PhysicalShellReloadLayout = { "server.dll", 0x003C30C4,

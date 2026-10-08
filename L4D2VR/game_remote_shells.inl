@@ -14,6 +14,34 @@ namespace
             game->m_Offsets->PhysicalShotgunReload.valid && game->m_Offsets->GetActiveWeapon.valid &&
             game->m_Offsets->CBaseEntity_entindex.valid;
     }
+    bool RemoteMagazineBackendReady(const Game* game)
+    {
+        return RemoteShellBackendReady(game) && Hooks::hkPhysicalGunReload.isEnabled &&
+            game->m_Offsets->PhysicalGunReload.valid && game->m_Offsets->PhysicalAmmoInfinite.valid;
+    }
+    bool ReadNativeInfiniteAmmo(const Game* game, int ammoType, bool& infinite)
+    {
+        // The complete GetAmmoCount signature proves these two relative calls.
+        // Validate the getter and predicate before calling this supported ABI.
+        auto* code = reinterpret_cast<const unsigned char*>(game->m_Offsets->PhysicalShellAmmoCount.address);
+        if (code[24] != 0xe8 || code[31] != 0xe8) return false;
+        auto* getter = code + 29 + *reinterpret_cast<const int*>(code + 25);
+        const auto* predicate = code + 36 + *reinterpret_cast<const int*>(code + 32);
+        const auto module = reinterpret_cast<uintptr_t>(GetModuleHandleA("server.dll"));
+        if (!module) return false;
+        auto* dos = reinterpret_cast<const IMAGE_DOS_HEADER*>(module);
+        auto* pe = reinterpret_cast<const IMAGE_NT_HEADERS*>(module + dos->e_lfanew);
+        const auto end = module + pe->OptionalHeader.SizeOfImage;
+        const auto address = reinterpret_cast<uintptr_t>(getter);
+        if (address < module || address >= end || end - address < 6 || getter[0] != 0xb8 || getter[5] != 0xc3 ||
+            predicate != reinterpret_cast<const unsigned char*>(game->m_Offsets->PhysicalAmmoInfinite.address)) return false;
+        using GetDefinition = void* (__cdecl*)();
+        using IsInfinite = bool (__thiscall*)(void*, int);
+        void* definition = reinterpret_cast<GetDefinition>(getter)();
+        if (!definition) return false;
+        infinite = reinterpret_cast<IsInfinite>(game->m_Offsets->PhysicalAmmoInfinite.address)(definition, ammoType);
+        return true;
+    }
     bool RemoteShellWritable(const void* address, size_t length)
     {
         MEMORY_BASIC_INFORMATION info{};
@@ -38,12 +66,13 @@ namespace
         unsigned char oldInReload = 0;
         int oldReloadState = 0;
         int oldClip = 0, oldReserve = 0;
+        bool infinite = false;
     };
     bool ReadRemoteShellNative(Game* game, edict_t* entity, int index,
         const l4d2vr_shell::Request& request, l4d2vr_shell::Snapshot& state, RemoteShellNativeState& native,
-        bool& unsupported)
+        bool& unsupported, bool magazine = false)
     {
-        unsupported = !RemoteShellBackendReady(game);
+        unsupported = magazine ? !RemoteMagazineBackendReady(game) : !RemoteShellBackendReady(game);
         if (unsupported || !entity || !game->IsValidPlayerIndex(index)) return false;
 #ifdef _MSC_VER
         __try
@@ -67,8 +96,10 @@ namespace
             if (!weapon || reinterpret_cast<Owner>(game->m_Offsets->PhysicalGunOwner.address)(weapon) != player)
                 return false;
             const int id = weapon->GetWeaponID();
-            if (!l4d2vr_shell::IsShotgun(id) || id != request.weaponId) return false;
+            if (id != request.weaponId || (magazine ? !l4d2vr_remote_mag::IsDetachable(id) : !l4d2vr_shell::IsShotgun(id)))
+                return false;
             auto* weaponBytes = reinterpret_cast<unsigned char*>(weapon);
+            if (magazine && id == 1 && weaponBytes[0x17dd] != 0u) return false; // native dual-pistol fallback
             // CBaseEntity::entindex's signature validates the edict pointer at 0x28.
             edict_t* weaponEdict = *reinterpret_cast<edict_t**>(weaponBytes + 0x28);
             if (!weaponEdict || (weaponEdict->m_fStateFlags & 2u) != 0u ||
@@ -88,10 +119,12 @@ namespace
             native.player = entity; native.weapon = weaponEdict;
             native.oldClip = *native.clip; native.oldReserve = *native.reserve;
             native.inReload = weaponBytes + 0x144d;
-            native.reloadState = reinterpret_cast<int*>(weaponBytes + 0x17f0);
-            native.oldInReload = *native.inReload; native.oldReloadState = *native.reloadState;
+            native.reloadState = magazine ? nullptr : reinterpret_cast<int*>(weaponBytes + 0x17f0);
+            native.oldInReload = *native.inReload;
+            native.oldReloadState = native.reloadState ? *native.reloadState : 0;
             const int reserve = reinterpret_cast<Ammo>(game->m_Offsets->PhysicalShellAmmoCount.address)(player, ammoType);
-            if (reserve != native.oldReserve) { unsupported = true; return false; } // no guessed or synthetic reserve slot
+            if (magazine && !ReadNativeInfiniteAmmo(game, ammoType, native.infinite)) { unsupported = true; return false; }
+            if (!native.infinite && reserve != native.oldReserve) { unsupported = true; return false; }
             auto accessor = reinterpret_cast<Accessor>(game->m_Offsets->PhysicalShellEdictAccessor.address);
             unsigned short* playerAccessor = accessor(entity);
             unsigned short* weaponAccessor = accessor(weaponEdict);
@@ -104,13 +137,14 @@ namespace
                 !RemoteShellWritable(native.weaponChangeSerial, sizeof(unsigned short)))
             { unsupported = true; return false; }
             if (!RemoteShellWritable(native.inReload, sizeof(unsigned char)) ||
-                !RemoteShellWritable(native.reloadState, sizeof(int))) { unsupported = true; return false; }
+                (native.reloadState && !RemoteShellWritable(native.reloadState, sizeof(int))))
+            { unsupported = true; return false; }
             const auto& vrPlayer = game->m_PlayersVRInfo[index];
             const uint64_t now = GetTickCount64();
             const bool inputFresh = vrPlayer.lastDecodedUsercmdTickMs != 0u &&
                 now >= vrPlayer.lastDecodedUsercmdTickMs && now - vrPlayer.lastDecodedUsercmdTickMs < 2500u;
             state = {true, request.handle, inputFresh ? vrPlayer.lastDecodedUsercmd : 0u,
-                id, native.oldClip, reserve,
+                id, native.oldClip, native.oldReserve,
                 reinterpret_cast<Capacity>(game->m_Offsets->PhysicalShellMaxClip.address)(weapon)};
             return true;
 #ifdef _MSC_VER
@@ -129,7 +163,8 @@ namespace
             *state.reserve = reserve; *state.clip = clip;
             // End a conventional reload that started before negotiation. Its
             // timed loop must not insert additional shells after this one.
-            *state.inReload = 0; *state.reloadState = 0;
+            *state.inReload = 0;
+            if (state.reloadState) *state.reloadState = 0;
             // Mirror CBaseEdict::StateChanged: full change plus cleared change
             // serial, so the host's clip and reserve reach the guest via Source.
             state.player->m_fStateFlags |= 0x101;

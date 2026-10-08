@@ -16,9 +16,19 @@ signatures gate support. A missing backend, unsupported layout or a 2.5-second
 reply/replication timeout preserves conventional reload and disables remote
 shell insertion for that lease. A new map/connection can negotiate again.
 
-This first protocol handles shotgun shells only. Remote detachable magazines,
-independent dual-pistol ammunition and dedicated-server ammo support are still
-unfinished. Native bindings and transaction tests passed offline; client/server
+Detachable-magazine weapons use a second negotiated protocol. Ejection retains
+at most one existing chambered round; insertion fills to the native capacity
+using available reserve. The host checks the engine's infinite-ammo rule,
+including when a pistol's ammo definition is finite. A preceding accepted
+ejection is required, duplicate requests reuse their result, and the guest
+waits for both the result and replicated ammunition. Empty reloads still need
+a physical slide cycle. A missing slide region is retried rather than completing
+the remote reload automatically. Native firing timers are preserved.
+
+Old magazines are currently discarded, including any rounds left in them; those
+rounds do not become reserve ammo. Keeping and recovering partially loaded
+magazines, independent dual-pistol ammunition and dedicated-server ammo support
+are still unfinished. Native bindings and transaction tests passed offline; client/server
 delivery, Source replication ordering and interaction feel remain unverified.
 The edict notification and network-handle definitions follow the
 [L4D2 SDK headers](https://github.com/alliedmodders/hl2sdk/tree/l4d2/public).
@@ -31,6 +41,13 @@ clip and reserve on the host, then test pumping and firing. Repeat with a weapon
 switch, downing/revival, no reserve ammo and a map change. Check server
 `[VR][RemoteShell][server]` and guest confirmation logs. Also test an older host
 and a deliberately interrupted connection for conventional reload recovery.
+
+For remote magazines, test right-A ejection from a loaded and an empty gun,
+then grip a fresh magazine at the body anchor and insert it. Check actual host
+clip and reserve, a partial reserve, firing the retained chambered round, and
+the empty-gun slide cycle. Repeat across a weapon switch, downing/revival and
+map change. `[VR][RemoteMagazine]` logs the action, sequence and result. Both
+players need the matching build; older hosts retain conventional reload.
 
 This branch contains opt-in grip pickup/drop, body inventory access, manual
 pump cycling, and independently tracked dual pistols. These features have

@@ -11,6 +11,7 @@ class C_WeaponCSBase;
 #include "vr_magazine_policy.h"
 #include "vr_physical_controls.h"
 #include "vr_remote_shells.h"
+#include "vr_remote_magazines.h"
 
 #include "vector.h"
 
@@ -258,6 +259,17 @@ public:
     void OfferRemoteShellProtocol(edict_t* entity);
     bool HandleRemoteShellCommand(edict_t* entity, const void* command);
     void ResetRemoteShellServerClients();
+    struct RemoteMagazineServerClient
+    {
+        edict_t* entity = nullptr;
+        std::int16_t serial = 0;
+        l4d2vr_remote_mag::ServerLedger ledger;
+    };
+    std::mutex m_RemoteMagazineServerMutex;
+    std::array<RemoteMagazineServerClient, kMaxPlayers> m_RemoteMagazineServerClients{};
+    void OfferRemoteMagazineProtocol(edict_t* entity);
+    bool HandleRemoteMagazineCommand(edict_t* entity, const void* command);
+    void ResetRemoteMagazineServerClients();
 
     // === Weapon / Viewmodel State ===
     bool m_IsMeleeWeaponActive = false;

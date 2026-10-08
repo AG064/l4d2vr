@@ -870,6 +870,31 @@ namespace
         g_Game->m_VR->ReceiveRemoteShellReply(reply);
     }
 
+    void __cdecl OnL4D2VRMagazineCapability(const SourceCCommand& command)
+    {
+        uint32_t version = 0, token = 0;
+        if (!g_Game || !g_Game->m_VR || !Hooks::s_ServerUnderstandsVR || command.ArgC() != 3 ||
+            !l4d2vr_shell::ParseNumber(command.Arg(1), 255u, version) ||
+            !l4d2vr_shell::ParseNumber(command.Arg(2), 0xffffffffu, token)) return;
+        g_Game->m_VR->OfferRemoteMagazineProtocol(version, token);
+    }
+    void __cdecl OnL4D2VRMagazineResult(const SourceCCommand& command)
+    {
+        if (!g_Game || !g_Game->m_VR || command.ArgC() != 12) return;
+        uint32_t values[11]{};
+        constexpr uint32_t limits[11] = {0xffffffffu, 0xffffffffu, (1u << 22) - 1u,
+            0x7fffffffu, 64u, l4d2vr_remote_mag::kMaxClip, 5000u, 1u, 7u,
+            l4d2vr_remote_mag::kMaxClip, 5000u};
+        for (int arg = 1; arg <= 11; ++arg)
+            if (!l4d2vr_shell::ParseNumber(command.Arg(arg), limits[arg - 1], values[arg - 1])) return;
+        l4d2vr_remote_mag::Reply reply{};
+        reply.request = {values[0], values[1], values[2], values[3], static_cast<int>(values[4]),
+            static_cast<int>(values[5]), static_cast<int>(values[6]), static_cast<l4d2vr_remote_mag::Action>(values[7])};
+        reply.status = static_cast<l4d2vr_remote_mag::Status>(values[8]);
+        reply.clip = static_cast<int>(values[9]); reply.reserve = static_cast<int>(values[10]);
+        g_Game->m_VR->ReceiveRemoteMagazineReply(reply);
+    }
+
     void __cdecl OnL4D2VRPoseReceiveCommand(const SourceCCommand& command)
     {
         unsigned long playerIndex = 0;
@@ -925,6 +950,12 @@ namespace
     SourceRegisteredConCommand g_L4D2VRShellResultCommand(
         "l4d2vr_shell_result", &OnL4D2VRShellResult,
         "Receive a physical shell transaction result.", kFcvarServerCanExecute);
+    SourceRegisteredConCommand g_L4D2VRMagazineCapabilityCommand(
+        "l4d2vr_mag_capability", &OnL4D2VRMagazineCapability,
+        "Negotiate authoritative physical magazine handling.", kFcvarServerCanExecute);
+    SourceRegisteredConCommand g_L4D2VRMagazineResultCommand(
+        "l4d2vr_mag_result", &OnL4D2VRMagazineResult,
+        "Receive a physical magazine transaction result.", kFcvarServerCanExecute);
     SourceRegisteredConCommand g_L4D2VRPoseReceiveCommand(
         kL4D2VRPoseReceiveCommandName,
         &OnL4D2VRPoseReceiveCommand,
@@ -959,6 +990,10 @@ namespace
                 cvar->RegisterConCommand(&g_L4D2VRShellCapabilityCommand);
             if (!cvar->FindCommandBase("l4d2vr_shell_result"))
                 cvar->RegisterConCommand(&g_L4D2VRShellResultCommand);
+            if (!cvar->FindCommandBase("l4d2vr_mag_capability"))
+                cvar->RegisterConCommand(&g_L4D2VRMagazineCapabilityCommand);
+            if (!cvar->FindCommandBase("l4d2vr_mag_result"))
+                cvar->RegisterConCommand(&g_L4D2VRMagazineResultCommand);
             if (!cvar->FindCommandBase(kL4D2VRPoseAckCommandName))
                 cvar->RegisterConCommand(&g_L4D2VRPoseAckCommand);
             if (!cvar->FindCommandBase(kL4D2VRPoseReceiveCommandName))
@@ -1180,6 +1215,8 @@ void Game::ResetAllPlayerVRInfo()
 {
     ResetRemoteShellServerClients();
     if (m_VR) m_VR->DisconnectRemoteShellProtocol();
+    ResetRemoteMagazineServerClients();
+    if (m_VR) m_VR->DisconnectRemoteMagazineProtocol();
     if (m_VR) m_VR->m_ServerPhysicalInteractionVersion.store(0u, std::memory_order_release);
     {
         std::lock_guard<std::mutex> lock(m_VRPoseMutex);
@@ -1200,6 +1237,8 @@ void Game::ResetVRPoseServerSession()
 {
     ResetRemoteShellServerClients();
     if (m_VR) m_VR->DisconnectRemoteShellProtocol();
+    ResetRemoteMagazineServerClients();
+    if (m_VR) m_VR->DisconnectRemoteMagazineProtocol();
     if (m_VR) m_VR->m_ServerPhysicalInteractionVersion.store(0u, std::memory_order_release);
     {
         std::lock_guard<std::mutex> lock(m_VRPoseMutex);
@@ -1656,6 +1695,7 @@ namespace
 }
 
 #include "game_remote_shells.inl"
+#include "game_remote_magazines.inl"
 
 void Game::ObserveBuiltinVRPoseRelayClient(
     int playerIndex,
@@ -1716,6 +1756,7 @@ void Game::ObserveBuiltinVRPoseRelayClient(
         m_Offsets && m_Offsets->ManualInventoryWeaponDrop.valid && m_Offsets->PistolRemoveDualWeapons.valid)
         VRPoseRelaySendClientCommand(m_ServerPluginHelpers, entity, "l4d2vr_interaction_ack 1\n");
     if (poseAckSent) OfferRemoteShellProtocol(entity);
+    if (poseAckSent) OfferRemoteMagazineProtocol(entity);
     if (poseAckSent && client.ackAttempts == 1)
     {
         Game::logMsg(

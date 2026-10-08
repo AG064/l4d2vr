@@ -7,12 +7,12 @@ reload lifecycle recovery, optional magazine release, native grip pickup/drop,
 body inventory anchors, hand/ammo alignment, manual bolt and pump cycling,
 independent dual-pistol tracking/aim and native detachment, physical melee,
 weapon/bullet calibration adapted from PR #404, and separately negotiated
-friend-hosted shotgun shell transactions. See `physical-interactions.md`,
+friend-hosted shell and detachable-magazine transactions. See `physical-interactions.md`,
 `manual-reload-input.md`, `weapon-calibration.md` and `vr-backlog.md` for their
 controls, limitations and remaining tests.
 
-The current runtime source passed 13 CTest suites and Windows Release x86
-DLL/pose-server builds with v143 in a temporary build tree. Six new native shell
+The current runtime source passed 14 CTest suites and Windows Release x86
+DLL/pose-server builds with v143 in a temporary build tree. Seven native ammo
 signatures matched uniquely against the installed server binary. These are
 offline checks. Later documentation edits do not change the tested runtime.
 
@@ -89,9 +89,12 @@ still requires model work; this tool does not reconstruct it.
   damage/gore, per-swing hit limits and duplicate input commands.
 - Remote shells: matching host/guest builds, real clip/reserve replication,
   stale/duplicate requests, timeout/older-host fallback and map changes.
+- Remote magazines: loaded and empty ejection, partial reserve, native finite
+  and infinite pistol ammo, insertion then slide cycling, weapon changes and
+  both orders of result/replicated-ammo delivery.
 
 Offline builds and tests do not confirm those headset or multiplayer results.
 Full body IK, independent dual-pistol magazines/chambers, complete missing mesh
-geometry, remote detachable magazines and dedicated-server physical ammo remain
+geometry, retained dropped-magazine ammunition and dedicated-server physical ammo remain
 unfinished. The reported pipe-bomb crash and missing remote movement have not
 been proven fixed. These limitations are part of the draft review scope.

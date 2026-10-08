@@ -1558,6 +1558,7 @@ void __fastcall Hooks::dServerGameClientsClientCommand(
 {
 	(void)edx;
     if (m_Game && m_Game->HandleRemoteShellCommand(player, sourceCommand)) return;
+    if (m_Game && m_Game->HandleRemoteMagazineCommand(player, sourceCommand)) return;
 	if (m_Game &&
 		m_Game->HandleBuiltinVRPoseRelayCommand(
 			player,

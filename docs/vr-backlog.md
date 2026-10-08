@@ -161,10 +161,9 @@ Reference: [calibration PR #404](https://github.com/keyou91/l4d2vr/pull/404).
 
 ## VR-010: Add authoritative remote physical ammunition requests
 
-Priority: high for friend-hosted play. Current shotgun shell loading requires a
-local native-server hook heartbeat. The physical-control acknowledgement does
-not provide a remote shell-insertion transaction. Client clip prediction alone
-cannot establish authoritative ammunition on the friend's host.
+Priority: high for friend-hosted play. Physical ammo needs its own negotiated
+host transaction; pose and physical-control acknowledgements alone cannot
+establish authoritative ammunition on the friend's host.
 
 Implemented offline on October 8: a separate one-shell protocol negotiates a
 connection token, validates the owned weapon's network serial and recent input,
@@ -172,7 +171,17 @@ reads native server capacity/reserve, and transfers one existing round. The
 guest waits for a matching result and Source ammo replication. Duplicate requests
 reuse their result; stale or changed ammo/ownership is rejected. Unsupported or
 timed-out leases restore conventional reload. Friend-hosted delivery and native
-replication still need testing. Detachable magazines remain a follow-up.
+replication still need testing.
+
+Detachable-magazine transactions are also implemented offline: explicit eject
+retains at most one chambered round, and insert transfers available native
+reserve up to native capacity. The host reads the engine's infinite-ammo rule;
+it does not assume all pistols are infinite. Duplicate requests cannot transfer
+ammo twice, and insertion requires a preceding accepted ejection. Source ammo
+replication and the matching result must both arrive before the guest advances.
+Empty reloads still require the slide; a late slide region cannot automatically
+complete that remote reload. Native dual pistols keep their shared reload
+fallback. Discarded magazines do not retain ammunition for later pickup yet.
 
 - Define a separately negotiated request/acknowledgement for physical shell and
   magazine completion, scoped to the player's actual owned weapon and entity
