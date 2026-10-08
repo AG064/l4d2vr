@@ -89,10 +89,10 @@ struct VRMeleeTrackingSnapshot
 {
     bool valid = false;
     uint32_t sampledAtMs = 0;
-    Vector position{};
-    QAngle angles{};
-    Vector relativeVelocity{};
-    QAngle angularVelocity{};
+    Vector position{0.0f, 0.0f, 0.0f};
+    QAngle angles{0.0f, 0.0f, 0.0f};
+    Vector relativeVelocity{0.0f, 0.0f, 0.0f};
+    QAngle angularVelocity{0.0f, 0.0f, 0.0f};
 };
 
 // Coherent, anatomical (physical left/right) world-space tracking sample used
@@ -118,13 +118,13 @@ struct VRWorldPoseTrackingSnapshot
 	// tracked points below. Reading it later in the pose publisher can observe a
 	// different locomotion tick and leak that phase error into all three local
 	// positions.
-	Vector referenceOrigin{};
-	Vector hmdPosition{};
-	QAngle hmdAngles{};
-	Vector leftHandPosition{};
-	QAngle leftHandAngles{};
-	Vector rightHandPosition{};
-	QAngle rightHandAngles{};
+	Vector referenceOrigin{0.0f, 0.0f, 0.0f};
+	Vector hmdPosition{0.0f, 0.0f, 0.0f};
+	QAngle hmdAngles{0.0f, 0.0f, 0.0f};
+	Vector leftHandPosition{0.0f, 0.0f, 0.0f};
+	QAngle leftHandAngles{0.0f, 0.0f, 0.0f};
+	Vector rightHandPosition{0.0f, 0.0f, 0.0f};
+	QAngle rightHandAngles{0.0f, 0.0f, 0.0f};
 	std::array<float, 5> leftFingerCurls{};
 	std::array<float, 5> rightFingerCurls{};
 };
@@ -1246,10 +1246,10 @@ public:
     bool m_BodyInventoryPoseValid = false;
     float m_BodyInventoryYaw = 0.0f;
     float m_BodyInventoryRotationOffset = 0.0f;
-    Vector m_BodyInventoryOrigin{};
-    Vector m_BodyInventoryHeadPosAbs{};
-    Vector m_BodyInventoryForward{};
-    Vector m_BodyInventoryRight{};
+    Vector m_BodyInventoryOrigin{0.0f, 0.0f, 0.0f};
+    Vector m_BodyInventoryHeadPosAbs{0.0f, 0.0f, 0.0f};
+    Vector m_BodyInventoryForward{0.0f, 0.0f, 0.0f};
+    Vector m_BodyInventoryRight{0.0f, 0.0f, 0.0f};
 	struct ManualThrowUsercmdPoseSnapshot
 	{
 		bool valid = false;
@@ -1786,8 +1786,8 @@ public:
 	Vector m_VrHandsLeftPoseRotationOffsetDeg = { 0.0f, 0.0f, 0.0f };
 	Vector m_VrHandsRightPoseOffsetMeters = { 0.0f, 0.0f, 0.0f };
 	Vector m_VrHandsRightPoseRotationOffsetDeg = { 0.0f, 0.0f, 0.0f };
-    Vector m_VrHandsRightFreePoseOffsetMeters{};
-    Vector m_VrHandsRightFreePoseRotationOffsetDeg{};
+    Vector m_VrHandsRightFreePoseOffsetMeters{0.0f, 0.0f, 0.0f};
+    Vector m_VrHandsRightFreePoseRotationOffsetDeg{0.0f, 0.0f, 0.0f};
     l4d2vr_magazine::ChamberHistory m_PhysicalReloadChambers;
     bool m_PhysicalReloadObservedEmpty = false;
 	// Left-handed mode uses gameplay-right for the physical left/gun hand and gameplay-left
@@ -1822,8 +1822,8 @@ public:
 		m_WorldModelVRPoseLocalThirdPersonWarmupUntilTickMs{ 0u };
 	// Final palm-only local rotation offsets. These are deliberately applied
 	// after the positional two-bone solve so wrist tuning cannot move an elbow.
-	Vector m_WorldModelVRPoseLeftHandRotationOffsetDeg{};
-	Vector m_WorldModelVRPoseRightHandRotationOffsetDeg{};
+	Vector m_WorldModelVRPoseLeftHandRotationOffsetDeg{0.0f, 0.0f, 0.0f};
+	Vector m_WorldModelVRPoseRightHandRotationOffsetDeg{0.0f, 0.0f, 0.0f};
 	float m_WorldModelVRPoseSendHz = 25.0f;
 	float m_WorldModelVRPoseInterpolationMs = 50.0f;
 	float m_WorldModelVRPoseStaleAfterMs = 250.0f;
@@ -2199,15 +2199,15 @@ public:
 	VrHandMatrix4 m_MagazineInteractionControllerToMagazine{};
 	VrHandMatrix4 m_MagazineInteractionDetachedMagazineWorld{};
 	bool m_MagazineInteractionFreshPickupBasisValid = false;
-	Vector m_MagazineInteractionFreshPickupForward{};
-	Vector m_MagazineInteractionFreshPickupRight{};
+	Vector m_MagazineInteractionFreshPickupForward{0.0f, 0.0f, 0.0f};
+	Vector m_MagazineInteractionFreshPickupRight{0.0f, 0.0f, 0.0f};
 	float m_MagazineInteractionFreshPickupHmdYawOffsetDeg = 0.0f;
 	float m_MagazineInteractionFreshPickupRotationOffset = 0.0f;
-	Vector m_MagazineInteractionBoltPullAxisWorld{};
-	Vector m_MagazineInteractionBoltInputAxisWorld{};
-	Vector m_MagazineInteractionGrabStartLeftControllerPosAbs{};
-	Vector m_MagazineInteractionHeldMagazineCenterOffsetLocal{};
-	Vector m_MagazineInteractionBoltGrabStartLeftControllerPosAbs{};
+	Vector m_MagazineInteractionBoltPullAxisWorld{0.0f, 0.0f, 0.0f};
+	Vector m_MagazineInteractionBoltInputAxisWorld{0.0f, 0.0f, 0.0f};
+	Vector m_MagazineInteractionGrabStartLeftControllerPosAbs{0.0f, 0.0f, 0.0f};
+	Vector m_MagazineInteractionHeldMagazineCenterOffsetLocal{0.0f, 0.0f, 0.0f};
+	Vector m_MagazineInteractionBoltGrabStartLeftControllerPosAbs{0.0f, 0.0f, 0.0f};
 	float m_MagazineInteractionBoltGrabStartPullDistance = 0.0f;
 	float m_MagazineInteractionBoltPullDistance = 0.0f;
 	float m_MagazineInteractionBoltMaxPullDistance = 0.0f;

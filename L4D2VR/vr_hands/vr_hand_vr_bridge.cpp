@@ -7,6 +7,7 @@
 #include "vr_hand_vm_pose.h"
 #include "vr_magazine_policy.h"
 #include "vr_interaction_protocol.h"
+#include "vr_ammo_grip.h"
 
 #include <d3d9.h>
 #include <d3d9_vr.h>
@@ -862,7 +863,7 @@ namespace
         outBox = {};
         outBox.origin = viewmodelPickup;
         outBox.axisX = bodyForward;
-        outBox.axisY = bodyRight;
+        outBox.axisY = bodyRight * -1.0f;
         outBox.axisZ = worldUp;
         outBox.mins = Vector(-half.x, -half.y, -half.z);
         outBox.maxs = Vector(half.x, half.y, half.z);
@@ -1954,6 +1955,14 @@ namespace
         if (!MagazineInteractionMatrixLooksRenderable(controllerWorld))
             return false;
 
+        if (freshMagazine)
+        {
+            const l4d2vr_ammo_grip::Pose pose{vr->m_MagazineInteractionControllerToMagazine,
+                vr->m_MagazineInteractionHeldMagazineCenterOffsetLocal};
+            return l4d2vr_ammo_grip::Follow(controllerWorld, pose,
+                MagazineInteractionBoxCenterLocal(vr->m_MagazineInteractionSocketBox), outWorld);
+        }
+
         VrHandMatrix4 orientationWorld = MagazineInteractionBuildWorldFromControllerRelation(
             controllerWorld,
             vr->m_MagazineInteractionControllerToMagazine);
@@ -2032,8 +2041,9 @@ namespace
         if (MagazineInteractionReprojectScenePointToViewmodelLayer(vr, pickup, reprojectedPickup))
             viewmodelPickup = reprojectedPickup;
 
-        outWorld = MagazineInteractionBuildSocketOrientedMagazineWorldAtCenter(vr, viewmodelPickup);
-        return MagazineInteractionMatrixLooksRenderable(outWorld);
+        return l4d2vr_ammo_grip::BodyWorld(bodyForward, bodyRight, viewmodelPickup,
+            MagazineInteractionBoxCenterLocal(vr->m_MagazineInteractionSocketBox), outWorld) &&
+            MagazineInteractionMatrixLooksRenderable(outWorld);
     }
 
     bool MagazineInteractionTryReadInt(const void* entity, int offset, int& out)
@@ -3696,13 +3706,8 @@ bool VR::GetBodyAmmoPreviewWorld(const MagazineInteractionBoxSnapshot& box, VrHa
     Vector reprojected{};
     if (MagazineInteractionReprojectScenePointToViewmodelLayer(this, pickup, reprojected))
         pickup = reprojected;
-    MagazineInteractionBoxSnapshot bodyBox{};
-    bodyBox.origin = pickup;
-    bodyBox.axisX = forward;
-    bodyBox.axisY = right;
-    bodyBox.axisZ = Vector(0.0f, 0.0f, 1.0f);
-    outWorld = MagazineInteractionBuildWorldAtBoxCenter(MagazineInteractionBuildBoxWorld(bodyBox), box, pickup);
-    return MagazineInteractionMatrixLooksRenderable(outWorld);
+    return l4d2vr_ammo_grip::BodyWorld(forward, right, pickup,
+        MagazineInteractionBoxCenterLocal(box), outWorld) && MagazineInteractionMatrixLooksRenderable(outWorld);
 }
 
 bool VR::HasFreshMagazineInteractionDebugBoxWork() const
@@ -5404,27 +5409,16 @@ bool VR::UpdateMagazineInteraction(
             m_LeftControllerForward,
             m_LeftControllerRight,
             m_LeftControllerUp);
-        VrHandMatrix4 orientationWorld = MagazineInteractionBuildWorldFromControllerRelation(
-            controllerWorld,
-            m_MagazineInteractionControllerToMagazine);
-        if (!MagazineInteractionMatrixBasisLooksValid(orientationWorld))
-            orientationWorld = MagazineInteractionBuildFreshHandMagazineWorld(this);
-        if (!MagazineInteractionMatrixBasisLooksValid(orientationWorld))
-            orientationWorld = controllerWorld;
-        const Vector desiredCenter =
-            MagazineInteractionMatrixOrigin(controllerWorld) +
-            MagazineInteractionMatrixLocalVectorToWorld(
-                controllerWorld,
-                m_MagazineInteractionHeldMagazineCenterOffsetLocal);
-        return MagazineInteractionBuildWorldAtBoxCenter(
-            orientationWorld,
-            m_MagazineInteractionSocketBox,
-            desiredCenter);
+        const l4d2vr_ammo_grip::Pose pose{m_MagazineInteractionControllerToMagazine,
+            m_MagazineInteractionHeldMagazineCenterOffsetLocal};
+        VrHandMatrix4 world{};
+        l4d2vr_ammo_grip::Follow(controllerWorld, pose,
+            MagazineInteractionBoxCenterLocal(m_MagazineInteractionSocketBox), world);
+        return world;
     };
 
     auto snapFreshMagazineCenterOffsetToLeftHandAnchor =
         [&](const VrHandMatrix4& controllerWorld,
-            const VrHandMatrix4& freshMagazineWorld,
             bool& outUsedWristAnchor,
             Vector& outTargetHandAnchorWorld,
             Vector& outFreshHandAnchorLocal,
@@ -5433,9 +5427,6 @@ bool VR::UpdateMagazineInteraction(
         outFreshCenterLocal = MagazineInteractionBoxCenterLocal(m_MagazineInteractionSocketBox);
         outFreshHandAnchorLocal =
             MagazineInteractionFreshMagazineHandAnchorLocal(this, m_MagazineInteractionSocketBox);
-        const Vector snappedCenterOffsetWorld = MagazineInteractionMatrixLocalVectorToWorld(
-            freshMagazineWorld,
-            outFreshCenterLocal - outFreshHandAnchorLocal);
         if (!MagazineInteractionResolveFreshMagazineHandAnchorWorld(
             this,
             controllerWorld,
@@ -5445,12 +5436,11 @@ bool VR::UpdateMagazineInteraction(
             return false;
         }
 
-        m_MagazineInteractionHeldMagazineCenterOffsetLocal =
-            MagazineInteractionWorldVectorToMatrixLocal(
-                controllerWorld,
-                outTargetHandAnchorWorld +
-                snappedCenterOffsetWorld -
-                MagazineInteractionMatrixOrigin(controllerWorld));
+        l4d2vr_ammo_grip::Pose pose{};
+        if (!l4d2vr_ammo_grip::Capture(controllerWorld, m_MagazineInteractionMagazineHandRotationOffsetDeg,
+            outTargetHandAnchorWorld, outFreshCenterLocal, outFreshHandAnchorLocal, pose)) return false;
+        m_MagazineInteractionControllerToMagazine = pose.orientationLocal;
+        m_MagazineInteractionHeldMagazineCenterOffsetLocal = pose.centerOffsetLocal;
         return true;
     };
 
@@ -7787,8 +7777,9 @@ bool VR::UpdateMagazineInteraction(
             MagazineInteractionMatrixLooksRenderable(m_MagazineInteractionSocketWorld) &&
             MagazineInteractionBuildFreshMagazinePickupBox(this, pickupBox, pickupAngles))
         {
-            pickupMagazineWorld = MagazineInteractionBuildSocketOrientedMagazineWorldAtCenter(
-                this,
+            pickupMagazineWorld = MagazineInteractionBuildWorldAtBoxCenter(
+                MagazineInteractionBuildBoxWorld(pickupBox),
+                m_MagazineInteractionSocketBox,
                 pickupBox.origin);
             if (MagazineInteractionMatrixLooksRenderable(pickupMagazineWorld))
             {
@@ -7837,6 +7828,9 @@ bool VR::UpdateMagazineInteraction(
             (leftGripDown && freshGrabDistance <= freshGrabRange);
         if (freshGrabRequested)
         {
+            VRWorldPoseTrackingSnapshot tracking{};
+            if (!ReadWorldPoseTrackingSnapshot(tracking) || !tracking.hmdValid ||
+                !tracking.leftHandValid || !tracking.rightHandValid) return false;
             if (!hasPickupBox)
             {
                 return reloadCommandPending();
@@ -7856,35 +7850,29 @@ bool VR::UpdateMagazineInteraction(
                 return false;
             }
 
-            m_VrHandsTwoHandedGripActive = false;
-            m_VrHandsTwoHandedGripWeaponId = 0;
-            m_VrHandsTwoHandedGripWeaponTag = 0;
-            m_MagazineInteractionState = MagazineInteractionManualState::HoldingFreshMagazine;
-            m_MagazineInteractionLeftHandHolding = true;
             const VrHandMatrix4 controllerWorld = MagazineInteractionBuildViewmodelReprojectedControllerWorld(
                 this,
                 m_LeftControllerPosAbs,
                 m_LeftControllerForward,
                 m_LeftControllerRight,
                 m_LeftControllerUp);
-            const VrHandMatrix4 freshMagazineWorld = pickupMagazineWorld;
-            m_MagazineInteractionControllerToMagazine =
-                MagazineInteractionBuildControllerRelation(controllerWorld, freshMagazineWorld);
-            const bool relationCaptured =
-                MagazineInteractionMatrixBasisLooksValid(m_MagazineInteractionControllerToMagazine);
-            m_MagazineInteractionFreshGrabbedAt = now;
-            m_MagazineInteractionLeftHandPoseActive.store(1, std::memory_order_relaxed);
             bool usedWristAnchor = false;
             Vector targetHandAnchorWorld{};
             Vector freshHandAnchorLocal{};
             Vector freshCenterLocal{};
-            snapFreshMagazineCenterOffsetToLeftHandAnchor(
+            if (!snapFreshMagazineCenterOffsetToLeftHandAnchor(
                 controllerWorld,
-                freshMagazineWorld,
                 usedWristAnchor,
                 targetHandAnchorWorld,
                 freshHandAnchorLocal,
-                freshCenterLocal);
+                freshCenterLocal)) return false;
+            m_VrHandsTwoHandedGripActive = false;
+            m_VrHandsTwoHandedGripWeaponId = 0;
+            m_VrHandsTwoHandedGripWeaponTag = 0;
+            m_MagazineInteractionState = MagazineInteractionManualState::HoldingFreshMagazine;
+            m_MagazineInteractionLeftHandHolding = true;
+            m_MagazineInteractionFreshGrabbedAt = now;
+            m_MagazineInteractionLeftHandPoseActive.store(1, std::memory_order_relaxed);
             const VrHandMatrix4 snappedFreshMagazineWorld = buildFreshHeldMagazineWorldFromLeftHand();
             setDetachedMagazineWorld(snappedFreshMagazineWorld);
             const Vector freshClipOrigin = MagazineInteractionMatrixOrigin(snappedFreshMagazineWorld);
@@ -7895,10 +7883,10 @@ bool VR::UpdateMagazineInteraction(
                 snappedFreshMagazineWorld,
                 freshHandAnchorLocal);
             Game::logMsg(
-                "[VR][MagazineInteraction] fresh magazine snapped to left hand anchor from fresh magazine box distance=%.2f range=%.2f relationCaptured=%d quickAutoGrab=%d wristAnchor=%d clipOrigin=(%.2f %.2f %.2f) visibleCenter=(%.2f %.2f %.2f) handAnchor=(%.2f %.2f %.2f) targetHandAnchor=(%.2f %.2f %.2f) centerLocalOffset=(%.2f %.2f %.2f) centerLocal=(%.2f %.2f %.2f) anchorLocal=(%.2f %.2f %.2f) model=%s; move it into MagazineSocket",
+                "[VR][MagazineInteraction] fresh ammo snapped to calibrated hand grip distance=%.2f range=%.2f calibratedGrip=%d quickAutoGrab=%d wristAnchor=%d clipOrigin=(%.2f %.2f %.2f) visibleCenter=(%.2f %.2f %.2f) handAnchor=(%.2f %.2f %.2f) targetHandAnchor=(%.2f %.2f %.2f) centerLocalOffset=(%.2f %.2f %.2f) centerLocal=(%.2f %.2f %.2f) anchorLocal=(%.2f %.2f %.2f) model=%s; move it into MagazineSocket",
                 freshGrabDistance,
                 freshGrabRange,
-                relationCaptured ? 1 : 0,
+                1,
                 quickFreshAutoGrab ? 1 : 0,
                 usedWristAnchor ? 1 : 0,
                 freshClipOrigin.x,

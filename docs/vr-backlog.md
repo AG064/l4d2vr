@@ -99,6 +99,13 @@ unpredictably. Picking up a magazine must give it a consistent hand pose.
 - Treat full-body IK as a separate implementation task, including shoulder,
   elbow and torso behavior. Body visibility alone is not a physical body.
 
+Further offline fixes give fresh ammunition a calibrated controller-local
+orientation instead of capturing an accidental pickup angle. Its model grip
+point remains at the palm across wrist motion in the shared input/render path.
+Invalid capture leaves the item at the body anchor and does not take the hand.
+Source vector/angle calibration defaults are initialized explicitly. Reload,
+shell-port alignment and glove/native-hand visuals still need a headset test.
+
 Related: [magazine pose #392](https://github.com/keyou91/l4d2vr/issues/392),
 [body IK #393](https://github.com/keyou91/l4d2vr/issues/393).
 

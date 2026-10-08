@@ -113,8 +113,24 @@ reload remains available. Both client and server need this build.
 Free right gloves use the mirrored left glove calibration by default, rather
 than the held viewmodel hand calibration. Advanced overrides are
 `VrHandsRightFreePoseOffsetMeters` and `VrHandsRightFreePoseRotationOffsetDeg`.
-Held ammo uses the glove's rotation convention and palm center. An observed
-empty chamber stays empty until its required manual bolt cycle is completed.
+Fresh magazines and shells use a repeatable controller-local grip with
+`ManualReloadMagazineHandRotationOffsetDeg` applied at pickup. The grip point
+lands at the palm; the gun and wrist orientation at the body anchor do not set
+the held item's rotation. Input contact and queued rendering use the same grip
+transform, including with non-centered replacement-model bounds. Invalid anchor
+or controller data cannot enter the held-ammo state. Pulling an attached old
+magazine retains its original relative pose until it is removed.
+
+Body previews and waiting ammunition share the torso's upright frame. Rotating
+the gun does not rotate a spare magazine on the waist. The frame preserves model
+handedness, while the existing body-relative positions and saved offsets remain.
+
+Hand, body and tracking defaults explicitly initialize Source vectors/angles.
+Their SDK default constructors leave values uninitialized, so empty braces do
+not guarantee a zero calibration. These fixes prevent undefined default offsets;
+they do not establish the cause of earlier headset or multiplayer failures.
+
+An observed empty chamber stays empty until its required manual bolt cycle is completed.
 Manual pump movement uses a closed rest pose rebased onto the current gun;
 moving the pump hand does not steer the gun's aim. Native automatic pump
 sounds are muted, while the sound from an actual manual stroke is allowed.
