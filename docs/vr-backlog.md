@@ -106,6 +106,13 @@ Invalid capture leaves the item at the body anchor and does not take the hand.
 Source vector/angle calibration defaults are initialized explicitly. Reload,
 shell-port alignment and glove/native-hand visuals still need a headset test.
 
+Rendered first-person pelvis sampling now supplies character-specific waist
+height and torso yaw to the shared inventory frame, retaining saved offsets.
+Samples are owner-scoped, bounded and short-lived; missing rigs retain the fixed
+head-relative fallback. Input/render translation and inter-frame turns have
+offline coverage. Character appearance, crouching/leaning, reach and body
+collision still require headset work; this does not complete physical body IK.
+
 Related: [magazine pose #392](https://github.com/keyou91/l4d2vr/issues/392),
 [body IK #393](https://github.com/keyou91/l4d2vr/issues/393).
 

@@ -162,6 +162,16 @@ Body previews and waiting ammunition share the torso's upright frame. Rotating
 the gun does not rotate a spare magazine on the waist. The frame preserves model
 handedness, while the existing body-relative positions and saved offsets remain.
 
+With body inventory and the first-person body enabled, a valid rendered pelvis
+now supplies the inventory frame's height and torso yaw. This fits waist ammo
+and holsters to the selected character instead of using one eye-to-waist distance.
+Saved body/slot offsets still adjust that frame. The same relative sample is used
+for input contact and queued rendering; a stick turn between samples is applied
+once. Missing/malformed rigs, stale samples, observer state or incapacitation
+use the fixed tracked-head frame. The optional `BodyGripInventoryUseModelPelvis`
+setting defaults to true and can disable fitting. This is an inventory fit to
+the rendered skeleton; collision and full physical body IK remain unfinished.
+
 Hand, body and tracking defaults explicitly initialize Source vectors/angles.
 Their SDK default constructors leave values uninitialized, so empty braces do
 not guarantee a zero calibration. These fixes prevent undefined default offsets;

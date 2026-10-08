@@ -122,6 +122,7 @@ namespace
 
     void HooksFirstPersonBodyClearLocalRenderable()
     {
+        if (Hooks::m_VR) Hooks::m_VR->ClearBodyInventoryModelPose();
         g_FirstPersonBodyPlayerReady.store(false, std::memory_order_release);
         g_FirstPersonBodyActiveWeaponRenderable.store(nullptr, std::memory_order_release);
         g_FirstPersonBodyLocalPlayerIndex.store(-1, std::memory_order_release);

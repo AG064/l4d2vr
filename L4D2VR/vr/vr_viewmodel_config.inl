@@ -3203,6 +3203,7 @@ void VR::ParseConfigFile()
     m_ManualThrowEnabled = getBool("ManualThrowEnabled", m_ManualThrowEnabled);
     m_GripReleaseDropEnabled = getBool("GripReleaseDropEnabled", false);
     m_BodyGripInventoryEnabled = getBool("BodyGripInventoryEnabled", false);
+    m_BodyGripInventoryUseModelPelvis = getBool("BodyGripInventoryUseModelPelvis", true);
     m_ManualPumpEnabled = getBool("ManualPumpEnabled", false);
     m_DualPistolsIndependentHandsEnabled = getBool("DualPistolsIndependentHandsEnabled", false);
     m_DualPistolsNativeReloadFallbackEnabled = getBool("DualPistolsNativeReloadFallbackEnabled", false);

@@ -3409,8 +3409,45 @@ void VR::RecordManualPumpShot()
     Game::logMsg("[VR][ManualPump] shot observed weaponId=%d clip=%d", static_cast<int>(id), clip);
 }
 
+void VR::PublishBodyInventoryModelPose(uintptr_t owner, uintptr_t model, uint64_t generation,
+    const Vector& referenceHead, const Vector& pelvis, float bodyYaw)
+{
+    l4d2vr_body_inventory::ModelPose pose{};
+    if (!l4d2vr_body_inventory::Capture(owner, model, generation, referenceHead, pelvis,
+        bodyYaw, m_RotationOffset, m_VRScale, GetTickCount64(), pose))
+    {
+        ClearBodyInventoryModelPose();
+        return;
+    }
+    std::lock_guard<std::mutex> lock(m_BodyInventoryModelMutex);
+    m_BodyInventoryModelPose = pose;
+}
+
+void VR::ClearBodyInventoryModelPose()
+{
+    std::lock_guard<std::mutex> lock(m_BodyInventoryModelMutex);
+    m_BodyInventoryModelPose = {};
+}
+
+bool VR::ResolveBodyInventoryModelPose(const Vector& head, Vector& origin, Vector& forward, Vector& right) const
+{
+    if (!m_BodyGripInventoryUseModelPelvis || !m_FirstPersonBodyEnabled ||
+        m_RenderPlayerIncap.load(std::memory_order_acquire) || m_RenderTpObserver.load(std::memory_order_acquire))
+        return false;
+    l4d2vr_body_inventory::ModelPose pose{};
+    {
+        std::lock_guard<std::mutex> lock(m_BodyInventoryModelMutex);
+        pose = m_BodyInventoryModelPose;
+    }
+    return l4d2vr_body_inventory::Resolve(pose, m_BodyInventoryOwnerTag.load(std::memory_order_acquire),
+        GetTickCount64(), head, m_InventoryBodyOriginOffset, m_VRScale, m_RotationOffset, origin, forward, right);
+}
+
 void VR::UpdateBodyInventoryPose()
 {
+    const int index = m_Game && m_Game->m_EngineClient ? m_Game->m_EngineClient->GetLocalPlayer() : -1;
+    m_BodyInventoryOwnerTag.store(index > 0 ? reinterpret_cast<uintptr_t>(m_Game->GetClientEntity(index)) : 0u,
+        std::memory_order_release);
     std::lock_guard<std::mutex> lock(m_BodyInventoryPoseMutex);
     if (!m_IsVREnabled || !m_Game || !m_Game->m_EngineClient || !m_Game->m_EngineClient->IsInGame() ||
         !l4d2vr_interaction::Finite(m_HmdPosAbs) || !l4d2vr_interaction::Finite(m_HmdForward) ||
@@ -3431,6 +3468,12 @@ void VR::UpdateBodyInventoryPose()
     m_BodyInventoryHeadPosAbs = m_HmdPosAbs;
     m_BodyInventoryOrigin = l4d2vr_interaction::BodyOrigin(m_BodyInventoryHeadPosAbs,
         m_BodyInventoryForward, m_BodyInventoryRight, m_InventoryBodyOriginOffset, m_VRScale);
+    // Keep the cached head frame as the fallback. A model sample may expire or
+    // be invalidated on the render worker between input updates.
+    Vector fittedOrigin = m_BodyInventoryOrigin;
+    Vector fittedForward = m_BodyInventoryForward, fittedRight = m_BodyInventoryRight;
+    const bool modelFitted = ResolveBodyInventoryModelPose(m_BodyInventoryHeadPosAbs,
+        fittedOrigin, fittedForward, fittedRight);
     m_BodyInventoryPoseValid = true;
     if (m_BodyGripInventoryEnabled && m_VrHandsDebugLog)
     {
@@ -3439,10 +3482,10 @@ void VR::UpdateBodyInventoryPose()
         if (lastLog.time_since_epoch().count() == 0 || now-lastLog >= std::chrono::seconds(1))
         {
             lastLog = now;
-            Game::logMsg("[VR][BodyInventory] head=(%.2f %.2f %.2f) body=(%.2f %.2f %.2f) yaw=%.1f turn=%.1f",
+            Game::logMsg("[VR][BodyInventory] head=(%.2f %.2f %.2f) body=(%.2f %.2f %.2f) yaw=%.1f turn=%.1f modelFitted=%d",
                 m_BodyInventoryHeadPosAbs.x, m_BodyInventoryHeadPosAbs.y, m_BodyInventoryHeadPosAbs.z,
-                m_BodyInventoryOrigin.x, m_BodyInventoryOrigin.y, m_BodyInventoryOrigin.z,
-                m_BodyInventoryYaw, m_RotationOffset);
+                fittedOrigin.x, fittedOrigin.y, fittedOrigin.z,
+                m_BodyInventoryYaw, m_RotationOffset, modelFitted ? 1 : 0);
         }
     }
 }
@@ -3453,11 +3496,16 @@ bool VR::GetBodyInventoryPose(Vector& origin, Vector& forward, Vector& right) co
     if (!m_BodyInventoryPoseValid)
         return false;
     origin = m_BodyInventoryOrigin;
+    Vector head = m_BodyInventoryHeadPosAbs;
     Vector renderHead{};
     if (VR::t_UseRenderFrameSnapshot && MagazineInteractionTryGetRenderSnapshotHmdPosAbs(this, renderHead))
+    {
         origin += renderHead - m_BodyInventoryHeadPosAbs;
+        head = renderHead;
+    }
     forward = m_BodyInventoryForward;
     right = m_BodyInventoryRight;
+    ResolveBodyInventoryModelPose(head, origin, forward, right);
     return true;
 }
 

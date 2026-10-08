@@ -17,6 +17,7 @@
 #include "vr_remote_magazines.h"
 #include "vr_physical_controls.h"
 #include "vr_interaction_geometry.h"
+#include "vr_body_inventory.h"
 #include "vr_dual_pistols.h"
 #include "vector.h"
 #include "vr_hands/vr_hand_types.h"
@@ -1240,6 +1241,14 @@ public:
     bool m_ManualPumpClosedBoltValid = false;
     void RecordManualPumpShot();
     void UpdateBodyInventoryPose();
+    void PublishBodyInventoryModelPose(uintptr_t owner, uintptr_t model, uint64_t generation,
+        const Vector& referenceHead, const Vector& pelvis, float bodyYaw);
+    void ClearBodyInventoryModelPose();
+    bool ResolveBodyInventoryModelPose(const Vector& head, Vector& origin, Vector& forward, Vector& right) const;
+    bool m_BodyGripInventoryUseModelPelvis = true;
+    mutable std::mutex m_BodyInventoryModelMutex;
+    l4d2vr_body_inventory::ModelPose m_BodyInventoryModelPose;
+    std::atomic<uintptr_t> m_BodyInventoryOwnerTag{0u};
     bool GetBodyInventoryPose(Vector& origin, Vector& forward, Vector& right) const;
     bool GetBodyAmmoPreviewWorld(const MagazineInteractionBoxSnapshot& box, VrHandMatrix4& outWorld) const;
     mutable std::mutex m_BodyInventoryPoseMutex;

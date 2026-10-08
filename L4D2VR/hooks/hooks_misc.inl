@@ -21034,6 +21034,7 @@ namespace
         int boneIndex = 0;
         int boneStride = 0;
         int headBone = -1;
+        int pelvisBone = -1;
         int neckBone = -1;
         int upperChestBone = -1;
         int torsoYawRootBone = -1;
@@ -21159,6 +21160,7 @@ namespace
             "bip01_neck1", "bip01_neck", "neck1", "neck",
         };
         HooksFirstPersonBodyFindBone(boneNames, headSuffixes, layout.headBone);
+        HooksFirstPersonBodyFindBone(boneNames, {"bip01_pelvis", "pelvis", "hips"}, layout.pelvisBone);
         HooksFirstPersonBodyFindBone(boneNames, neckSuffixes, layout.neckBone);
 
         if (layout.headBone < 0 || layout.headBone >= layout.numBones)
@@ -22469,6 +22471,21 @@ namespace
         // skeleton, so matching these matrices by bone name gives it the real
         // spine -> clavicle -> upper-arm attachment instead of a hand-placed point.
         std::vector<vr_vm_stabilize::Mat3x4> viewmodelSkeletonBones;
+        if (vr->m_BodyGripInventoryEnabled && bodyState->renderBody &&
+            s_layout.pelvisBone >= 0 && s_layout.pelvisBone < s_layout.numBones)
+        {
+            Vector viewForward(0.0f, 0.0f, 0.0f);
+            Vector viewRight(0.0f, 0.0f, 0.0f), viewUp(0.0f, 0.0f, 0.0f);
+            const QAngle viewAngles(bodyState->view.angles.x, bodyState->view.angles.y, bodyState->view.angles.z);
+            QAngle::AngleVectors(viewAngles, &viewForward, &viewRight, &viewUp);
+            const Vector referenceHead = bodyState->centerEyePosition + viewForward * (vr->m_EyeZ * unitsPerMeter);
+            vr->PublishBodyInventoryModelPose(
+                reinterpret_cast<uintptr_t>(g_FirstPersonBodyLocalPlayer.load(std::memory_order_acquire)),
+                reinterpret_cast<uintptr_t>(s_layout.studioHdr), bodyState->playerGeneration,
+                referenceHead, vr_vm_stabilize::GetOrigin(anchoredBones[s_layout.pelvisBone]), visualBodyYaw);
+        }
+        else if (vr->m_BodyGripInventoryEnabled && bodyState->renderBody)
+            vr->ClearBodyInventoryModelPose();
         if (static_cast<int>(s_layout.boneNames.size()) != s_layout.numBones)
             return false;
         try
