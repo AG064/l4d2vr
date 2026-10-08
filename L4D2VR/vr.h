@@ -2106,6 +2106,9 @@ public:
 	std::chrono::steady_clock::time_point m_MagazineInteractionReloadCommandHoldUntil{};
 	bool m_MagazineInteractionSuppressLeftInputUntilRelease = false;
 	bool m_MagazineInteractionOldMagazinePulled = false;
+    bool m_MagazineInteractionRetainedMagazineHeld = false;
+    l4d2vr_magazine::RetainedInsertGate m_RetainedMagazineInsertGate;
+    Vector m_RetainedMagazineCatchHandLocal{0.0f, 0.0f, 0.0f};
 	bool m_MagazineInteractionChamberEmpty = false;
 	bool m_MagazineInteractionOneInChamber = false;
 	bool m_MagazineInteractionOldMagazineContactActive = false;

@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <array>
+#include <cmath>
 
 namespace l4d2vr_magazine
 {
@@ -191,4 +192,22 @@ namespace l4d2vr_magazine
         // A native count confirms ammunition, not completion of that cycle.
         return !observedEmpty && nativeRetainedClip > 0;
     }
+    inline bool MayCatchEjectedMagazine(bool gripDown, bool tracked, float distance, float padding)
+    {
+        return gripDown && tracked && std::isfinite(distance) && std::isfinite(padding) &&
+            distance >= 0.0f && padding >= 0.0f && distance <= padding;
+    }
+    class RetainedInsertGate
+    {
+    public:
+        void Reset() { m_Withdrawn = false; }
+        bool Update(bool fitsSocket, float travel, float required)
+        {
+            if (!std::isfinite(travel) || !std::isfinite(required) || travel < 0.0f || required <= 0.0f) return false;
+            if (!fitsSocket && travel >= required) m_Withdrawn = true;
+            return m_Withdrawn && fitsSocket;
+        }
+    private:
+        bool m_Withdrawn = false;
+    };
 }

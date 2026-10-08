@@ -3337,7 +3337,7 @@ bool VR::BeginRemoteMagazineRequest(uint32_t handle, int id, int clip, int reser
             return false;
     }
     char command[192]{};
-    std::snprintf(command, sizeof(command), "l4d2vr_mag_action_v1 %u %u %u %u %d %d %d %u\n",
+    std::snprintf(command, sizeof(command), "l4d2vr_mag_action_v2 %u %u %u %u %d %d %d %u\n",
         request.token, request.sequence, request.handle, request.command, id, clip, reserve, static_cast<unsigned>(action));
     m_Game->ServerCmd(command, true);
     Game::logMsg("[VR][RemoteMagazine][client] requested seq=%u action=%u weaponId=%d clip=%d reserve=%d",
@@ -4091,6 +4091,8 @@ void VR::CancelMagazineInteractionManual()
     m_MagazineInteractionReloadCommandIssued = false;
     m_MagazineInteractionReloadCommandHoldUntil = {};
     m_MagazineInteractionOldMagazinePulled = false;
+    m_MagazineInteractionRetainedMagazineHeld = false;
+    m_RetainedMagazineInsertGate.Reset();
     m_MagazineInteractionChamberEmpty = false;
     m_MagazineInteractionOneInChamber = false;
     m_MagazineInteractionOldMagazineContactActive = false;
@@ -5908,6 +5910,8 @@ bool VR::UpdateMagazineInteraction(
         m_MagazineInteractionReloadCommandHoldUntil = {};
         m_MagazineInteractionSuppressLeftInputUntilRelease = false;
         m_MagazineInteractionOldMagazinePulled = false;
+        m_MagazineInteractionRetainedMagazineHeld = false;
+        m_RetainedMagazineInsertGate.Reset();
         m_MagazineInteractionOldMagazineContactActive = false;
         m_MagazineInteractionFreshMagazineContactActive = false;
         m_MagazineInteractionBoltContactActive = false;
@@ -6090,6 +6094,39 @@ bool VR::UpdateMagazineInteraction(
         return true;
     };
 
+    auto catchRetainedMagazine = [&]() -> bool
+    {
+        if (!leftGripDown || m_MagazineInteractionShotgunShellMode || m_MouseModeEnabled || m_SuppressPlayerInput ||
+            !m_FirstPersonControlReady.load(std::memory_order_acquire) || m_Game->m_EngineClient->IsPaused() ||
+            (m_Game->m_VguiSurface && m_Game->m_VguiSurface->IsCursorVisible())) return false;
+        VRWorldPoseTrackingSnapshot tracking{};
+        const bool tracked = ReadWorldPoseTrackingSnapshot(tracking) &&
+            tracking.hmdValid && tracking.leftHandValid && tracking.rightHandValid;
+        refreshSocketFromPublishedViewmodelBox();
+        rebuildInputSocketFromSessionBox();
+        const auto controller = MagazineInteractionBuildViewmodelReprojectedControllerWorld(this,
+            m_LeftControllerPosAbs, m_LeftControllerForward, m_LeftControllerRight, m_LeftControllerUp);
+        Vector palm(0.0f, 0.0f, 0.0f);
+        bool wrist = false;
+        if (!MagazineInteractionResolveFreshMagazineHandAnchorWorld(this, controller, palm, wrist)) return false;
+        const auto& socket = inputSocketValid ? inputSocketBox : m_MagazineInteractionSocketBox;
+        const float distance = MagazineInteractionDistanceToBoxSourceUnits(socket, palm);
+        const float padding = std::clamp(m_MagazineInteractionGrabPaddingMeters, 0.0f, 0.05f) * m_VRScale;
+        if (!l4d2vr_magazine::MayCatchEjectedMagazine(leftGripDown, tracked, distance, padding)) return false;
+        Vector gripPoint(0.0f, 0.0f, 0.0f), center(0.0f, 0.0f, 0.0f);
+        if (!snapFreshMagazineCenterOffsetToLeftHandAnchor(controller, wrist, palm, gripPoint, center)) return false;
+        m_MagazineInteractionRetainedMagazineHeld = true;
+        m_RetainedMagazineCatchHandLocal = leftControllerPosRelativeToWeapon();
+        m_RetainedMagazineInsertGate.Reset();
+        m_MagazineInteractionState = MagazineInteractionManualState::HoldingFreshMagazine;
+        m_MagazineInteractionLeftHandHolding = true;
+        m_MagazineInteractionFreshGrabbedAt = now;
+        m_MagazineInteractionLeftHandPoseActive.store(1, std::memory_order_relaxed);
+        setDetachedMagazineWorld(buildFreshHeldMagazineWorldFromLeftHand());
+        Game::logMsg("[VR][RetainedMagazine] caught weaponId=%d distance=%.2f", activeWeaponIdInt, distance);
+        return true;
+    };
+
     if (m_MagazineInteractionState == MagazineInteractionManualState::WaitingForServerMagazine)
     {
         clearNativeClientReloadState("remote-magazine-pending");
@@ -6109,7 +6146,20 @@ bool VR::UpdateMagazineInteraction(
             // insertion leaves the magazine out and lets the player try again.
             if (!RemoteMagazineProtocolSupported() || poll != l4d2vr_remote_mag::ClientRequest::Poll::Result ||
                 reply.request.action == l4d2vr_remote_mag::Action::Eject) CancelMagazineInteractionManual();
-            else m_MagazineInteractionState = MagazineInteractionManualState::WaitingForFreshMagazine;
+            else if (reply.request.action == l4d2vr_remote_mag::Action::Reinsert && leftGripDown &&
+                m_MagazineInteractionRetainedMagazineHeld)
+            {
+                m_MagazineInteractionState = MagazineInteractionManualState::HoldingFreshMagazine;
+                m_MagazineInteractionLeftHandHolding = true;
+                m_MagazineInteractionLeftHandPoseActive.store(1, std::memory_order_relaxed);
+                m_RetainedMagazineCatchHandLocal = leftControllerPosRelativeToWeapon();
+                m_RetainedMagazineInsertGate.Reset();
+            }
+            else
+            {
+                m_MagazineInteractionRetainedMagazineHeld = false;
+                m_MagazineInteractionState = MagazineInteractionManualState::WaitingForFreshMagazine;
+            }
             return false;
         }
         m_MagazineInteractionStartClip = reply.clip;
@@ -6122,9 +6172,11 @@ bool VR::UpdateMagazineInteraction(
             m_MagazineInteractionChamberEmpty = !m_MagazineInteractionOneInChamber;
             MagazineInteractionPlayClipOutSound(this);
             triggerMagazineInteractionBothHandsHaptic(0.026f, 95.0f, 0.42f, 2);
+            catchRetainedMagazine();
         }
         else
         {
+            m_MagazineInteractionRetainedMagazineHeld = false;
             MagazineInteractionPlayClipInSound(this);
             triggerMagazineInteractionBothHandsHaptic(0.026f, 105.0f, 0.42f, 2);
             if (quickReloadShouldAutoBolt())
@@ -6838,6 +6890,7 @@ bool VR::UpdateMagazineInteraction(
             m_VrHandsTwoHandedGripWeaponId = 0;
             m_VrHandsTwoHandedGripWeaponTag = 0;
             m_MagazineInteractionState = MagazineInteractionManualState::HoldingFreshMagazine;
+            m_MagazineInteractionRetainedMagazineHeld = false;
             m_MagazineInteractionLeftHandHolding = true;
             m_MagazineInteractionFreshGrabbedAt = now;
             m_MagazineInteractionLeftHandPoseActive.store(1, std::memory_order_relaxed);
@@ -6890,12 +6943,13 @@ bool VR::UpdateMagazineInteraction(
             ? std::chrono::duration<float>(now - m_MagazineInteractionFreshGrabbedAt).count()
             : 999.0f;
         const bool quickReloadKeepsFreshMagazineAttached =
-            m_MagazineInteractionQuickReloadMode;
+            m_MagazineInteractionQuickReloadMode && !m_MagazineInteractionRetainedMagazineHeld;
         if (!quickReloadKeepsFreshMagazineAttached &&
             !leftGripDown &&
-            freshGrabAgeSeconds >= 0.18f)
+            (m_MagazineInteractionRetainedMagazineHeld || freshGrabAgeSeconds >= 0.18f))
         {
             m_MagazineInteractionState = MagazineInteractionManualState::WaitingForFreshMagazine;
+            m_MagazineInteractionRetainedMagazineHeld = false;
             m_MagazineInteractionLeftHandHolding = false;
             m_MagazineInteractionFreshPickupBasisValid = false;
             m_MagazineInteractionLeftHandPoseActive.store(0, std::memory_order_relaxed);
@@ -6919,7 +6973,16 @@ bool VR::UpdateMagazineInteraction(
 
         m_MagazineInteractionLeftHandPoseActive.store(1, std::memory_order_relaxed);
         updateFreshDetachedMagazineFromLeftHand();
-        if (detachedMagazineFitsSocket())
+        const bool fitsSocket = detachedMagazineFitsSocket();
+        if (m_MagazineInteractionRetainedMagazineHeld)
+        {
+            // Catching while the hand is still under the well must not insert
+            // the old magazine immediately. Withdraw it, then return it.
+            const float travel = (leftControllerPosRelativeToWeapon() - m_RetainedMagazineCatchHandLocal).Length();
+            const float required = std::max(0.03f, m_MagazineInteractionPullTriggerMeters) * m_VRScale;
+            if (!m_RetainedMagazineInsertGate.Update(fitsSocket, travel, required)) return false;
+        }
+        if (fitsSocket)
         {
             if (RemoteShellRequestPending() || RemoteMagazineRequestPending()) return false;
             if (m_MagazineInteractionShotgunShellMode)
@@ -6939,7 +7002,8 @@ bool VR::UpdateMagazineInteraction(
             }
             if (activeAuthoritativeMagazineBackend && !m_MagazineInteractionShotgunShellMode)
             {
-                beginRemoteMagazineAction(l4d2vr_remote_mag::Action::Insert);
+                beginRemoteMagazineAction(m_MagazineInteractionRetainedMagazineHeld
+                    ? l4d2vr_remote_mag::Action::Reinsert : l4d2vr_remote_mag::Action::Insert);
                 return false;
             }
 

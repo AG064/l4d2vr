@@ -5,10 +5,14 @@
 
 namespace l4d2vr_remote_mag
 {
-    constexpr unsigned kVersion = 1u;
+    constexpr unsigned kVersion = 2u;
     constexpr int kMaxClip = 512;
     using Status = l4d2vr_shell::Status;
-    enum class Action : unsigned { Eject = 0, Insert = 1 };
+    enum class Action : unsigned { Eject = 0, Insert = 1, Reinsert = 2 };
+    inline bool ValidAction(Action action)
+    {
+        return action == Action::Eject || action == Action::Insert || action == Action::Reinsert;
+    }
     inline bool IsDetachable(int id)
     {
         switch (id)
@@ -53,7 +57,7 @@ namespace l4d2vr_remote_mag
             reply.status = Status::Unsupported; m_Memo = reply; m_HaveMemo = true;
             return reply;
         }
-        template<class Writer> Reply Apply(const Request& request, const Snapshot& state,
+        template<class Writer> Reply Apply(const Request& request, const Snapshot state,
             std::uint64_t now, Writer writer)
         {
             Reply reply{request, Status::Session, state.clip, state.reserve};
@@ -64,7 +68,7 @@ namespace l4d2vr_remote_mag
             auto* detached = Find(state.handle);
             if (!state.eligible || !l4d2vr_shell::ValidHandle(request.handle) || request.handle != state.handle ||
                 request.weaponId != state.weaponId || !IsDetachable(state.weaponId) ||
-                (request.action != Action::Eject && request.action != Action::Insert)) reply.status = Status::Weapon;
+                !ValidAction(request.action)) reply.status = Status::Weapon;
             else if (!request.command || !state.latestCommand ||
                 static_cast<std::int64_t>(state.latestCommand) - request.command > 48 ||
                 static_cast<std::int64_t>(request.command) - state.latestCommand > 8 ||
@@ -72,24 +76,31 @@ namespace l4d2vr_remote_mag
             else if (state.capacity <= 0 || state.capacity > kMaxClip || state.clip < 0 ||
                 state.clip > state.capacity || state.reserve < 0 || state.reserve > 5000)
                 reply.status = Status::NoSpaceOrAmmo;
-            else if (request.action == Action::Insert && (!detached || state.clip > 1)) reply.status = Status::Weapon;
+            else if (request.action != Action::Eject && (!detached || state.clip > 1)) reply.status = Status::Weapon;
+            else if (request.action == Action::Reinsert && detached->rounds > state.capacity - state.clip)
+                reply.status = Status::NoSpaceOrAmmo;
             else if (m_HaveApplied && (now < m_LastApplied || now - m_LastApplied < 100u))
                 reply.status = Status::RateLimited;
             else
             {
                 const bool eject = request.action == Action::Eject;
+                const bool reinsert = request.action == Action::Reinsert;
                 if (eject && !detached) detached = EmptySlot();
                 const int added = eject ? 0 : std::min(state.capacity - state.clip,
-                    state.infinite ? state.capacity : state.reserve);
+                    reinsert ? detached->rounds : state.infinite ? state.capacity : state.reserve);
                 const int clip = eject ? std::min(1, state.clip) : state.clip + added;
-                const int reserve = state.reserve - ((!eject && !state.infinite) ? added : 0);
-                if ((eject && !detached) || (!eject && added <= 0)) reply.status = Status::NoSpaceOrAmmo;
+                const int reserve = state.reserve - ((!eject && !reinsert && !state.infinite) ? added : 0);
+                if ((eject && !detached) || (!eject && !reinsert && added <= 0)) reply.status = Status::NoSpaceOrAmmo;
                 else if (!writer(clip, reserve)) reply.status = Status::Backend;
                 else
                 {
-                    // Old magazines are discarded by the current interaction prototype.
-                    // Their remaining rounds never become reserve ammunition.
-                    *detached = eject ? state.handle : 0u;
+                    if (eject)
+                    {
+                        // A new gesture replaces the old catch opportunity.
+                        // Exact network repeats reuse the memo before this write.
+                        *detached = {state.handle, state.clip - clip};
+                    }
+                    else *detached = {};
                     reply.status = Status::Applied; reply.clip = clip; reply.reserve = reserve;
                     m_LastApplied = now; m_HaveApplied = true;
                 }
@@ -97,22 +108,23 @@ namespace l4d2vr_remote_mag
             m_Memo = reply; m_HaveMemo = true; return reply;
         }
     private:
-        std::uint32_t* Find(std::uint32_t handle)
+        struct Detached { std::uint32_t handle = 0; int rounds = 0; };
+        Detached* Find(std::uint32_t handle)
         {
             if (!handle) return nullptr;
-            for (auto& entry : m_Detached) if (entry == handle) return &entry;
+            for (auto& entry : m_Detached) if (entry.handle == handle) return &entry;
             return nullptr;
         }
-        std::uint32_t* EmptySlot()
+        Detached* EmptySlot()
         {
-            for (auto& entry : m_Detached) if (!entry) return &entry;
+            for (auto& entry : m_Detached) if (!entry.handle) return &entry;
             // Keep the lease bounded during long sessions with many dropped
             // guns. An evicted gun must eject again before it can insert.
             auto* entry = &m_Detached[m_NextEviction];
             m_NextEviction = (m_NextEviction + 1u) % m_Detached.size();
             return entry;
         }
-        std::array<std::uint32_t, 16> m_Detached{};
+        std::array<Detached, 16> m_Detached{};
         std::size_t m_NextEviction = 0;
         std::uint32_t m_Token = 0, m_HighSequence = 0;
         bool m_HaveMemo = false, m_HaveApplied = false;
@@ -137,7 +149,7 @@ namespace l4d2vr_remote_mag
         {
             if (!Supported() || m_Pending || !l4d2vr_shell::ValidHandle(handle) || !IsDetachable(id) || !owner ||
                 clip < 0 || clip > kMaxClip || reserve < 0 || reserve > 5000 || !command ||
-                (action != Action::Eject && action != Action::Insert) ||
+                !ValidAction(action) ||
                 m_Next == (std::numeric_limits<std::uint32_t>::max)()) return false;
             m_Request = {m_Token, ++m_Next, handle, command, id, clip, reserve, action};
             m_Owner = owner; m_Generation = generation; m_Started = now;
@@ -152,6 +164,10 @@ namespace l4d2vr_remote_mag
                 if (m_Request.action == Action::Eject)
                 {
                     if (reply.clip != std::min(1, m_Request.clip) || reply.reserve != m_Request.reserve) return;
+                }
+                else if (m_Request.action == Action::Reinsert)
+                {
+                    if (reply.clip < m_Request.clip || reply.reserve != m_Request.reserve) return;
                 }
                 else
                 {

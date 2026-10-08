@@ -32,13 +32,13 @@ void Game::OfferRemoteMagazineProtocol(edict_t* entity)
 bool Game::HandleRemoteMagazineCommand(edict_t* entity, const void* sourceCommand)
 {
     VRPoseRelayCommandView view{};
-    if (!VRPoseRelayReadCommand(sourceCommand, view) || std::strcmp(view.name, "l4d2vr_mag_action_v1") != 0)
+    if (!VRPoseRelayReadCommand(sourceCommand, view) || std::strcmp(view.name, "l4d2vr_mag_action_v2") != 0)
         return false;
     const auto& command = *static_cast<const SourceCCommand*>(sourceCommand);
     if (command.ArgC() != 9) return true;
     uint32_t values[8]{};
     constexpr uint32_t limits[8] = {0xffffffffu, 0xffffffffu, (1u << 22) - 1u,
-        0x7fffffffu, 64u, l4d2vr_remote_mag::kMaxClip, 5000u, 1u};
+        0x7fffffffu, 64u, l4d2vr_remote_mag::kMaxClip, 5000u, 2u};
     for (int arg = 1; arg <= 8; ++arg)
         if (!l4d2vr_shell::ParseNumber(command.Arg(arg), limits[arg - 1], values[arg - 1])) return true;
     l4d2vr_remote_mag::Request request{values[0], values[1], values[2], values[3],

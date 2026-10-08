@@ -50,10 +50,23 @@ An ejection acknowledgement confirms ammunition but does not clear a previously
 observed empty physical chamber. A predicted/native refill therefore cannot
 skip the required slide cycle; a loaded tactical reload still keeps its round.
 
-Old magazines are currently discarded, including any rounds left in them; those
-rounds do not become reserve ammo. Keeping and recovering partially loaded
-magazines, independent dual-pistol ammunition and dedicated-server ammo support
-are still unfinished. Native bindings and transaction tests passed offline; client/server
+Magazine protocol version 2 adds catching and reinserting the ejected magazine.
+Hold left grip with the palm at the magazine well, then press Magazine Release.
+After the native ejection is confirmed, the caught magazine uses the calibrated
+hand grip. Withdraw it from the well and return it to reinsert its actual rounds;
+reserve ammunition stays unchanged. Empty and partially used magazines remain
+empty/partial even with native infinite pistol ammo. A chamber fired after
+ejection still needs its physical slide cycle after reinsertion.
+
+This is a catch/reinsert interaction, with one retained opportunity per owned
+weapon. Releasing the caught item, replacing it with a fresh magazine or starting
+a new ejection ends that opportunity in the current client flow. Picking a
+dropped magazine up from the floor, persistent magazine storage and transfer
+between players remain unfinished. Version 1 magazine hosts/clients use native
+reload fallback; both players need version 2 for this interaction. Retained
+rounds never become reserve ammo and duplicate requests cannot insert them twice.
+Independent dual-pistol ammunition and dedicated-server ammo support are also
+unfinished. Native bindings and transaction tests passed offline; client/server
 delivery, Source replication ordering and interaction feel remain unverified.
 The edict notification and network-handle definitions follow the
 [L4D2 SDK headers](https://github.com/alliedmodders/hl2sdk/tree/l4d2/public).

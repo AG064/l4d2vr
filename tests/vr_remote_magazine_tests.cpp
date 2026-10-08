@@ -145,5 +145,76 @@ int main()
     Check(server.Apply(eject, state, 15200u, writer).status == Status::Applied);
     insert.sequence = 20u;
     Check(server.Apply(insert, state, 15400u, writer).status == Status::Applied && state.clip == 10 && state.reserve == 0);
+    // Catch and reinsert uses the actual removed rounds, never reserve ammo.
+    server.Reset(50u); state = {true, handle, 400u, 2, 18, 7, 50, false};
+    eject = {50u, 1u, handle, 400u, 2, 18, 7, Action::Eject};
+    Check(server.Apply(eject, state, 16000u, writer).status == Status::Applied && state.clip == 1);
+    insert = {50u, 2u, handle, 400u, 2, 1, 7, Action::Reinsert};
+    const int beforeReuse = writes;
+    Check(server.Apply(insert, state, 16200u, writer).status == Status::Applied && state.clip == 18 && state.reserve == 7);
+    Check(server.Apply(insert, state, 16400u, writer).status == Status::Applied && writes == beforeReuse + 1);
+    insert.sequence = 3u; insert.clip = 18;
+    Check(server.Apply(insert, state, 16600u, writer).status == Status::Weapon);
+    // Spending the retained chamber does not refill it from the old magazine.
+    eject.sequence = 4u; eject.clip = 18;
+    Check(server.Apply(eject, state, 16800u, writer).status == Status::Applied);
+    state.clip = 0;
+    insert = {50u, 5u, handle, 400u, 2, 0, 7, Action::Reinsert};
+    Check(server.Apply(insert, state, 17000u, writer).status == Status::Applied && state.clip == 17 && state.reserve == 7);
+    // A changed script cannot truncate a retained magazine or mint rounds.
+    eject.sequence = 6u; eject.clip = 17;
+    Check(server.Apply(eject, state, 17200u, writer).status == Status::Applied);
+    state.capacity = 8; insert.sequence = 7u; insert.clip = 1;
+    Check(server.Apply(insert, state, 17400u, writer).status == Status::NoSpaceOrAmmo && state.clip == 1);
+    state.capacity = 50; insert.sequence = 8u;
+    Check(server.Apply(insert, state, 17600u, writer).status == Status::Applied && state.clip == 17);
+    // Infinite ammo does not replace a partially used retained magazine.
+    server.Reset(51u); state = {true, handle, 400u, 1, 4, 0, 15, true};
+    eject = {51u, 1u, handle, 400u, 1, 4, 0, Action::Eject};
+    Check(server.Apply(eject, state, 18000u, writer).status == Status::Applied);
+    insert = {51u, 2u, handle, 400u, 1, 1, 0, Action::Reinsert};
+    Check(server.Apply(insert, state, 18200u, writer).status == Status::Applied && state.clip == 4 && state.reserve == 0);
+    // Reinserting an empty magazine is valid and transfers no ammunition.
+    server.Reset(52u); state = {true, handle, 400u, 1, 0, 0, 15, true};
+    eject = {52u, 1u, handle, 400u, 1, 0, 0, Action::Eject};
+    Check(server.Apply(eject, state, 18400u, writer).status == Status::Applied);
+    insert = {52u, 2u, handle, 400u, 1, 0, 0, Action::Reinsert};
+    Check(server.Apply(insert, state, 18600u, writer).status == Status::Applied && state.clip == 0 && state.reserve == 0);
+    // The result still waits for Source replication and exact request identity.
+    client.Disconnect(); client.Offer(1u, 60u); Check(!client.Supported());
+    client.Offer(kVersion, 60u);
+    Check(client.Begin(handle, 2, 1, 7, Action::Reinsert, 400u, 100u, 10u, 19000u, request));
+    ack = {request, Status::Applied, 18, 6}; client.Receive(ack);
+    Check(client.Update(handle, 2, 100u, 10u, 19100u, reply, 18, 6) == ClientRequest::Poll::Waiting);
+    ack.reserve = 7; client.Receive(ack);
+    Check(client.Update(handle, 2, 100u, 10u, 19200u, reply, 1, 7) == ClientRequest::Poll::Waiting);
+    Check(client.Update(handle, 2, 100u, 10u, 19300u, reply, 18, 7) == ClientRequest::Poll::Result);
+    Check(client.Begin(handle, 1, 0, 0, Action::Reinsert, 401u, 100u, 10u, 19400u, request));
+    ack = {request, Status::Applied, 0, 0}; client.Receive(ack);
+    Check(client.Update(handle, 1, 100u, 10u, 19500u, reply, 0, 0) == ClientRequest::Poll::Result);
+    // Fresh replacement discards the old catch; it cannot be reused afterward.
+    server.Reset(53u); state = {true, handle, 400u, 2, 18, 7, 50, false};
+    eject = {53u, 1u, handle, 400u, 2, 18, 7, Action::Eject};
+    Check(server.Apply(eject, state, 20000u, writer).status == Status::Applied);
+    insert = {53u, 2u, handle, 400u, 2, 1, 7, Action::Insert};
+    Check(server.Apply(insert, state, 20200u, writer).status == Status::Applied && state.clip == 8);
+    insert = {53u, 3u, handle, 400u, 2, 8, 0, Action::Reinsert};
+    Check(server.Apply(insert, state, 20400u, writer).status == Status::Weapon);
+    // A new ejection gesture after cancellation cannot recreate the old item.
+    server.Reset(54u); state = {true, handle, 400u, 2, 18, 7, 50, false};
+    eject = {54u, 1u, handle, 400u, 2, 18, 7, Action::Eject};
+    Check(server.Apply(eject, state, 20600u, writer).status == Status::Applied);
+    eject.sequence = 2u; eject.clip = 1;
+    Check(server.Apply(eject, state, 20800u, writer).status == Status::Applied);
+    insert = {54u, 3u, handle, 400u, 2, 1, 7, Action::Reinsert};
+    Check(server.Apply(insert, state, 21000u, writer).status == Status::Applied && state.clip == 1 && state.reserve == 7);
+    // Failed native insertion keeps the retained item available for a retry.
+    server.Reset(55u); state = {true, handle, 400u, 2, 12, 3, 50, false};
+    eject = {55u, 1u, handle, 400u, 2, 12, 3, Action::Eject};
+    Check(server.Apply(eject, state, 21200u, writer).status == Status::Applied);
+    insert = {55u, 2u, handle, 400u, 2, 1, 3, Action::Reinsert};
+    Check(server.Apply(insert, state, 21400u, [](int, int) { return false; }).status == Status::Backend);
+    insert.sequence = 3u;
+    Check(server.Apply(insert, state, 21600u, writer).status == Status::Applied && state.clip == 12 && state.reserve == 3);
     std::puts("Remote magazine regression checks passed");
 }

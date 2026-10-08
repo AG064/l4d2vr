@@ -1,6 +1,7 @@
 #include "../L4D2VR/vr_magazine_policy.h"
 #include <cstdio>
 #include <cstdlib>
+#include <limits>
 
 static void Check(bool result, const char* message)
 {
@@ -29,6 +30,19 @@ int main()
     Check(l4d2vr_magazine::ChamberReadyAfterEject(false, 1), "An existing loaded chamber survives a tactical ejection ACK");
     Check(!l4d2vr_magazine::ChamberReadyAfterEject(false, 0), "The native empty result cannot preserve a chambered round");
     Check(!l4d2vr_magazine::ChamberReadyAfterEject(false, -1), "An unknown native count cannot ready the chamber");
+    Check(l4d2vr_magazine::MayCatchEjectedMagazine(true, true, 0.04f, 0.05f), "Grip held under the well can catch an ejected magazine");
+    Check(!l4d2vr_magazine::MayCatchEjectedMagazine(false, true, 0.0f, 0.05f), "Ejection alone cannot attach a magazine to the support hand");
+    Check(!l4d2vr_magazine::MayCatchEjectedMagazine(true, false, 0.0f, 0.05f), "Lost tracking cannot catch an ejected magazine");
+    Check(!l4d2vr_magazine::MayCatchEjectedMagazine(true, true, 0.06f, 0.05f), "A distant support hand cannot catch ammunition");
+    Check(!l4d2vr_magazine::MayCatchEjectedMagazine(true, true, std::numeric_limits<float>::quiet_NaN(), 0.05f), "Invalid pose distances cannot attach ammunition");
+    l4d2vr_magazine::RetainedInsertGate retained;
+    Check(!retained.Update(true, 0.0f, 0.03f), "Catching at the well must not automatically reinsert the magazine");
+    Check(!retained.Update(false, 0.01f, 0.03f), "A small overlap change is not a withdrawal gesture");
+    Check(!retained.Update(true, 0.04f, 0.03f), "Travel alone must not arm reinsertion while the magazine remains in the well");
+    Check(!retained.Update(false, 0.04f, 0.03f), "Withdrawing arms a later return without loading ammunition yet");
+    Check(retained.Update(true, 0.01f, 0.03f), "A withdrawn magazine can return to its socket");
+    retained.Reset();
+    Check(!retained.Update(true, 0.04f, 0.03f), "Another caught magazine needs its own withdrawal gesture");
     using namespace l4d2vr_magazine;
     ChamberHistory chambers;
     chambers.ObserveOwner(true, 100u);

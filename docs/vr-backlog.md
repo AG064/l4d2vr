@@ -188,7 +188,11 @@ ammo twice, and insertion requires a preceding accepted ejection. Source ammo
 replication and the matching result must both arrive before the guest advances.
 Empty reloads still require the slide; a late slide region cannot automatically
 complete that remote reload. Native dual pistols keep their shared reload
-fallback. Discarded magazines do not retain ammunition for later pickup yet.
+fallback. Magazine protocol version 2 implements grip catch/reinsert with the
+actual removed rounds, preserving partial and empty contents without spending
+reserve. Withdrawal from the well is required before return. Contact and server
+accounting are covered offline; headset feel remains unverified. Floor pickup,
+persistent magazine storage and transfer to another player remain unfinished.
 
 The supported listen-host now uses the same magazine ledger as the guest,
 instead of filling a predicted clip to its default maximum. Tests include a

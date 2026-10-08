@@ -883,7 +883,7 @@ namespace
         if (!g_Game || !g_Game->m_VR || command.ArgC() != 12) return;
         uint32_t values[11]{};
         constexpr uint32_t limits[11] = {0xffffffffu, 0xffffffffu, (1u << 22) - 1u,
-            0x7fffffffu, 64u, l4d2vr_remote_mag::kMaxClip, 5000u, 1u, 7u,
+            0x7fffffffu, 64u, l4d2vr_remote_mag::kMaxClip, 5000u, 2u, 7u,
             l4d2vr_remote_mag::kMaxClip, 5000u};
         for (int arg = 1; arg <= 11; ++arg)
             if (!l4d2vr_shell::ParseNumber(command.Arg(arg), limits[arg - 1], values[arg - 1])) return;
