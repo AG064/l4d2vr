@@ -208,3 +208,13 @@ a locally compiled test build. Its presence skips the Workshop update prompt and
 helper launch; an unreadable pin policy also skips that update check. Remove the
 file when intentionally returning to Workshop-managed updates. The opt-out does
 not unsubscribe the Workshop item or change Steam's content management.
+## Held-grip pickup contact query
+
+Grip pickup no longer relies only on FindUseEntity publishing a contact during
+ordinary use/highlight evaluation. Each held gameplay grip queries a small native
+entity overlap around its controller, checks the existing item category and hand
+contact rules, and publishes a hand-specific contact offer. Equipment with a
+networked owner is excluded. Left-hand pickup remains restricted to pistols.
+The existing release reservation and pickup latch create IN_USE once; the native
+server remains responsible for finding and authorizing the actual pickup.
+This path still requires headset contact and multiplayer acceptance.

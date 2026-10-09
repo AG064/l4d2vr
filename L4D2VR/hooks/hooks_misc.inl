@@ -23686,7 +23686,7 @@ static C_BaseEntity* ObjectPullGetClientNativeHighlightTarget(
     return nullptr;
 }
 
-static bool GripPickupCandidateTouchesHand(Game* game, VR* vr, C_BaseEntity* candidate)
+static bool GripPickupCandidateTouchesHand(Game* game, VR* vr, C_BaseEntity* candidate, bool left)
 {
     if (!game || !vr || !candidate || !vr->m_GripReleaseDropEnabled)
         return false;
@@ -23709,7 +23709,12 @@ static bool GripPickupCandidateTouchesHand(Game* game, VR* vr, C_BaseEntity* can
             std::strcmp(name, "CMolotov") == 0 || std::strcmp(name, "CVomitJar") == 0;
         if (!itemClass)
             return false;
-        const bool left = vr->m_PistolUseLeft.load(std::memory_order_acquire);
+        // Do not offer equipment already owned by a survivor. Client-only
+        // contact probing must preserve the native pickup ownership rules.
+        const int ownerOffset = game->FindRecvPropOffset("DT_BaseEntity", "m_hOwnerEntity");
+        if (ownerOffset <= 0 || ownerOffset >= 0x10000) return false;
+        const uint32_t ownerHandle = ReadNetvar<uint32_t>(candidate, ownerOffset);
+        if (ownerHandle != 0xffffffffu && (ownerHandle & 0xfffu) != 0u) return false;
         if (left)
         {
             // An offhand pickup must never replace a primary gun, open a door,
@@ -23750,6 +23755,47 @@ static bool GripPickupCandidateTouchesHand(Game* game, VR* vr, C_BaseEntity* can
 #endif
 }
 
+static bool TraceGripContact(IEngineTrace* engine, const Ray_t& ray, CTraceFilter* filter, trace_t* trace)
+{
+    if (!engine || !filter || !trace) return false;
+    __try { engine->TraceRay(ray, MASK_SHOT_HULL, filter, trace); return true; }
+    __except (EXCEPTION_EXECUTE_HANDLER) { return false; }
+}
+
+static void RefreshGripPickupContact(VR* vr, Game* game, C_BasePlayer* player, bool left)
+{
+    if (!vr || !game || !player || !game->m_EngineTrace || !vr->m_IsVREnabled ||
+        !vr->m_GripReleaseDropEnabled || !std::isfinite(vr->m_VRScale) || vr->m_VRScale <= 0.001f)
+        return;
+    class ContactFilter final : public CTraceFilter
+    {
+    public:
+        ContactFilter(Game* game, VR* vr, C_BasePlayer* player, bool left)
+            : CTraceFilter(reinterpret_cast<IHandleEntity*>(player), 0), game(game), vr(vr), player(player), left(left) {}
+        bool ShouldHitEntity(IHandleEntity* entity, int) override
+        {
+            auto* candidate = reinterpret_cast<C_BaseEntity*>(entity);
+            if (candidate != player && GripPickupCandidateTouchesHand(game, vr, candidate, left)) contact = true;
+            // Query the overlap; native IN_USE remains responsible for pickup.
+            return false;
+        }
+        TraceType GetTraceType() const override { return TraceType::TRACE_ENTITIES_ONLY; }
+        bool contact = false;
+    private:
+        Game* game; VR* vr; C_BasePlayer* player; bool left;
+    } filter(game, vr, player, left);
+    const Vector hand = left ? vr->GetLeftControllerAbsPos() : vr->GetRightControllerAbsPos();
+    if (!IsFiniteVector3(hand)) return;
+    const float extent = 0.18f * vr->m_VRScale;
+    Ray_t ray;
+    ray.Init(hand, hand, Vector(-extent, -extent, -extent), Vector(extent, extent, extent));
+    trace_t trace{};
+    if (!TraceGripContact(game->m_EngineTrace, ray, &filter, &trace)) return;
+    const uint32_t offer = filter.contact ? static_cast<uint32_t>(GetTickCount64()) : 0u;
+    if (left) vr->m_LeftPistolPickupOfferTimeMs.store(offer, std::memory_order_release);
+    else vr->m_GripPickupOfferTimeMs.store(offer, std::memory_order_release);
+}
+
 C_BaseEntity* Hooks::dClientFindUseEntity(void* ecx, void* edx, float radius, float dotLimit, float defaultDotLimit, void* traceResult, void* extra)
 {
     const auto publishGripContact = [&](C_BaseEntity* candidate)
@@ -23757,7 +23803,7 @@ C_BaseEntity* Hooks::dClientFindUseEntity(void* ecx, void* edx, float radius, fl
         if (m_VR)
         {
             const bool left = m_VR->m_PistolUseLeft.load(std::memory_order_acquire);
-            const uint32_t offer = GripPickupCandidateTouchesHand(m_Game, m_VR, candidate)
+            const uint32_t offer = GripPickupCandidateTouchesHand(m_Game, m_VR, candidate, left)
                 ? static_cast<uint32_t>(GetTickCount64()) : 0u;
             m_VR->m_GripPickupOfferTimeMs.store(left ? 0u : offer, std::memory_order_release);
             m_VR->m_LeftPistolPickupOfferTimeMs.store(left ? offer : 0u, std::memory_order_release);

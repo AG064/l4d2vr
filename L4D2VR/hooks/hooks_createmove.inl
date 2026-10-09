@@ -1755,6 +1755,15 @@ bool __fastcall Hooks::dCreateMove(void* ecx, void* edx, float flInputSampleTime
 			const bool weaponGripActionActive = (weaponGripInputState & 1u) != 0u;
 			const bool weaponGripDown = (weaponGripInputState & 2u) != 0u;
             const uint32_t gripNowMs = static_cast<uint32_t>(GetTickCount64());
+            const uint32_t probeLeftGrip = m_VR->m_PistolOffhandGripState.load(std::memory_order_acquire);
+            if (gripSession.gameplay && m_VR->m_GripReleaseDropEnabled &&
+                ((weaponGripActionActive && weaponGripDown) || (probeLeftGrip & 3u) == 3u))
+            {
+                if (weaponGripActionActive && weaponGripDown)
+                    RefreshGripPickupContact(m_VR, m_Game, localPlayerForAutoActions, false);
+                if ((probeLeftGrip & 3u) == 3u)
+                    RefreshGripPickupContact(m_VR, m_Game, localPlayerForAutoActions, true);
+            }
             const uint32_t pickupOffer = m_VR->m_GripPickupOfferTimeMs.load(std::memory_order_acquire);
             const uint32_t leftPickupOffer = m_VR->m_LeftPistolPickupOfferTimeMs.load(std::memory_order_acquire);
             const uint32_t bodySelection = m_VR->m_BodyGripSelectionSerial.load(std::memory_order_acquire);
