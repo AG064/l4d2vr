@@ -2012,6 +2012,7 @@ bool __fastcall Hooks::dCreateMove(void* ecx, void* edx, float flInputSampleTime
     const unsigned pistolMask = m_VR ? m_VR->m_PistolOwnershipMask.load(std::memory_order_acquire) : 0u;
     C_WeaponCSBase* routingPistol = localPlayerForAutoActions
         ? reinterpret_cast<C_WeaponCSBase*>(localPlayerForAutoActions->GetActiveWeapon()) : nullptr;
+    if (m_VR) m_VR->UpdatePistolAmmoSnapshot(localPlayerForAutoActions, routingPistol);
     const bool dualEquipped = m_VR && routingPistol &&
         l4d2vr_wire::SupportsPhysicalVersion(m_VR->m_ServerPhysicalInteractionVersion.load(std::memory_order_acquire)) &&
         routingPistol->GetWeaponID() == C_WeaponCSBase::WeaponID::PISTOL &&

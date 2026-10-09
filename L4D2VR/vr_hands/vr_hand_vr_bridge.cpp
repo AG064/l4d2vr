@@ -3289,6 +3289,66 @@ void VR::OfferRemoteMagazineProtocol(unsigned version, uint32_t token)
     std::lock_guard<std::mutex> lock(m_RemoteMagazineMutex);
     m_RemoteMagazineRequest.Offer(version, token);
 }
+void VR::OfferPistolAmmoProtocol(unsigned version, uint32_t token)
+{
+    std::lock_guard<std::mutex> lock(m_PistolAmmoClientMutex);
+    const auto previousToken = m_PistolAmmoClient.Token();
+    m_PistolAmmoClient.Offer(version, token);
+    if (m_PistolAmmoClient.Token() != previousToken)
+        m_PistolAmmoCounts.store(0xffffffffu, std::memory_order_release);
+}
+void VR::ReceivePistolAmmoState(const l4d2vr_pistol_sync::State& state)
+{
+    std::lock_guard<std::mutex> lock(m_PistolAmmoClientMutex);
+    m_PistolAmmoClient.Receive(state, GetTickCount64());
+}
+void VR::DisconnectPistolAmmoProtocol()
+{
+    std::lock_guard<std::mutex> lock(m_PistolAmmoClientMutex);
+    m_PistolAmmoClient.Disconnect();
+    m_PistolAmmoCounts.store(0xffffffffu, std::memory_order_release);
+}
+namespace
+{
+    bool ReadClientPistolAmmoSnapshot(Game* game, C_BasePlayer* player, C_WeaponCSBase* weapon,
+        uint32_t& handle, int& clip, bool& dual)
+    {
+        if (!game || !player || !weapon) return false;
+#ifdef _MSC_VER
+        __try
+        {
+#endif
+            if (weapon->GetWeaponID() != C_WeaponCSBase::WeaponID::PISTOL ||
+                !MagazineInteractionTryReadInt(weapon, VR::kClip1Offset, clip)) return false;
+            handle = MagazineInteractionActiveWeaponHandle(game, player, weapon);
+            dual = game->IsDualPistolWeapon(weapon);
+            return l4d2vr_shell::ValidHandle(handle);
+#ifdef _MSC_VER
+        }
+        __except (EXCEPTION_EXECUTE_HANDLER) { return false; }
+#endif
+    }
+}
+void VR::UpdatePistolAmmoSnapshot(C_BasePlayer* player, C_WeaponCSBase* weapon)
+{
+    int right = -1, left = -1, clip = -1;
+    uint32_t handle = 0u; bool dual = false;
+    const bool nativeReady = m_Game && player && weapon && m_IsVREnabled && m_EncodeVRUsercmd && !m_ForceNonVRServerMovement &&
+        m_DualPistolsIndependentHandsEnabled && m_FirstPersonControlReady.load(std::memory_order_acquire) &&
+        !m_RenderPlayerIncap.load(std::memory_order_relaxed) && !m_RenderPlayerControlledBySI.load(std::memory_order_relaxed) &&
+        l4d2vr_wire::SupportsPhysicalVersion(m_ServerPhysicalInteractionVersion.load(std::memory_order_acquire)) &&
+        ReadClientPistolAmmoSnapshot(m_Game, player, weapon, handle, clip, dual);
+    if (!nativeReady) handle = 0u;
+    l4d2vr_pistol_sync::State state{};
+    // Serialize publication with disconnect and renegotiation, so an older input
+    // sample cannot restore counts after those paths cleared the session.
+    std::lock_guard<std::mutex> lock(m_PistolAmmoClientMutex);
+    if (m_PistolAmmoClient.Read(handle ? reinterpret_cast<uintptr_t>(player) : 0u, handle, clip,
+        dual, GetTickCount64(), state)) { right = state.right; left = state.left; }
+    const uint32_t packed = right >= 0 && left >= 0
+        ? static_cast<uint32_t>(right) | (static_cast<uint32_t>(left) << 16) : 0xffffffffu;
+    m_PistolAmmoCounts.store(packed, std::memory_order_release);
+}
 void VR::ReceiveRemoteMagazineReply(const l4d2vr_remote_mag::Reply& reply)
 {
     std::lock_guard<std::mutex> lock(m_RemoteMagazineMutex);

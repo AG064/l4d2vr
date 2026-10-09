@@ -164,6 +164,17 @@ capacities up to 15 rounds per pistol. Larger capacities retain the legacy
 split path. It does not enforce an independently empty hand or replace the shared
 reload. Pickup-hand metadata is consumed from the simulated grip command;
 older hosts ignore that metadata and retain their existing pickup behavior.
+
+Matching listen-host/client builds can negotiate a separate, read-only per-hand
+ammo feed. The host publishes the native clip together with known right/left
+contents after command execution, and sends heartbeat snapshots while unchanged.
+The client accepts only its session token, increasing sequence numbers,
+nondecreasing command numbers, the current weapon handle and matching native
+clip/dual state. Unknown contents,
+owner changes, mismatched replication and snapshots older than one second expose
+no independent counts. Both hand counts are published atomically for subsequent
+hand interactions. This feed does not yet replace native reloads, implement
+magazine/chamber transactions or enforce empty-hand firing.
 First-person bone retargeting does not yet separate remote world-model
 pistols. Body inventory follows tracked head position and yaw; full body IK
 and character-specific avatar fitting remain separate work.

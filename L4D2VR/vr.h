@@ -15,6 +15,7 @@
 #include "vr_magazine_policy.h"
 #include "vr_remote_shells.h"
 #include "vr_remote_magazines.h"
+#include "vr_pistol_ammo_sync.h"
 #include "vr_physical_controls.h"
 #include "vr_interaction_geometry.h"
 #include "vr_body_inventory.h"
@@ -2127,6 +2128,14 @@ public:
 	bool m_MagazineInteractionShotgunShellMode = false;
     mutable std::mutex m_RemoteShellMutex;
     mutable std::mutex m_RemoteMagazineMutex;
+    mutable std::mutex m_PistolAmmoClientMutex;
+    l4d2vr_pistol_sync::Receiver m_PistolAmmoClient;
+    // Both hand counts come from one accepted snapshot. All-ones means unknown.
+    std::atomic<uint32_t> m_PistolAmmoCounts{0xffffffffu};
+    void OfferPistolAmmoProtocol(unsigned version, uint32_t token);
+    void ReceivePistolAmmoState(const l4d2vr_pistol_sync::State& state);
+    void DisconnectPistolAmmoProtocol();
+    void UpdatePistolAmmoSnapshot(C_BasePlayer* player, C_WeaponCSBase* weapon);
     l4d2vr_remote_mag::ClientRequest m_RemoteMagazineRequest;
     std::atomic<bool> m_NativeAmmoReloadFallbackActive{false};
     l4d2vr_magazine::NativeFallbackPulse m_NativeAmmoReloadFallbackPulse;

@@ -66,6 +66,14 @@ retaining firing-event ordinals within a command. Hand intent is no longer
 discarded merely because packet decoding sees the previous weapon. Native
 timing, effects and client prediction still need headset/multiplayer acceptance.
 
+A versioned host-to-client pistol-ammo feed now carries known per-hand contents
+with the native shared clip. Current weapon handle/serial, session, message and
+command ordering, owner changes, native replica matching and expiry constrain
+client acceptance. Its first consumer publishes coherent hand counts from input
+processing. This is the authoritative baseline for per-hand prediction/reload;
+the prediction journal, independent chamber/magazine operations and firing gates
+remain unfinished. Actual delivery and replication timing need matching builds.
+
 The server now has an optional native execution hook and per-command hand/pose
 history, so firing uses the simulated command rather than the latest decoded
 packet. Owner/edict serial, age, duplicates and ring rollover are covered offline.

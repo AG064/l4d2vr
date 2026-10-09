@@ -14,6 +14,7 @@ class C_WeaponCSBase;
 #include "vr_remote_magazines.h"
 #include "vr_server_pistol_commands.h"
 #include "vr_pistol_ammo.h"
+#include "vr_pistol_ammo_sync.h"
 
 #include "vector.h"
 
@@ -249,6 +250,17 @@ public:
     std::mutex m_PistolAmmoMutex;
     std::array<l4d2vr_pistol::AmmoLedger, kMaxPlayers> m_PistolAmmo{};
     void ResetPistolAmmo();
+    struct PistolAmmoServerClient
+    {
+        edict_t* entity = nullptr;
+        std::int16_t serial = 0;
+        l4d2vr_pistol_sync::Sender sender;
+    };
+    std::mutex m_PistolAmmoServerMutex;
+    std::array<PistolAmmoServerClient, kMaxPlayers> m_PistolAmmoServerClients{};
+    void OfferPistolAmmoProtocol(edict_t* entity);
+    void PublishPistolAmmoState(int index, const l4d2vr_pistol::AmmoSnapshot& snapshot, int command);
+    void ResetPistolAmmoServerClients();
     mutable std::mutex m_VRPoseMutex;
     std::atomic<bool> m_VRPoseServerCapable{ false };
     std::atomic<bool> m_VRPoseHelloSent{ false };

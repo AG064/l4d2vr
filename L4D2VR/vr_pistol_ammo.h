@@ -117,6 +117,15 @@ namespace l4d2vr_pistol
             exact = true;
             return result.retained + result.dropped == pair.clip;
         }
+        bool Counts(const AmmoSnapshot& snapshot, int& right, int& left)
+        {
+            right = left = 0;
+            if (!Observe(snapshot)) return false;
+            Entry& entry = Find(snapshot);
+            if (!entry.exact) return false;
+            right = entry.right; left = entry.left;
+            return true;
+        }
     private:
         struct Entry
         {

@@ -878,6 +878,27 @@ namespace
             !l4d2vr_shell::ParseNumber(command.Arg(2), 0xffffffffu, token)) return;
         g_Game->m_VR->OfferRemoteMagazineProtocol(version, token);
     }
+    void __cdecl OnL4D2VRPistolAmmoCapability(const SourceCCommand& command)
+    {
+        uint32_t version = 0u, token = 0u;
+        if (!g_Game || !g_Game->m_VR || !Hooks::s_ServerUnderstandsVR || command.ArgC() != 3 ||
+            !l4d2vr_shell::ParseNumber(command.Arg(1), 255u, version) ||
+            !l4d2vr_shell::ParseNumber(command.Arg(2), 0xffffffffu, token)) return;
+        g_Game->m_VR->OfferPistolAmmoProtocol(version, token);
+    }
+    void __cdecl OnL4D2VRPistolAmmoState(const SourceCCommand& command)
+    {
+        if (!g_Game || !g_Game->m_VR || !Hooks::s_ServerUnderstandsVR || command.ArgC() != 11) return;
+        uint32_t values[10]{};
+        constexpr uint32_t limits[10] = {0xffffffffu, 0xffffffffu, (1u << 22) - 1u,
+            0x7fffffffu, 15u, 30u, 15u, 15u, 1u, 1u};
+        for (int arg = 1; arg <= 10; ++arg)
+            if (!l4d2vr_shell::ParseNumber(command.Arg(arg), limits[arg - 1], values[arg - 1])) return;
+        l4d2vr_pistol_sync::State state{values[0], values[1], values[2], values[3],
+            static_cast<int>(values[4]), static_cast<int>(values[5]), static_cast<int>(values[6]),
+            static_cast<int>(values[7]), values[8] != 0u, values[9] != 0u};
+        g_Game->m_VR->ReceivePistolAmmoState(state);
+    }
     void __cdecl OnL4D2VRMagazineResult(const SourceCCommand& command)
     {
         if (!g_Game || !g_Game->m_VR || command.ArgC() != 12) return;
@@ -956,6 +977,12 @@ namespace
     SourceRegisteredConCommand g_L4D2VRMagazineResultCommand(
         "l4d2vr_mag_result", &OnL4D2VRMagazineResult,
         "Receive a physical magazine transaction result.", kFcvarServerCanExecute);
+    SourceRegisteredConCommand g_L4D2VRPistolAmmoCapabilityCommand(
+        "l4d2vr_pistol_ammo_cap", &OnL4D2VRPistolAmmoCapability,
+        "Negotiate per-hand pistol ammunition snapshots.", kFcvarServerCanExecute);
+    SourceRegisteredConCommand g_L4D2VRPistolAmmoStateCommand(
+        "l4d2vr_pistol_ammo_state", &OnL4D2VRPistolAmmoState,
+        "Receive authoritative per-hand pistol ammunition.", kFcvarServerCanExecute);
     SourceRegisteredConCommand g_L4D2VRPoseReceiveCommand(
         kL4D2VRPoseReceiveCommandName,
         &OnL4D2VRPoseReceiveCommand,
@@ -994,6 +1021,10 @@ namespace
                 cvar->RegisterConCommand(&g_L4D2VRMagazineCapabilityCommand);
             if (!cvar->FindCommandBase("l4d2vr_mag_result"))
                 cvar->RegisterConCommand(&g_L4D2VRMagazineResultCommand);
+            if (!cvar->FindCommandBase("l4d2vr_pistol_ammo_cap"))
+                cvar->RegisterConCommand(&g_L4D2VRPistolAmmoCapabilityCommand);
+            if (!cvar->FindCommandBase("l4d2vr_pistol_ammo_state"))
+                cvar->RegisterConCommand(&g_L4D2VRPistolAmmoStateCommand);
             if (!cvar->FindCommandBase(kL4D2VRPoseAckCommandName))
                 cvar->RegisterConCommand(&g_L4D2VRPoseAckCommand);
             if (!cvar->FindCommandBase(kL4D2VRPoseReceiveCommandName))
@@ -1226,6 +1257,8 @@ void Game::ResetServerPistolCommands()
 
 void Game::ResetAllPlayerVRInfo()
 {
+    ResetPistolAmmoServerClients();
+    if (m_VR) m_VR->DisconnectPistolAmmoProtocol();
     ResetPistolAmmo();
     ResetServerPistolCommands();
     ResetRemoteShellServerClients();
@@ -1250,6 +1283,8 @@ void Game::ResetAllPlayerVRInfo()
 
 void Game::ResetVRPoseServerSession()
 {
+    ResetPistolAmmoServerClients();
+    if (m_VR) m_VR->DisconnectPistolAmmoProtocol();
     ResetPistolAmmo();
     ResetServerPistolCommands();
     ResetRemoteShellServerClients();
@@ -1713,6 +1748,7 @@ namespace
 
 #include "game_remote_shells.inl"
 #include "game_remote_magazines.inl"
+#include "game_pistol_ammo.inl"
 
 void Game::ObserveBuiltinVRPoseRelayClient(
     int playerIndex,
@@ -1774,6 +1810,7 @@ void Game::ObserveBuiltinVRPoseRelayClient(
         VRPoseRelaySendClientCommand(m_ServerPluginHelpers, entity, "l4d2vr_interaction_ack 1\n");
     if (poseAckSent) OfferRemoteShellProtocol(entity);
     if (poseAckSent) OfferRemoteMagazineProtocol(entity);
+    if (poseAckSent) OfferPistolAmmoProtocol(entity);
     if (poseAckSent && client.ackAttempts == 1)
     {
         Game::logMsg(

@@ -1273,6 +1273,13 @@ void __fastcall Hooks::dPistolPlayerRunCommand(void* owner, void*, CUserCmd* com
                 ammo.Observe(after);
         }
     }
+    if (context.index > 0)
+    {
+        const auto active = ReadServerReloadWeapon(owner);
+        l4d2vr_pistol::AmmoSnapshot current{}; int index = -1;
+        if (ManualPistolReadAmmo(owner, reinterpret_cast<void*>(active.pointer), current, index) && index == context.index)
+            m_Game->PublishPistolAmmoState(index, current, context.command);
+    }
 }
 
 void __fastcall Hooks::dPistolGunFire(void* weapon, void*)
