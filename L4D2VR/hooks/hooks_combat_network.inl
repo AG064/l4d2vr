@@ -1461,6 +1461,52 @@ namespace
         mutable unsigned bullets = 0u;
     };
     thread_local const ClientPistolFire* g_ClientPistolFire = nullptr;
+    struct ClientPistolBulletOrigin
+    {
+        uintptr_t owner = 0u;
+        uintptr_t weapon = 0u;
+        uint32_t handle = 0u;
+        int player = -1;
+        Vector origin{};
+    };
+    thread_local const ClientPistolBulletOrigin* g_ClientPistolBulletOrigin = nullptr;
+
+    bool TryGetClientPistolBulletOrigin(void* owner, Vector& origin)
+    {
+        if (!g_ClientPistolBulletOrigin || g_ClientPistolBulletOrigin->owner != reinterpret_cast<uintptr_t>(owner))
+            return false;
+        origin = g_ClientPistolBulletOrigin->origin;
+        return IsFiniteVector(origin);
+    }
+
+    bool ClientPistolTracerSourceMatches(Game* game, int entityIndex, const ClientPistolBulletOrigin& effect)
+    {
+        if (!game || entityIndex <= 0 || entityIndex >= 4096 || !effect.owner || !effect.weapon ||
+            !l4d2vr_shell::ValidHandle(effect.handle)) return false;
+#ifdef _MSC_VER
+        __try
+#endif
+        {
+            void* entity = game->GetClientEntity(entityIndex);
+            if (!entity) return false;
+            if (reinterpret_cast<uintptr_t>(entity) == effect.owner && entityIndex == effect.player) return true;
+            if (reinterpret_cast<uintptr_t>(entity) == effect.weapon &&
+                entityIndex == static_cast<int>(effect.handle & 0xfffu)) return true;
+            const char* name = game->GetNetworkClassName(reinterpret_cast<uintptr_t*>(entity));
+            if (!name || (std::strcmp(name, "CBaseViewModel") != 0 &&
+                std::strcmp(name, "CPredictedViewModel") != 0)) return false;
+            const int ownerOffset = game->FindRecvPropOffset("DT_BaseViewModel", "m_hOwner");
+            const int weaponOffset = game->FindRecvPropOffset("DT_BaseViewModel", "m_hWeapon");
+            if (ownerOffset <= 0 || weaponOffset <= 0 || ownerOffset >= 0x10000 || weaponOffset >= 0x10000) return false;
+            const uint32_t owner = *reinterpret_cast<const uint32_t*>(static_cast<const uint8_t*>(entity) + ownerOffset);
+            const uint32_t weapon = *reinterpret_cast<const uint32_t*>(static_cast<const uint8_t*>(entity) + weaponOffset);
+            return owner != 0xffffffffu && static_cast<int>(owner & 0xfffu) == effect.player &&
+                weapon == effect.handle && reinterpret_cast<uintptr_t>(game->GetClientEntity(effect.player)) == effect.owner;
+        }
+#ifdef _MSC_VER
+        __except (EXCEPTION_EXECUTE_HANDLER) { return false; }
+#endif
+    }
 
     bool ReadClientPistolExecution(void* player, CUserCmd* command, ClientPistolExecution& result)
     {
@@ -1528,6 +1574,32 @@ void __fastcall Hooks::dClientPistolFinishReload(void* weapon, void*)
 {
     if (m_VR && m_VR->BlockPistolNativeReload(reinterpret_cast<C_WeaponCSBase*>(weapon))) return;
     hkClientPistolFinishReload.fOriginal(weapon);
+}
+
+void __cdecl Hooks::dClientFxTracer(const Vector& start, const Vector& end, int entityIndex,
+    int attachment, float velocity, bool whiz, const char* material, int particleIndex)
+{
+    const auto* effect = g_ClientPistolBulletOrigin;
+    const bool matched = effect && IsFiniteVector(effect->origin) &&
+        ClientPistolTracerSourceMatches(m_Game, entityIndex, *effect);
+    if (effect && m_VR && m_VR->m_VrHandsDebugLog)
+    {
+        static uint64_t lastLogAt = 0u;
+        const uint64_t logAt = GetTickCount64();
+        if (logAt - lastLogAt >= 1000u)
+        {
+            lastLogAt = logAt;
+            Game::logMsg("[VR][PistolFX][tracer] matched=%d entity=%d attachment=%d", matched ? 1 : 0, entityIndex, attachment);
+        }
+    }
+    if (matched)
+    {
+        // Keep Source's tracer material, endpoint, speed, sound and particle
+        // selection. Its attachment flag would replace our explicit muzzle.
+        hkClientFxTracer.fOriginal(effect->origin, end, entityIndex, -1, velocity, whiz, material, particleIndex);
+        return;
+    }
+    hkClientFxTracer.fOriginal(start, end, entityIndex, attachment, velocity, whiz, material, particleIndex);
 }
 
 int Hooks::dClientFireTerrorBullets(
@@ -1856,6 +1928,31 @@ int Hooks::dClientFireTerrorBullets(
 		if (!original)
 			return 0;
 
+        if (dualShotPose && scopedDualShot && g_ClientPistolExecution)
+        {
+            const auto muzzleKey = m_VR->ReadPistolMuzzleKey();
+            ClientPistolBulletOrigin effect{shotSession.owner, shotSession.weapon,
+                muzzleKey.owner == shotSession.owner && muzzleKey.weapon == shotSession.weapon ? muzzleKey.handle : 0u,
+                playerId, vecNewOrigin};
+            const bool capturedMuzzle = m_VR->GetExecutingPistolMuzzle(g_ClientPistolExecution->command,
+                shotSession.owner, shotSession.weapon, effect.origin);
+            if (m_VR->m_VrHandsDebugLog)
+            {
+                static uint64_t lastLogAt = 0u;
+                const uint64_t logAt = GetTickCount64();
+                if (logAt - lastLogAt >= 1000u)
+                {
+                    lastLogAt = logAt;
+                    Game::logMsg("[VR][PistolFX] command=%d hand=%u muzzle=%d origin=(%.2f %.2f %.2f)",
+                        g_ClientPistolExecution->command, static_cast<unsigned>(dualShotHand), capturedMuzzle ? 1 : 0,
+                        effect.origin.x, effect.origin.y, effect.origin.z);
+                }
+            }
+            int result = 0;
+            l4d2vr_native_scope::Run<const ClientPistolBulletOrigin>(g_ClientPistolBulletOrigin, &effect,
+                [&]() { result = original(playerId, vecNewOrigin, vecNewAngles, a4, a5, a6, a7); });
+            return result;
+        }
 		return original(playerId, vecNewOrigin, vecNewAngles, a4, a5, a6, a7);
 	}
 

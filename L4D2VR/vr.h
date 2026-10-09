@@ -14,6 +14,7 @@
 #include "vr_weapon_calibration.h"
 #include "vr_magazine_policy.h"
 #include "vr_remote_shells.h"
+#include "vr_pistol_effects.h"
 #include "vr_remote_magazines.h"
 #include "vr_pistol_ammo_sync.h"
 #include "vr_pistol_prediction.h"
@@ -1230,6 +1231,12 @@ public:
     mutable std::mutex m_DualPistolShotMutex;
     l4d2vr_dual::CommandShots m_DualPistolCommandShots;
     l4d2vr_dual::Shot m_LatestDualPistolShot{};
+    mutable std::mutex m_PistolMuzzleMutex;
+    l4d2vr_pistol_fx::Muzzles m_PistolMuzzles;
+    l4d2vr_pistol_fx::Key ReadPistolMuzzleKey() const;
+    void PublishPistolMuzzle(const l4d2vr_pistol_fx::Key& key, l4d2vr_dual::Hand hand,
+        const l4d2vr_dual::Matrix3x4& controller, const l4d2vr_dual::Matrix3x4& muzzle);
+    bool GetExecutingPistolMuzzle(int command, uintptr_t owner, uintptr_t weapon, Vector& origin) const;
     void RecordDualPistolCommand(int command, l4d2vr_dual::Hand hand, bool firing, uintptr_t owner, uintptr_t weapon);
     bool GetDualPistolCommandPose(int command, Vector& position, QAngle& angles, l4d2vr_dual::Hand& hand) const;
     bool GetExecutingDualPistolShotPose(int command, uintptr_t owner, uintptr_t weapon,

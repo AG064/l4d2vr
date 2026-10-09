@@ -80,6 +80,7 @@ typedef bool(__thiscall* tCreateMove)(void* thisptr, float flInputSampleTime, CU
 typedef void(__thiscall* tEndFrame)(PVOID);
 typedef void(__thiscall* tCalcViewModelView)(void* thisptr, void* owner, const Vector& eyePosition, const QAngle& eyeAngles);
 typedef int(__cdecl* tFireTerrorBullets)(int playerId, const Vector& vecOrigin, const QAngle& vecAngles, int a4, int a5, int a6, float a7);
+typedef void(__cdecl* tClientFxTracer)(const Vector&, const Vector&, int, int, float, bool, const char*, int);
 typedef float(__thiscall* tProcessUsercmds)(void* thisptr, edict_t* player, void* buf, int numcmds, int totalcmds, int dropped_packets, bool ignore, bool paused);
 typedef void(__thiscall* tServerGameClientsClientCommand)(
 	void* thisptr,
@@ -163,6 +164,7 @@ public:
 	static inline Hook<tCalcViewModelView> hkCalcViewModelView;
 	static inline Hook<tFireTerrorBullets> hkServerFireTerrorBullets;
 	static inline Hook<tFireTerrorBullets> hkClientFireTerrorBullets;
+    static inline Hook<tClientFxTracer> hkClientFxTracer;
 	static inline Hook<tProcessUsercmds> hkProcessUsercmds;
 	static inline Hook<tServerGameClientsClientCommand>
 		hkServerGameClientsClientCommand;
@@ -255,6 +257,8 @@ public:
 	static void __fastcall dCalcViewModelView(void* ecx, void* edx, void* owner, const Vector& eyePosition, const QAngle& eyeAngles);
 	static int dServerFireTerrorBullets(int playerId, const Vector& vecOrigin, const QAngle& vecAngles, int a4, int a5, int a6, float a7);
 	static int dClientFireTerrorBullets(int playerId, const Vector& vecOrigin, const QAngle& vecAngles, int a4, int a5, int a6, float a7);
+    static void __cdecl dClientFxTracer(const Vector& start, const Vector& end, int entityIndex,
+        int attachment, float velocity, bool whiz, const char* material, int particleIndex);
 	static float __fastcall dProcessUsercmds(void* ecx, void* edx, edict_t* player, void* buf, int numcmds, int totalcmds, int dropped_packets, bool ignore, bool paused);
 	static void __fastcall dServerGameClientsClientCommand(
 		void* ecx,

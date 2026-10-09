@@ -58,6 +58,10 @@ public:
     Offset g_pClientMode =               { "client.dll", 0x228351, "89 04 B5 ? ? ? ? E8", 3 };
     Offset CalcViewModelView =           { "client.dll", 0x287270, "55 8B EC 83 EC 48 A1 ? ? ? ? 33 C5 89 45 FC 8B 45 10 8B 10" };
     Offset ClientFireTerrorBullets =     { "client.dll", 0x2F4350, "55 8B EC 81 EC ? ? ? ? A1 ? ? ? ? 33 C5 89 45 FC 8B 45 08 8B 4D 10"};
+    // FX_Tracer: cdecl, eight 4-byte stack arguments; attachment -1 emits
+    // from its explicit start instead of rebinding to a native viewmodel.
+    Offset ClientFxTracer = { "client.dll", 0x001ACAC0,
+        "55 8B EC 83 EC 60 53 0F 57 C0 F3 0F 10 0D ? ? ? ? 33 C0 F3 0F 11 45 B8", 0, true };
     Offset WriteUsercmdDeltaToBuffer =   { "client.dll", 0x134790, "55 8B EC 83 EC 60 0F 57 C0 8B 55 0C" };
     Offset WriteUsercmd =                { "client.dll", 0x1AAD50, "55 8B EC A1 ? ? ? ? 83 78 30 00 53 8B 5D 10 56 57" };
     Offset g_pppInput =                  { "client.dll", 0xA8A22, "8B 0D ? ? ? ? 8B 01 8B 50 58 FF E2", 2 };

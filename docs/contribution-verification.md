@@ -239,3 +239,31 @@ shell-to-port contact, request deferral, server acknowledgement and replicated
 ammo confirmation. The reported automatic reload and failed shell insertion
 remain pending native reproduction in the current build; these diagnostics do
 not establish that those failures are fixed.
+
+## Command-scoped pistol tracer origins
+
+Native client inspection showed that the bullet helper fetches WeaponShootPosition
+through EyePosition as a second origin even after FireTerrorBullets receives the
+VR ray. The existing client EyePosition hook now supplies the firing pistol's
+origin only inside that exact predicted bullet call, for that player. The normal
+view, movement and use paths retain their existing scopes. Native-scope cleanup
+restores the prior origin on normal, nested and exception exits.
+
+The weapon tracer handler also rebinds its effect to a native muzzle attachment.
+An optional, signature-verified FX_Tracer hook removes that binding only for the
+matching command's player, weapon or owned viewmodel. It preserves Source's
+endpoint, material, velocity, sound and particle selection. Unrelated effects
+and unavailable native bindings retain their normal path. Native viewmodel
+ownership comes from receive properties, with unavailable metadata rejected.
+
+The final independent-pistol draw captures each gun's authored muzzle attachment
+relative to its own controller. The executing command rebases the selected muzzle
+to that command's hand pose. A mutex protects the pair and weapon identity; stale,
+non-finite, hidden and mismatched owner/weapon/serial/mode samples are rejected.
+If a current attachment is unavailable, the validated command's controller origin
+remains available. Bounded PistolFX logs report the hand and attachment availability.
+Geometry and ownership regression checks do not prove native visual acceptance.
+
+Muzzle flashes use the native animation parity/event path, which remains separate
+from this tracer change and still needs a command-to-event binding. Independent
+dual reload, left-pistol grip alignment and multiplayer acceptance remain pending.

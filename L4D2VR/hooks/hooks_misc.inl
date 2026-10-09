@@ -23320,6 +23320,12 @@ Vector* Hooks::dServerPlayerEyePosition(void* ecx, void* edx, Vector* eyePos)
 
 Vector* Hooks::dClientPlayerEyePosition(void* ecx, void* edx, Vector* eyePos)
 {
+    Vector pistolOrigin{};
+    if (eyePos && TryGetClientPistolBulletOrigin(ecx, pistolOrigin))
+    {
+        *eyePos = pistolOrigin;
+        return eyePos;
+    }
     if (eyePos && g_ClientUseControllerAimOverride && ecx == g_ClientUseControllerAimPlayer)
     {
         *eyePos = g_ClientUseControllerAimOrigin;
@@ -23859,6 +23865,66 @@ C_BaseEntity* Hooks::dClientFindUseEntity(void* ecx, void* edx, float radius, fl
     return hkClientFindUseEntity.fOriginal(ecx, radius, dotLimit, defaultDotLimit, traceResult, extra);
 }
 
+static void CaptureIndependentPistolMuzzles(VR* vr, void* state,
+    const l4d2vr_pistol_fx::Key& key, const std::vector<int>& parents,
+    const vr_vm_stabilize::Mat3x4* bones, int count, int primaryRoot, int otherRoot,
+    bool singleLeft, bool rightTracked, bool leftTracked,
+    const vr_vm_stabilize::Mat3x4& rightController, const vr_vm_stabilize::Mat3x4& leftController)
+{
+    if (!key.Valid() || !bones || count <= 0 || count > 512) return;
+    const uint8_t* hdr = nullptr;
+    int length = 0, attachments = 0, table = 0;
+    if (!vr_vm_stabilize::TryGetStudioHdrFromDrawState(state, hdr) ||
+        !vr_vm_stabilize::SafeRead(hdr + 0x4c, length) ||
+        !vr_vm_stabilize::SafeRead(hdr + 0xf0, attachments) ||
+        !vr_vm_stabilize::SafeRead(hdr + 0xf4, table) ||
+        length < 0xf8 || length > 32 * 1024 * 1024 || attachments <= 0 || attachments > 256 ||
+        table < 0xf8 || table >= length || attachments * 92 > length - table) return;
+    int best[2] = {0, 0};
+    vr_vm_stabilize::Mat3x4 muzzle[2]{};
+    for (int attachment = 0; attachment < attachments; ++attachment)
+    {
+        const int offset = table + attachment * 92;
+        int nameOffset = 0, bone = -1;
+        if (!vr_vm_stabilize::SafeRead(hdr + offset, nameOffset) ||
+            !vr_vm_stabilize::SafeRead(hdr + offset + 8, bone) ||
+            nameOffset <= 0 || nameOffset >= length - offset || bone < 0 || bone >= count) continue;
+        std::string name;
+        bool terminated = false;
+        const int nameLength = std::min(256, length - offset - nameOffset);
+        for (int character = 0; character < nameLength; ++character)
+        {
+            char value = 0;
+            if (!vr_vm_stabilize::SafeRead(hdr + offset + nameOffset + character, value)) break;
+            if (!value) { terminated = true; break; }
+            name.push_back(value);
+        }
+        if (!terminated) continue;
+        const int score = MuzzlePointNameScore(vr_vm_stabilize::ToLowerAscii(name));
+        if (score <= 0) continue;
+        const bool primary = l4d2vr_interaction::BoneInBranch(parents, bone, primaryRoot);
+        const bool other = !singleLeft && l4d2vr_interaction::BoneInBranch(parents, bone, otherRoot);
+        if (!primary && !other) continue;
+        const int hand = singleLeft || other ? 1 : 0;
+        if (score <= best[hand] || (hand == 0 ? !rightTracked : !leftTracked)) continue;
+        vr_vm_stabilize::Mat3x4 local{}, boneWorld{}, world{};
+        if (!vr_vm_stabilize::SafeRead(hdr + offset + 12, local) ||
+            !vr_vm_stabilize::SafeRead(bones + bone, boneWorld)) continue;
+        vr_vm_stabilize::Mul(boneWorld, local, world);
+        if (!l4d2vr_dual::Finite(world)) continue;
+        best[hand] = score; muzzle[hand] = world;
+    }
+    auto matrix = [](const vr_vm_stabilize::Mat3x4& source)
+    {
+        l4d2vr_dual::Matrix3x4 result{};
+        for (int row = 0; row < 3; ++row)
+            for (int col = 0; col < 4; ++col) result.m[row][col] = source.m[row][col];
+        return result;
+    };
+    if (best[0]) vr->PublishPistolMuzzle(key, l4d2vr_dual::Hand::Right, matrix(rightController), matrix(muzzle[0]));
+    if (best[1]) vr->PublishPistolMuzzle(key, l4d2vr_dual::Hand::Left, matrix(leftController), matrix(muzzle[1]));
+}
+
 static l4d2vr_dual::Hand ApplyIndependentDualPistolBones(VR* vr, void* state,
     const std::string& modelName, void*& bones)
 {
@@ -23885,6 +23951,7 @@ static l4d2vr_dual::Hand ApplyIndependentDualPistolBones(VR* vr, void* state,
     }
     if (singleLeft) otherRoot = primaryRoot;
     if (primaryRoot < 0 || otherRoot < 0 || (!singleLeft && primaryRoot == otherRoot)) return singleLeft ? l4d2vr_dual::Hand::None : l4d2vr_dual::Hand::Right;
+    const auto muzzleKey = vr->ReadPistolMuzzleKey();
     const auto* source = reinterpret_cast<const vr_vm_stabilize::Mat3x4*>(bones);
     vr_vm_stabilize::Mat3x4 primary{}, other{}, rightController{}, leftController{}, delta{};
     if (!vr_vm_stabilize::SafeRead(source + primaryRoot, primary) ||
@@ -23926,6 +23993,8 @@ static l4d2vr_dual::Hand ApplyIndependentDualPistolBones(VR* vr, void* state,
         if (!l4d2vr_dual::Finite(output[bone])) return singleLeft ? l4d2vr_dual::Hand::None : l4d2vr_dual::Hand::Right;
     }
     bones = output;
+    CaptureIndependentPistolMuzzles(vr, state, muzzleKey, parents, output, count, primaryRoot, otherRoot,
+        singleLeft, rightTracked && !singleLeft, canRetarget, rightController, leftController);
     return singleLeft ? (canRetarget ? l4d2vr_dual::Hand::Left : l4d2vr_dual::Hand::None) : l4d2vr_dual::Hand::Right;
 }
 

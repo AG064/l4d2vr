@@ -3283,6 +3283,13 @@ void VR::RecordDualPistolCommand(int command, l4d2vr_dual::Hand hand, bool firin
     shot.capturedAtMs = GetTickCount64();
     shot.weaponHandle = MagazineInteractionActiveWeaponHandle(m_Game,
         reinterpret_cast<C_BasePlayer*>(owner), reinterpret_cast<C_WeaponCSBase*>(weapon));
+    {
+        const unsigned hands = m_IsVREnabled && m_DualPistolsIndependentHandsEnabled && !m_MouseModeEnabled
+            ? (m_DualPistolsActive.load(std::memory_order_acquire) ? 3u :
+                m_LeftHandPistolActive.load(std::memory_order_acquire) ? 2u : 0u) : 0u;
+        std::lock_guard<std::mutex> lock(m_PistolMuzzleMutex);
+        m_PistolMuzzles.Observe({owner, weapon, shot.weaponHandle, hands});
+    }
     if (hand != l4d2vr_dual::Hand::None)
     {
         const bool left = hand == l4d2vr_dual::Hand::Left;
@@ -3333,6 +3340,39 @@ bool VR::GetExecutingDualPistolShotPose(int command, uintptr_t owner, uintptr_t 
     position = Vector(shot.position[0], shot.position[1], shot.position[2]);
     angles = QAngle(shot.angles[0], shot.angles[1], shot.angles[2]);
     hand = shot.hand;
+    return true;
+}
+
+l4d2vr_pistol_fx::Key VR::ReadPistolMuzzleKey() const
+{
+    std::lock_guard<std::mutex> lock(m_PistolMuzzleMutex);
+    return m_PistolMuzzles.Current();
+}
+
+void VR::PublishPistolMuzzle(const l4d2vr_pistol_fx::Key& key, l4d2vr_dual::Hand hand,
+    const l4d2vr_dual::Matrix3x4& controller, const l4d2vr_dual::Matrix3x4& muzzle)
+{
+    std::lock_guard<std::mutex> lock(m_PistolMuzzleMutex);
+    m_PistolMuzzles.Capture(key, hand, controller, muzzle, m_VRScale, GetTickCount64());
+}
+
+bool VR::GetExecutingPistolMuzzle(int command, uintptr_t owner, uintptr_t weapon, Vector& origin) const
+{
+    Vector position{}; QAngle angles{}; l4d2vr_dual::Hand hand = l4d2vr_dual::Hand::None;
+    if (!GetExecutingDualPistolShotPose(command, owner, weapon, position, angles, hand)) return false;
+    Vector forward{}, right{}, up{};
+    QAngle::AngleVectors(angles, &forward, &right, &up);
+    const auto controller = l4d2vr_dual::ControllerFrame<l4d2vr_dual::Matrix3x4>(
+        {position.x,position.y,position.z}, {forward.x,forward.y,forward.z},
+        {right.x,right.y,right.z}, {up.x,up.y,up.z});
+    const auto handle = MagazineInteractionActiveWeaponHandle(m_Game,
+        reinterpret_cast<C_BasePlayer*>(owner), reinterpret_cast<C_WeaponCSBase*>(weapon));
+    std::lock_guard<std::mutex> lock(m_PistolMuzzleMutex);
+    const auto key = m_PistolMuzzles.Current();
+    if (key.owner != owner || key.weapon != weapon || key.handle != handle) return false;
+    l4d2vr_dual::Matrix3x4 muzzle{};
+    if (!m_PistolMuzzles.Resolve(key, hand, controller, GetTickCount64(), muzzle)) return false;
+    origin = Vector(muzzle.m[0][3],muzzle.m[1][3],muzzle.m[2][3]);
     return true;
 }
 
