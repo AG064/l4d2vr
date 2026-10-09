@@ -1732,7 +1732,8 @@ namespace
 
     bool MagazineInteractionBuildCurrentViewmodelModelBasisWorld(
         const VR* vr,
-        VrHandMatrix4& outWorld)
+        VrHandMatrix4& outWorld,
+        l4d2vr_dual::Hand hand = l4d2vr_dual::Hand::Right)
     {
         if (!vr)
             return false;
@@ -1762,6 +1763,29 @@ namespace
         VrHandMath::Set(outWorld, 0, 3, origin.x);
         VrHandMath::Set(outWorld, 1, 3, origin.y);
         VrHandMath::Set(outWorld, 2, 3, origin.z);
+        if (hand == l4d2vr_dual::Hand::Left)
+        {
+            VrHandMatrix4 rightController{}, leftController{};
+            if (!vr->BuildPistolControllerWorld(false, rightController) ||
+                !vr->BuildPistolControllerWorld(true, leftController)) return false;
+            l4d2vr_dual::Matrix3x4 rightFrame{}, leftFrame{}, identity{}, delta{};
+            for (int row = 0; row < 3; ++row)
+            {
+                identity.m[row][row] = 1.0f;
+                for (int col = 0; col < 4; ++col)
+                {
+                    rightFrame.m[row][col] = VrHandMath::Get(rightController, row, col);
+                    leftFrame.m[row][col] = VrHandMath::Get(leftController, row, col);
+                }
+            }
+            if (!l4d2vr_dual::Retarget(rightFrame, leftFrame, identity, identity, delta)) return false;
+            VrHandMatrix4 transfer = VrHandMath::Identity();
+            for (int row = 0; row < 3; ++row)
+                for (int col = 0; col < 4; ++col)
+                    VrHandMath::Set(transfer, row, col, delta.m[row][col]);
+            outWorld = VrHandMath::Multiply(transfer, outWorld);
+        }
+        else if (hand != l4d2vr_dual::Hand::Right) return false;
         return MagazineInteractionMatrixLooksRenderable(outWorld);
     }
 
@@ -1802,7 +1826,8 @@ namespace
             return false;
 
         VrHandMatrix4 currentAnchorWorld{};
-        if (!MagazineInteractionBuildCurrentViewmodelModelBasisWorld(vr, currentAnchorWorld))
+        if (!vr || !l4d2vr_dual::ContactHandMatches(sourceBox.anchorHand, vr->GetPrimaryPistolHand()) ||
+            !MagazineInteractionBuildCurrentViewmodelModelBasisWorld(vr, currentAnchorWorld, sourceBox.anchorHand))
             return false;
 
         const VrHandMatrix4 sourceWorld = MagazineInteractionBuildBoxWorld(sourceBox);
@@ -2873,6 +2898,36 @@ namespace
     }
 }
 
+l4d2vr_dual::Hand VR::GetPrimaryPistolHand() const
+{
+    return l4d2vr_dual::PrimaryHand(m_IsVREnabled && m_DualPistolsIndependentHandsEnabled && !m_MouseModeEnabled &&
+        m_LeftHandPistolActive.load(std::memory_order_acquire),
+        m_DualPistolsActive.load(std::memory_order_acquire), m_PistolOwnershipMask.load(std::memory_order_acquire));
+}
+
+bool VR::BuildPistolControllerWorld(bool left, VrHandMatrix4& outWorld) const
+{
+    outWorld = VrHandMath::Identity();
+    {
+        std::lock_guard<std::mutex> lock(m_WorldPoseTrackingSnapshotMutex);
+        const auto now = GetTickCount64();
+        const bool physicalLeft = IsGameplayHandLeftPhysical(left);
+        const bool handValid = physicalLeft ? m_WorldPoseTrackingSnapshot.leftHandValid : m_WorldPoseTrackingSnapshot.rightHandValid;
+        if (!m_WorldPoseTrackingSnapshot.initialized ||
+            !l4d2vr_dual::ControllerFrameAvailable(m_WorldPoseTrackingSnapshot.hmdValid, handValid,
+                m_WorldPoseTrackingSnapshot.capturedAtMs, now)) return false;
+    }
+    VR* mutableVr = const_cast<VR*>(this);
+    const Vector origin = left ? mutableVr->GetLeftControllerAbsPos() : mutableVr->GetRightControllerAbsPos();
+    const QAngle angles = left ? mutableVr->GetLeftControllerAbsAngle() : mutableVr->GetRightControllerAbsAngle();
+    if (!std::isfinite(origin.x) || !std::isfinite(origin.y) || !std::isfinite(origin.z) ||
+        !std::isfinite(angles.x) || !std::isfinite(angles.y) || !std::isfinite(angles.z)) return false;
+    Vector forward{}, right{}, up{};
+    QAngle::AngleVectors(angles, &forward, &right, &up);
+    outWorld = MagazineInteractionBuildViewmodelReprojectedControllerWorld(this, origin, forward, right, up);
+    return MagazineInteractionMatrixLooksRenderable(outWorld);
+}
+
 void VR::PublishMagazineInteractionBox(
     const Vector& origin,
     const Vector& axisX,
@@ -2890,6 +2945,7 @@ void VR::PublishMagazineInteractionBox(
     const Vector& modelAxisY,
     const Vector& modelAxisZ)
 {
+    if (t_MagazineContactHand == l4d2vr_dual::Hand::None) return;
     if (!m_MagazineInteractionEnabled &&
         !m_MagazineBoxDebugEnabled &&
         !m_MagazineInteractionCalibrationOverlayActive.load(std::memory_order_relaxed) &&
@@ -2911,15 +2967,31 @@ void VR::PublishMagazineInteractionBox(
         snapshot.modelAxisY = MagazineInteractionNormalizeAxis(modelAxisY, Vector(0.0f, 1.0f, 0.0f));
         snapshot.modelAxisZ = MagazineInteractionNormalizeAxis(modelAxisZ, Vector(0.0f, 0.0f, 1.0f));
     }
+    snapshot.anchorHand = t_MagazineContactHand;
     VrHandMatrix4 viewmodelAnchorWorld{};
-    if (MagazineInteractionBuildCurrentViewmodelModelBasisWorld(this, viewmodelAnchorWorld))
+    if (MagazineInteractionBuildCurrentViewmodelModelBasisWorld(this, viewmodelAnchorWorld, snapshot.anchorHand))
     {
         snapshot.viewmodelAnchorBasisValid = true;
         snapshot.viewmodelAnchorOrigin = MagazineInteractionMatrixOrigin(viewmodelAnchorWorld);
         snapshot.viewmodelAnchorAxisX = MagazineInteractionMatrixAxis(viewmodelAnchorWorld, 0);
         snapshot.viewmodelAnchorAxisY = MagazineInteractionMatrixAxis(viewmodelAnchorWorld, 1);
         snapshot.viewmodelAnchorAxisZ = MagazineInteractionMatrixAxis(viewmodelAnchorWorld, 2);
+        if (snapshot.anchorHand == l4d2vr_dual::Hand::Left && snapshot.modelBasisValid)
+        {
+            VrHandMatrix4 nativeAnchor{}, inverse{}, modelWorld{};
+            if (!MagazineInteractionBuildCurrentViewmodelModelBasisWorld(this, nativeAnchor) ||
+                !VrHandMath::Invert4x4(nativeAnchor, inverse) ||
+                !MagazineInteractionBuildModelBasisWorld(snapshot, modelWorld)) return;
+            const auto transfer = VrHandMath::Multiply(viewmodelAnchorWorld, inverse);
+            modelWorld = VrHandMath::Multiply(transfer, modelWorld);
+            if (!MagazineInteractionMatrixLooksRenderable(modelWorld)) return;
+            snapshot.modelOrigin = MagazineInteractionMatrixOrigin(modelWorld);
+            snapshot.modelAxisX = MagazineInteractionMatrixAxis(modelWorld, 0);
+            snapshot.modelAxisY = MagazineInteractionMatrixAxis(modelWorld, 1);
+            snapshot.modelAxisZ = MagazineInteractionMatrixAxis(modelWorld, 2);
+        }
     }
+    else if (snapshot.anchorHand == l4d2vr_dual::Hand::Left) return;
     snapshot.mins = mins;
     snapshot.maxs = maxs;
     snapshot.frameSeq = frameSeq;
@@ -2947,6 +3019,7 @@ void VR::PublishMagazineInteractionBoltBox(
     int boneIndex,
     const char* modelName)
 {
+    if (t_MagazineContactHand == l4d2vr_dual::Hand::None) return;
     if (!m_MagazineInteractionEnabled &&
         !m_MagazineBoxDebugEnabled &&
         !m_MagazineInteractionCalibrationOverlayActive.load(std::memory_order_relaxed))
@@ -2967,6 +3040,18 @@ void VR::PublishMagazineInteractionBoltBox(
     snapshot.boneIndex = boneIndex;
     snapshot.modelName = modelName ? modelName : "";
     snapshot.publishedAt = std::chrono::steady_clock::now();
+
+    snapshot.anchorHand = t_MagazineContactHand;
+    VrHandMatrix4 anchor{};
+    if (MagazineInteractionBuildCurrentViewmodelModelBasisWorld(this, anchor, snapshot.anchorHand))
+    {
+        snapshot.viewmodelAnchorBasisValid = true;
+        snapshot.viewmodelAnchorOrigin = MagazineInteractionMatrixOrigin(anchor);
+        snapshot.viewmodelAnchorAxisX = MagazineInteractionMatrixAxis(anchor, 0);
+        snapshot.viewmodelAnchorAxisY = MagazineInteractionMatrixAxis(anchor, 1);
+        snapshot.viewmodelAnchorAxisZ = MagazineInteractionMatrixAxis(anchor, 2);
+    }
+    else if (snapshot.anchorHand == l4d2vr_dual::Hand::Left) return;
 
     std::lock_guard<std::mutex> lock(m_MagazineInteractionBoltBoxMutex);
     snapshot.publishSeq = ++m_MagazineInteractionBoltPublishSeq;
@@ -3126,7 +3211,8 @@ void VR::PublishMagazineInteractionCalibrationSnapshot(
 bool VR::GetMagazineInteractionBox(MagazineInteractionBoxSnapshot& outSnapshot) const
 {
     std::lock_guard<std::mutex> lock(m_MagazineInteractionBoxMutex);
-    if (!m_MagazineInteractionBoxValid)
+    if (!m_MagazineInteractionBoxValid ||
+        !l4d2vr_dual::ContactHandMatches(m_MagazineInteractionBox.anchorHand, GetPrimaryPistolHand()))
         return false;
     outSnapshot = m_MagazineInteractionBox;
     return true;
@@ -3135,7 +3221,8 @@ bool VR::GetMagazineInteractionBox(MagazineInteractionBoxSnapshot& outSnapshot) 
 bool VR::GetMagazineInteractionBoltBox(MagazineInteractionBoxSnapshot& outSnapshot) const
 {
     std::lock_guard<std::mutex> lock(m_MagazineInteractionBoltBoxMutex);
-    if (!m_MagazineInteractionBoltBoxValid)
+    if (!m_MagazineInteractionBoltBoxValid ||
+        !l4d2vr_dual::ContactHandMatches(m_MagazineInteractionBoltBox.anchorHand, GetPrimaryPistolHand()))
         return false;
     outSnapshot = m_MagazineInteractionBoltBox;
     return true;

@@ -106,6 +106,18 @@ unsupported capacities and dual/retained-left pistols still use their existing
 fallbacks. Mirrored hand roles, independent dual gestures and persistent
 magazine-object ownership remain unfinished.
 
+Retained-left pistol contact geometry now uses the same controller frame as the
+visible weapon. Retargeting precedes magazine/slide and calibration publication;
+stock orphaned clip/bullet/slide bones follow the weapon too. Snapshots carry
+their gun hand, reject contacts from the previous hand, and rebase against that
+hand's current anchor. Bolt snapshots now publish an anchor as well. Tracking
+freshness and connected poses constrain the shared controller frame rather than
+using attack-action availability as a rendering gate. Offline geometry checks
+cover a freely moving right hand, left-gun motion/rotation and hand changes.
+The right-hand reload gesture roles still need mirroring before retained-left
+manual reload is enabled. Headset, replacement-model and queued-render alignment
+remain unverified.
+
 Client native reload prediction is now guarded by separately validated pistol
 reload and reload-completion bindings. Fresh matching physical ownership blocks
 refill attempts and clears reload flags without changing clip/reserve counters

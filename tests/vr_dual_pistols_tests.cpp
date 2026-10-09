@@ -94,4 +94,52 @@ int main()
     CHECK(std::fabs(target.m[0][3]+10)<0.0001f && std::fabs(target.m[1][3]-1)<0.0001f);
     Matrix singular{};
     CHECK(!Retarget(singular,leftHand,rightGun,oldLeft,delta));
+
+    CHECK(PrimaryHand(true, false, 2u) == Hand::Left);
+    CHECK(PrimaryHand(true, true, 2u) == Hand::Right);
+    CHECK(PrimaryHand(false, false, 2u) == Hand::Right);
+    CHECK(PrimaryHand(true, false, 3u) == Hand::Right);
+    CHECK(ContactHandMatches(Hand::Left, Hand::Left));
+    CHECK(!ContactHandMatches(Hand::Right, Hand::Left));
+    CHECK(!ContactHandMatches(Hand::Left, Hand::Right));
+    CHECK(!ContactHandMatches(Hand::None, Hand::None));
+    CHECK(ControllerFrameAvailable(true, true, 1000u, 1350u));
+    CHECK(!ControllerFrameAvailable(true, true, 1000u, 1351u));
+    CHECK(!ControllerFrameAvailable(true, true, 1000u, 999u));
+    CHECK(!ControllerFrameAvailable(false, true, 1000u, 1001u));
+    CHECK(!ControllerFrameAvailable(true, false, 1000u, 1001u));
+    CHECK(!ControllerFrameAvailable(true, true, 0u, 1001u));
+    CHECK(RetainedWeaponPart("valvebiped.clip"));
+    CHECK(RetainedWeaponPart("valvebiped.bullet_l"));
+    CHECK(RetainedWeaponPart("slide"));
+    CHECK(!RetainedWeaponPart("valvebiped.bip01_r_hand"));
+    CHECK(!RetainedWeaponPart("valvebiped.bip01_l_forearm"));
+
+    // A moved primary gun's contacts must use its moved anchor. Free-hand
+    // movement must cancel out of both the visible gun and input rebasing.
+    Matrix r0 = Pose(10, 0), l0 = Pose(-10, 0), calibration = Pose(1, 2);
+    Matrix native0 = Multiply(r0, calibration), moved0{};
+    CHECK(Retarget(r0, l0, native0, native0, delta));
+    moved0 = Multiply(delta, native0);
+    Matrix magazineLocal = Pose(2, -3), contact0 = Multiply(moved0, magazineLocal);
+    Matrix r1 = Pose(35, 17);
+    r1.m[0][0] = 0; r1.m[0][1] = -1; r1.m[1][0] = 1; r1.m[1][1] = 0;
+    Matrix native1 = Multiply(r1, calibration);
+    CHECK(Retarget(r1, l0, native1, native1, delta));
+    Matrix moved1 = Multiply(delta, native1);
+    CHECK(Retarget(moved0, moved1, contact0, contact0, delta));
+    Matrix inputContact = Multiply(delta, contact0);
+    for (int row = 0; row < 3; ++row)
+        for (int col = 0; col < 4; ++col)
+            CHECK(std::fabs(inputContact.m[row][col] - contact0.m[row][col]) < 0.0001f);
+    Matrix l1 = Pose(-20, 6);
+    l1.m[0][0] = 0; l1.m[0][1] = -1; l1.m[1][0] = 1; l1.m[1][1] = 0;
+    CHECK(Retarget(r1, l1, native1, native1, delta));
+    Matrix moved2 = Multiply(delta, native1);
+    CHECK(Retarget(moved0, moved2, contact0, contact0, delta));
+    inputContact = Multiply(delta, contact0);
+    Matrix expectedContact = Multiply(moved2, magazineLocal);
+    for (int row = 0; row < 3; ++row)
+        for (int col = 0; col < 4; ++col)
+            CHECK(std::fabs(inputContact.m[row][col] - expectedContact.m[row][col]) < 0.0001f);
 }

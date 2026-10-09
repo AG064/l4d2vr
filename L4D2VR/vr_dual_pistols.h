@@ -2,10 +2,28 @@
 #include <array>
 #include <cstdint>
 #include <cmath>
+#include <string_view>
+#include <initializer_list>
 
 namespace l4d2vr_dual
 {
     enum class Hand : unsigned { None, Right, Left };
+    struct Matrix3x4 { float m[3][4]{}; };
+    inline Hand PrimaryHand(bool independent, bool dual, unsigned ownership)
+    { return independent && !dual && ownership == 2u ? Hand::Left : Hand::Right; }
+    inline bool ContactHandMatches(Hand published, Hand current)
+    { return published != Hand::None && published == current; }
+    inline bool ControllerFrameAvailable(bool hmd, bool hand, std::uint64_t captured, std::uint64_t now)
+    { return hmd && hand && captured != 0u && now >= captured && now - captured <= 350u; }
+    inline bool RetainedWeaponPart(std::string_view name)
+    {
+        // Some models keep mechanical parts outside the weapon-root subtree.
+        for (const auto prefix : {"weapon_", "valvebiped.weapon_", "clip", "valvebiped.clip",
+            "slide", "valvebiped.slide", "bolt", "valvebiped.bolt", "bullet", "valvebiped.bullet",
+            "shell", "valvebiped.shell"})
+            if (name.substr(0, std::string_view(prefix).size()) == prefix) return true;
+        return false;
+    }
     constexpr unsigned kRightShotMarker = 62u;
     constexpr unsigned kLeftShotMarker = 63u;
     inline Hand DecodeShotHand(unsigned word, bool attack)

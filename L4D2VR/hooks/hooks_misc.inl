@@ -23767,22 +23767,22 @@ C_BaseEntity* Hooks::dClientFindUseEntity(void* ecx, void* edx, float radius, fl
     return hkClientFindUseEntity.fOriginal(ecx, radius, dotLimit, defaultDotLimit, traceResult, extra);
 }
 
-static void ApplyIndependentDualPistolBones(VR* vr, void* state,
+static l4d2vr_dual::Hand ApplyIndependentDualPistolBones(VR* vr, void* state,
     const std::string& modelName, void*& bones)
 {
-    const bool singleLeft = vr && vr->m_PistolOwnershipMask.load(std::memory_order_acquire) == 2u;
+    const bool singleLeft = vr && vr->GetPrimaryPistolHand() == l4d2vr_dual::Hand::Left;
     if (!vr || (!vr->m_DualPistolsActive.load(std::memory_order_acquire) && !singleLeft) || !state || !bones)
-        return;
+        return singleLeft ? l4d2vr_dual::Hand::None : l4d2vr_dual::Hand::Right;
     const std::string model = vr_vm_stabilize::ToLowerAscii(modelName);
     if (!HooksModelNameIsViewmodel(model) ||
         (model.find("pistol") == std::string::npos))
-        return;
+        return l4d2vr_dual::Hand::Right;
     std::vector<std::string> names;
     std::vector<int> parents;
     int count = 0, boneIndex = 0, stride = 0, countOffset = 0;
     if (!vr_vm_stabilize::TryCollectBoneNamesFromDrawState(state, names, parents, count, boneIndex, stride, countOffset) ||
         count <= 0 || count > 512 || static_cast<int>(names.size()) < count || static_cast<int>(parents.size()) < count)
-        return;
+        return singleLeft ? l4d2vr_dual::Hand::None : l4d2vr_dual::Hand::Right;
     int primaryRoot = -1, otherRoot = -1;
     for (int bone = 0; bone < count; ++bone)
     {
@@ -23792,34 +23792,28 @@ static void ApplyIndependentDualPistolBones(VR* vr, void* state,
             name == "valvebiped.weapon_bone2") otherRoot = bone;
     }
     if (singleLeft) otherRoot = primaryRoot;
-    if (primaryRoot < 0 || otherRoot < 0 || (!singleLeft && primaryRoot == otherRoot)) return;
+    if (primaryRoot < 0 || otherRoot < 0 || (!singleLeft && primaryRoot == otherRoot)) return singleLeft ? l4d2vr_dual::Hand::None : l4d2vr_dual::Hand::Right;
     const auto* source = reinterpret_cast<const vr_vm_stabilize::Mat3x4*>(bones);
     vr_vm_stabilize::Mat3x4 primary{}, other{}, rightController{}, leftController{}, delta{};
     if (!vr_vm_stabilize::SafeRead(source + primaryRoot, primary) ||
         !vr_vm_stabilize::SafeRead(source + otherRoot, other))
-        return;
-    const auto controllerFrame = [&](bool left)
-    {
-        Vector origin = left ? vr->GetLeftControllerAbsPos() : vr->GetRightControllerAbsPos();
-        Vector reprojected{};
-        if (HooksNativeViewmodelHandsOnlyReprojectScenePointToViewmodelLayer(vr, origin, reprojected))
-            origin = reprojected;
-        const QAngle angles = left ? vr->GetLeftControllerAbsAngle() : vr->GetRightControllerAbsAngle();
-        Vector forward{}, right{}, up{};
-        QAngle::AngleVectors(angles, &forward, &right, &up);
-        return l4d2vr_dual::ControllerFrame<vr_vm_stabilize::Mat3x4>(
-            { origin.x, origin.y, origin.z }, { forward.x, forward.y, forward.z },
-            { right.x, right.y, right.z }, { up.x, up.y, up.z });
-    };
-    rightController = controllerFrame(false);
-    leftController = controllerFrame(true);
-    if (!l4d2vr_dual::Retarget(rightController, leftController, primary, other, delta)) return;
+        return singleLeft ? l4d2vr_dual::Hand::None : l4d2vr_dual::Hand::Right;
+    VrHandMatrix4 rightWorld{}, leftWorld{};
+    const bool rightTracked = vr->BuildPistolControllerWorld(false, rightWorld);
+    const bool leftTracked = vr->BuildPistolControllerWorld(true, leftWorld);
+    for (int row = 0; row < 3; ++row)
+        for (int col = 0; col < 4; ++col)
+        {
+            rightController.m[row][col] = VrHandMath::Get(rightWorld, row, col);
+            leftController.m[row][col] = VrHandMath::Get(leftWorld, row, col);
+        }
+    const bool canRetarget = rightTracked && leftTracked &&
+        l4d2vr_dual::Retarget(rightController, leftController, primary, other, delta);
     auto* output = vr_vm_stabilize::AllocStableBones(count, vr->m_RenderFrameSeq.load(std::memory_order_relaxed));
-    if (!output) return;
-    const bool leftTracked = (vr->m_DualPistolTriggerState.load(std::memory_order_acquire) & 4u) != 0u;
+    if (!output) return singleLeft ? l4d2vr_dual::Hand::None : l4d2vr_dual::Hand::Right;
     for (int bone = 0; bone < count; ++bone)
     {
-        if (!vr_vm_stabilize::SafeRead(source + bone, output[bone])) return;
+        if (!vr_vm_stabilize::SafeRead(source + bone, output[bone])) return singleLeft ? l4d2vr_dual::Hand::None : l4d2vr_dual::Hand::Right;
         bool belongsToOther = false;
         int ancestor = bone;
         for (int depth = 0; depth < count && ancestor >= 0 && ancestor < count; ++depth)
@@ -23830,18 +23824,17 @@ static void ApplyIndependentDualPistolBones(VR* vr, void* state,
         // Valve's dual model has an orphaned left bullet bone. Keep it with
         // the left magazine even though it is outside the weapon subtree.
         const std::string name = vr_vm_stabilize::ToLowerAscii(names[bone]);
-        belongsToOther = belongsToOther || (name.find("weapon_") != std::string::npos &&
+        belongsToOther = belongsToOther || (singleLeft && l4d2vr_dual::RetainedWeaponPart(name)) || (name.find("weapon_") != std::string::npos &&
             name.size() >= 2 && name.compare(name.size() - 2, 2, "_l") == 0);
         if (belongsToOther)
         {
-            if (leftTracked)
-                output[bone] = l4d2vr_dual::Multiply(delta, output[bone]);
-            else
-                output[bone].m[2][3] += 100000.0f;
+            if (canRetarget) output[bone] = l4d2vr_dual::Multiply(delta, output[bone]);
+            else output[bone].m[2][3] += 100000.0f;
         }
-        if (!l4d2vr_dual::Finite(output[bone])) return;
+        if (!l4d2vr_dual::Finite(output[bone])) return singleLeft ? l4d2vr_dual::Hand::None : l4d2vr_dual::Hand::Right;
     }
     bones = output;
+    return singleLeft ? (canRetarget ? l4d2vr_dual::Hand::Left : l4d2vr_dual::Hand::None) : l4d2vr_dual::Hand::Right;
 }
 
 bool __fastcall Hooks::dWorldPoseWeaponSetupBones(
@@ -23876,6 +23869,12 @@ bool __fastcall Hooks::dWorldPoseWeaponSetupBones(
 void Hooks::dDrawModelExecute(void* ecx, void* edx, void* state, const ModelRenderInfo_t& info, void* pCustomBoneToWorld)
 {
     vr_vm_stabilize::ScopedStableBoneScratch stableBoneScratchScope;
+    struct ContactHandScope
+    {
+        l4d2vr_dual::Hand previous = VR::t_MagazineContactHand;
+        ContactHandScope() { VR::t_MagazineContactHand = l4d2vr_dual::Hand::Right; }
+        ~ContactHandScope() { VR::t_MagazineContactHand = previous; }
+    } contactHandScope;
     constexpr int kStudioShadowDepthTexture = 0x40000000;
     const bool shadowDepthDraw =
         (info.flags & kStudioShadowDepthTexture) != 0;
@@ -24817,6 +24816,10 @@ void Hooks::dDrawModelExecute(void* ecx, void* edx, void* state, const ModelRend
             *pDrawInfo,
             pBonesToWorldFinal);
 
+        // Contact publication and visual capture must see the same moved gun.
+        MagazineInteractionRenderSnapshotScope pistolContactSnapshot(queueMode != 0);
+        VR::t_MagazineContactHand = ApplyIndependentDualPistolBones(m_VR, state, modelName, pBonesToWorldFinal);
+
         PublishMagazineInteractionCalibrationSnapshotFromDraw(
             m_VR,
             state,
@@ -24871,13 +24874,7 @@ void Hooks::dDrawModelExecute(void* ecx, void* edx, void* state, const ModelRend
         }
     }
 
-    // Capture the exact arm matrices submitted to Source. In queued rendering
-    // pBonesToWorldFinal contains the same stabilization delta as the visible gun,
-    // so the standalone right glove follows controller rotation and HMD movement.
-    {
-        MagazineInteractionRenderSnapshotScope dualPistolSnapshot(m_Game && m_Game->GetMatQueueMode() != 0);
-        ApplyIndependentDualPistolBones(m_VR, state, modelName, pBonesToWorldFinal);
-    }
+    // Capture the final matrices, including the independent pistol transform.
     MaybeCaptureViewmodelMuzzleSmokePose(m_VR, state, modelName, *pDrawInfo, pBonesToWorldFinal);
     MaybeCaptureVrHandsVmPose(
         m_VR,

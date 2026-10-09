@@ -107,6 +107,7 @@ struct VRMeleeTrackingSnapshot
 struct VRWorldPoseTrackingSnapshot
 {
 	bool initialized = false;
+    uint64_t capturedAtMs = 0u;
 	bool hmdValid = false;
 	bool leftHandValid = false;
 	bool rightHandValid = false;
@@ -280,6 +281,7 @@ struct MagazineInteractionBoxSnapshot
 	int boneIndex = -1;
 	bool modelBasisValid = false;
 	bool viewmodelAnchorBasisValid = false;
+    l4d2vr_dual::Hand anchorHand = l4d2vr_dual::Hand::Right;
 	std::string modelName;
 	std::chrono::steady_clock::time_point publishedAt{};
 };
@@ -677,6 +679,7 @@ public:
 
 	// True on the render thread while inside dRenderView when mat_queue_mode!=0.
 	static inline thread_local bool t_UseRenderFrameSnapshot = false;
+    static inline thread_local l4d2vr_dual::Hand t_MagazineContactHand = l4d2vr_dual::Hand::Right;
 
 	// --- Pose waiter (mat_queue_mode!=0) ---
 	// WaitGetPoses() is a hard pacing barrier. If we call it on the queued render thread, we can
@@ -3980,6 +3983,8 @@ public:
 	bool ShouldHideMagazineInteractionNativeClip() const;
 	bool ShouldDrawMagazineInteractionDetachedMagazine() const;
 	bool GetMagazineInteractionDetachedMagazineWorld(VrHandMatrix4& outWorld) const;
+    l4d2vr_dual::Hand GetPrimaryPistolHand() const;
+    bool BuildPistolControllerWorld(bool left, VrHandMatrix4& outWorld) const;
 	bool ShouldMoveMagazineInteractionBolt() const;
 	bool GetMagazineInteractionBoltWorld(VrHandMatrix4& outWorld) const;
 	void PlayMagazineInteractionBlockedFireEmptySound();

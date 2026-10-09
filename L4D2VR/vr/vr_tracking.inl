@@ -1730,8 +1730,10 @@ void VR::UpdateTracking()
     {
         VRWorldPoseTrackingSnapshot snapshot{};
         snapshot.initialized = true;
+        snapshot.capturedAtMs = GetTickCount64();
         snapshot.hmdValid =
-            m_Poses[vr::k_unTrackedDeviceIndex_Hmd].bPoseIsValid;
+            m_Poses[vr::k_unTrackedDeviceIndex_Hmd].bPoseIsValid &&
+            m_Poses[vr::k_unTrackedDeviceIndex_Hmd].bDeviceIsConnected;
 
         const vr::TrackedDeviceIndex_t physicalLeftIndex =
             GetPhysicalControllerIndexForHand(true);
@@ -1739,10 +1741,10 @@ void VR::UpdateTracking()
             GetPhysicalControllerIndexForHand(false);
         snapshot.leftHandValid =
             physicalLeftIndex < vr::k_unMaxTrackedDeviceCount &&
-            m_Poses[physicalLeftIndex].bPoseIsValid;
+            m_Poses[physicalLeftIndex].bPoseIsValid && m_Poses[physicalLeftIndex].bDeviceIsConnected;
         snapshot.rightHandValid =
             physicalRightIndex < vr::k_unMaxTrackedDeviceCount &&
-            m_Poses[physicalRightIndex].bPoseIsValid;
+            m_Poses[physicalRightIndex].bPoseIsValid && m_Poses[physicalRightIndex].bDeviceIsConnected;
 
 		// World-model poses are player-relative, not camera-anchor-relative. The
 		// camera anchor contains both roomscale recentering and HeightOffset; using
