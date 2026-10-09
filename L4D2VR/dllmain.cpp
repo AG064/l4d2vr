@@ -2783,6 +2783,14 @@ namespace
             return false;
 
         const std::filesystem::path updateDir = gameRootPath / L"VR" / L"update";
+        std::error_code updatePolicyError;
+        const bool localBuildPinned = std::filesystem::exists(
+            gameRootPath / L"VR" / L"disable_workshop_updates.txt", updatePolicyError);
+        if (localBuildPinned || updatePolicyError)
+        {
+            AppendUpdateLog(updateDir, "workshop update checks disabled by local-build pin or unreadable update policy");
+            return false;
+        }
         const std::filesystem::path vpkPath = FindWorkshopUpdateVpk(gameRootPath);
         if (vpkPath.empty())
         {

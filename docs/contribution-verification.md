@@ -200,3 +200,11 @@ argument convention and preservation of literal percent characters.
 The helper's fake-command semantics are demonstrated by
 [SourceMod's queue implementation](https://github.com/alliedmodders/sourcemod/blob/master/core/HalfLife2.cpp).
 Native delivery and physical-control acceptance remain separate checks.
+## Preserve local builds during testing
+
+An accepted Workshop update replaced the custom DLL and controller bindings
+mid-test. Create `VR/disable_workshop_updates.txt` in the game directory to pin
+a locally compiled test build. Its presence skips the Workshop update prompt and
+helper launch; an unreadable pin policy also skips that update check. Remove the
+file when intentionally returning to Workshop-managed updates. The opt-out does
+not unsubscribe the Workshop item or change Steam's content management.
