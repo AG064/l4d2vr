@@ -21,6 +21,7 @@
 #include "vr.h"
 #include "hooks.h"
 #include "vr_interaction_protocol.h"
+#include "vr_recv_interface.h"
 #include "offsets.h"
 #include "sigscanner.h"
 #include "vr_pose_protocol.h"
@@ -652,20 +653,6 @@ namespace
         int m_ClassID = 0;
     };
 
-    class SourceBaseClientDLL
-    {
-    public:
-        virtual int Connect(void* appSystemFactory, void* pGlobals) = 0;
-        virtual int Disconnect(void) = 0;
-        virtual int Init(void* appSystemFactory, void* pGlobals) = 0;
-        virtual void PostInit() = 0;
-        virtual void Shutdown(void) = 0;
-        virtual void LevelInitPreEntity(char const* pMapName) = 0;
-        virtual void LevelInitPostEntity() = 0;
-        virtual void LevelFastReload(void) = 0;
-        virtual void LevelShutdown(void) = 0;
-        virtual void* GetAllClasses(void) = 0;
-    };
 }
 
 static_assert(sizeof(SourceConCommandBase) == 24, "Unexpected ConCommandBase size for Source IConVar bridge.");
@@ -2854,12 +2841,26 @@ static int FindRecvPropOffsetSafe(void* baseClientDll, const char* networkName, 
 {
     __try
     {
-        auto* clientDll = reinterpret_cast<SourceBaseClientDLL*>(baseClientDll);
-        if (!clientDll || !networkName || !*networkName || !propName || !*propName)
+        if (!baseClientDll || !networkName || !*networkName || !propName || !*propName)
             return -1;
 
-        auto* clientClass = reinterpret_cast<SourceClientClass*>(clientDll->GetAllClasses());
-        while (clientClass)
+        const auto module = reinterpret_cast<std::uintptr_t>(GetModuleHandleA("client.dll"));
+        if (!module) return -1;
+        const auto* dos = reinterpret_cast<const IMAGE_DOS_HEADER*>(module);
+        if (dos->e_magic != IMAGE_DOS_SIGNATURE || dos->e_lfanew <= 0 || dos->e_lfanew > 0x100000)
+            return -1;
+        const auto* nt = reinterpret_cast<const IMAGE_NT_HEADERS32*>(module + dos->e_lfanew);
+        if (nt->Signature != IMAGE_NT_SIGNATURE || nt->OptionalHeader.Magic != IMAGE_NT_OPTIONAL_HDR32_MAGIC)
+            return -1;
+        const std::size_t moduleSize = nt->OptionalHeader.SizeOfImage;
+        const auto* vtable = *reinterpret_cast<const std::uintptr_t* const*>(baseClientDll);
+        const auto getter = vtable[l4d2vr_recv::ClassListSlot];
+        if (!l4d2vr_recv::Contains(module, moduleSize, getter, 6u)) return -1;
+        std::uintptr_t classListAddress = 0u;
+        if (!l4d2vr_recv::DecodeClassListAddress(reinterpret_cast<const unsigned char*>(getter),
+                6u, module, moduleSize, classListAddress)) return -1;
+        auto* clientClass = *reinterpret_cast<SourceClientClass* const*>(classListAddress);
+        for (unsigned classes = 0u; clientClass && classes < 4096u; ++classes)
         {
             const bool networkNameMatches =
                 clientClass->m_pNetworkName &&

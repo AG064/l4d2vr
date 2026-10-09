@@ -151,3 +151,21 @@ Full body IK, independent dual-pistol magazines/chambers, complete missing mesh
 geometry, dropped-magazine floor recovery/storage and dedicated-server physical ammo remain
 unfinished. The reported pipe-bomb crash and missing remote movement have not
 been proven fixed. These limitations are part of the draft review scope.
+
+## Client interface map-load crash
+
+A local map-loading crash exposed an incorrect client-interface declaration in
+receive-table discovery. It called slot 9 of VClient016, a HUD input method,
+where the installed Windows x86 client exposes its class-list getter at slot 7.
+The unexpected argument convention corrupted the input-hook stack. The same
+declaration exists in upstream v0.8.2 source; the ladder-state lookup exposed it
+during this map-loading test. This does not establish the cause of issue #410
+or the behavior of its published release binary.
+
+Discovery now checks that slot 7 is inside client.dll and matches the native
+MOV EAX,[address]; RET getter, then reads the module-owned class-list pointer.
+It does not invoke an unchecked virtual method. An unsupported getter or an
+out-of-module pointer returns an unavailable offset. Regression checks include
+the installed getter bytes, an ASLR relocation, the old HUD method bytes,
+truncated code and invalid or overflowing image bounds. Native map-loading and
+headset acceptance must be recorded separately from these software checks.
