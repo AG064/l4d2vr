@@ -1217,6 +1217,7 @@ void VrHandSystem::UpdatePoses(
     const std::array<float, 5>& gloveFingerMaxCurl,
     bool debugLog)
 {
+    m_LastPoseUpdateTick = GetTickCount();
     auto physicalHandIndexForGameplay = [&](int gameplayHandIndex) -> int
         {
             return leftHanded ? (1 - gameplayHandIndex) : gameplayHandIndex;
@@ -1337,6 +1338,24 @@ void VrHandSystem::UpdatePoses(
                 motionRangeWithoutController ? "without-controller" : "with-controller");
         }
     }
+}
+
+bool VrHandSystem::ReadFreeWristModelPosition(bool physicalLeft, Vector& position) const
+{
+    const auto now = GetTickCount();
+    if (!m_LastPoseUpdateTick || now - m_LastPoseUpdateTick > 150u) return false;
+    const auto& hand = m_Hands[physicalLeft ? 0u : 1u];
+    if (!hand.paletteValid || !hand.asset.IsValid()) return false;
+    const int wrist = FindVrHandsNameIndex(hand.asset.jointNames,physicalLeft ? "wrist_l" : "wrist_r");
+    if (wrist < 0 || wrist >= static_cast<int>(hand.palette.size()) || wrist >= static_cast<int>(hand.asset.bindMatrices.size()))
+        return false;
+    VrHandMatrix4 skin = VrHandMath::Identity();
+    for (int row = 0; row < 3; ++row)
+        for (int col = 0; col < 4; ++col)
+            VrHandMath::Set(skin,row,col,hand.palette[static_cast<size_t>(wrist)].v[static_cast<size_t>(row)*4u+col]);
+    const auto model = VrHandMath::Multiply(skin,hand.asset.bindMatrices[static_cast<size_t>(wrist)]);
+    position = Vector(VrHandMath::Get(model,0,3),VrHandMath::Get(model,1,3),VrHandMath::Get(model,2,3));
+    return std::isfinite(position.x) && std::isfinite(position.y) && std::isfinite(position.z);
 }
 
 bool VrHandSystem::DrawForEye(

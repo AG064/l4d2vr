@@ -104,8 +104,11 @@ public:
     bool EnsureAssetsAvailable(bool debugLog);
     bool IsDependencyUnavailable() const;
     const std::string& DependencyFailureReason() const;
+    // Render-thread only: wrist position in the currently skinned glove model.
+    bool ReadFreeWristModelPosition(bool physicalLeft, Vector& position) const;
 
 private:
+    std::uint32_t m_LastPoseUpdateTick = 0u;
     struct HandState
     {
         const char* actionPath = nullptr;

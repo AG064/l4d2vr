@@ -4001,6 +4001,7 @@ public:
     bool MagazineReloadSupportIsLeft() const;
     unsigned MagazineGripPhysicalMask() const;
     bool BuildPistolControllerWorld(bool left, VrHandMatrix4& outWorld) const;
+    bool ReadLeftPistolGloveWrist(Vector& wrist) const;
 	bool ShouldMoveMagazineInteractionBolt() const;
 	bool GetMagazineInteractionBoltWorld(VrHandMatrix4& outWorld) const;
 	void PlayMagazineInteractionBlockedFireEmptySound();

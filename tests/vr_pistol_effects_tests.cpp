@@ -34,6 +34,34 @@ int main()
     Check(RemainingAfterShot(true,Hand::None,15,15) == -1 &&
         RemainingAfterShot(true,Hand::Left,15,-1) == -1 && RemainingAfterShot(true,Hand::Left,15,16) == -1,
         "Unavailable or invalid ammo counts cannot invent a last-round state");
+    auto sourceController = Pose(10.0f,0.0f), targetController = Pose(-10.0f,0.0f);
+    auto sourceGun = Pose(12.0f,1.0f), oldOtherGun = Pose(13.0f,-1.0f), sourceWrist = Pose(11.0f,0.0f);
+    l4d2vr_dual::Matrix3x4 gunDelta{};
+    Check(l4d2vr_dual::Retarget(sourceController,targetController,sourceGun,oldOtherGun,gunDelta), "Build calibrated left gun transfer");
+    const auto rotationBefore = gunDelta;
+    Check(AlignGripPosition(sourceController,targetController,sourceWrist,{-8.0f,2.0f,0.0f},40.0f,gunDelta),
+        "The gun grip can follow the displayed glove wrist");
+    const auto placed = l4d2vr_dual::Multiply(gunDelta,oldOtherGun);
+    Check(std::fabs(placed.m[0][3]+7.0f)<0.0001f && std::fabs(placed.m[1][3]-3.0f)<0.0001f,
+        "The authored gun-to-grip offset survives wrist alignment");
+    for (int row = 0; row < 3; ++row)
+        for (int col = 0; col < 3; ++col)
+            Check(gunDelta.m[row][col] == rotationBefore.m[row][col], "Glove rotations must not reverse the gun aim");
+    const auto validDelta = gunDelta;
+    Check(!AlignGripPosition(sourceController,targetController,sourceWrist,{100000.0f,0.0f,0.0f},40.0f,gunDelta) &&
+        gunDelta.m[0][3] == validDelta.m[0][3], "An invalid distant glove cannot move or partially alter the gun");
+    auto movedSource = Pose(40.0f,20.0f);
+    movedSource.m[0][0]=0.0f; movedSource.m[0][1]=-1.0f;
+    movedSource.m[1][0]=1.0f; movedSource.m[1][1]=0.0f;
+    const auto movedGun = l4d2vr_dual::Multiply(movedSource,Pose(2.0f,1.0f));
+    const auto movedWrist = l4d2vr_dual::Multiply(movedSource,Pose(1.0f,0.0f));
+    Check(l4d2vr_dual::Retarget(movedSource,targetController,movedGun,oldOtherGun,gunDelta) &&
+        AlignGripPosition(movedSource,targetController,movedWrist,{-8.0f,2.0f,0.0f},40.0f,gunDelta),
+        "Moving the source gun and hand together preserves independent target alignment");
+    const auto stationaryLeft = l4d2vr_dual::Multiply(gunDelta,oldOtherGun);
+    Check(std::fabs(stationaryLeft.m[0][3]-placed.m[0][3])<0.0001f &&
+        std::fabs(stationaryLeft.m[1][3]-placed.m[1][3])<0.0001f,
+        "The left pistol cannot drift when only the right hand translates or rotates");
     Muzzles cache;
     const Key dual{100u, 200u, 0x1001u, 3u};
     cache.Observe(dual);

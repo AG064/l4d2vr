@@ -2946,6 +2946,25 @@ bool VR::BuildPistolControllerWorld(bool left, VrHandMatrix4& outWorld) const
     return MagazineInteractionMatrixLooksRenderable(outWorld);
 }
 
+bool VR::ReadLeftPistolGloveWrist(Vector& wrist) const
+{
+    if (!m_VrHandsEnabled || !m_VrHandsGlovesEnabled || !m_VrHands || m_VrHandsTwoHandedGripActive) return false;
+    Vector local{};
+    if (!m_VrHands->ReadFreeWristModelPosition(IsGameplayHandLeftPhysical(true),local)) return false;
+    VrHandMatrix4 tracked{};
+    if (!BuildPistolControllerWorld(true,tracked)) return false;
+    VR* mutableVr = const_cast<VR*>(this);
+    const auto glove = VrHandMath::BuildControllerWorld(mutableVr->GetLeftControllerAbsPos(),
+        mutableVr->GetLeftControllerAbsAngle(),m_VRScale,std::clamp(m_VrHandsModelScale,0.25f,4.0f),
+        m_VrHandsLeftPoseOffsetMeters,m_VrHandsLeftPoseRotationOffsetDeg);
+    wrist = MagazineInteractionMatrixPointWorld(glove,local);
+    Vector projected{};
+    if (!l4d2vr_interaction::Finite(wrist) ||
+        !MagazineInteractionReprojectScenePointToViewmodelLayer(this,wrist,projected)) return false;
+    wrist = projected;
+    return l4d2vr_interaction::Finite(wrist);
+}
+
 void VR::PublishMagazineInteractionBox(
     const Vector& origin,
     const Vector& axisX,

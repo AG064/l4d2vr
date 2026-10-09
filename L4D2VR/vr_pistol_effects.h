@@ -34,6 +34,32 @@ namespace l4d2vr_pistol_fx
         return hand == l4d2vr_dual::Hand::Left ? (lastRound ? 481 : 192) : (lastRound ? 194 : 191);
     }
 
+    inline bool AlignGripPosition(const l4d2vr_dual::Matrix3x4& sourceController,
+        const l4d2vr_dual::Matrix3x4& targetController, const l4d2vr_dual::Matrix3x4& sourceGrip,
+        const std::array<float,3>& targetGrip, float unitsPerMeter, l4d2vr_dual::Matrix3x4& gunDelta)
+    {
+        if (!std::isfinite(unitsPerMeter) || unitsPerMeter <= 0.001f || !l4d2vr_dual::Finite(gunDelta)) return false;
+        l4d2vr_dual::Matrix3x4 gripDelta{};
+        if (!l4d2vr_dual::Retarget(sourceController,targetController,sourceGrip,sourceGrip,gripDelta)) return false;
+        const auto transferred = l4d2vr_dual::Multiply(gripDelta,sourceGrip);
+        std::array<float,3> displacement{};
+        float distanceSquared = 0.0f;
+        for (unsigned row = 0; row < 3; ++row)
+        {
+            if (!std::isfinite(targetGrip[row])) return false;
+            displacement[row] = targetGrip[row] - transferred.m[row][3];
+            const float meters = displacement[row] / unitsPerMeter;
+            distanceSquared += meters * meters;
+        }
+        if (!std::isfinite(distanceSquared) || distanceSquared > 0.09f) return false;
+        auto corrected = gunDelta;
+        for (unsigned row = 0; row < 3; ++row) corrected.m[row][3] += displacement[row];
+        if (!l4d2vr_dual::Finite(corrected)) return false;
+        // Glove art corrections do not define the gun's aim basis.
+        gunDelta = corrected;
+        return true;
+    }
+
     class Muzzles
     {
     public:

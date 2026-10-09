@@ -23941,11 +23941,12 @@ static l4d2vr_dual::Hand ApplyIndependentDualPistolBones(VR* vr, void* state,
     if (!vr_vm_stabilize::TryCollectBoneNamesFromDrawState(state, names, parents, count, boneIndex, stride, countOffset) ||
         count <= 0 || count > 512 || static_cast<int>(names.size()) < count || static_cast<int>(parents.size()) < count)
         return singleLeft ? l4d2vr_dual::Hand::None : l4d2vr_dual::Hand::Right;
-    int primaryRoot = -1, otherRoot = -1;
+    int primaryRoot = -1, otherRoot = -1, primaryWrist = -1;
     for (int bone = 0; bone < count; ++bone)
     {
         const std::string name = vr_vm_stabilize::ToLowerAscii(names[bone]);
         if (name == "valvebiped.weapon_bone" || name == "weapon_bone") primaryRoot = bone;
+        if (name == "valvebiped.bip01_r_hand") primaryWrist = bone;
         if (name == "valvebiped.weapon_bone_l" || name == "weapon_bone_l" ||
             name == "valvebiped.weapon_bone2") otherRoot = bone;
     }
@@ -23968,6 +23969,23 @@ static l4d2vr_dual::Hand ApplyIndependentDualPistolBones(VR* vr, void* state,
         }
     const bool canRetarget = rightTracked && leftTracked &&
         l4d2vr_dual::Retarget(rightController, leftController, primary, other, delta);
+    if (canRetarget && primaryWrist >= 0)
+    {
+        vr_vm_stabilize::Mat3x4 wristWorld{};
+        Vector gloveWrist{};
+        if (vr_vm_stabilize::SafeRead(source + primaryWrist,wristWorld) && vr->ReadLeftPistolGloveWrist(gloveWrist))
+        {
+            l4d2vr_dual::Matrix3x4 r{},l{},grip{},corrected{};
+            for (int row = 0; row < 3; ++row)
+                for (int col = 0; col < 4; ++col)
+                {
+                    r.m[row][col] = rightController.m[row][col]; l.m[row][col] = leftController.m[row][col];
+                    grip.m[row][col] = wristWorld.m[row][col]; corrected.m[row][col] = delta.m[row][col];
+                }
+            if (l4d2vr_pistol_fx::AlignGripPosition(r,l,grip,{gloveWrist.x,gloveWrist.y,gloveWrist.z},vr->m_VRScale,corrected))
+                for (int row = 0; row < 3; ++row) delta.m[row][3] = corrected.m[row][3];
+        }
+    }
     auto* output = vr_vm_stabilize::AllocStableBones(count, vr->m_RenderFrameSeq.load(std::memory_order_relaxed));
     if (!output) return singleLeft ? l4d2vr_dual::Hand::None : l4d2vr_dual::Hand::Right;
     for (int bone = 0; bone < count; ++bone)

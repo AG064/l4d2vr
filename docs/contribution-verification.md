@@ -301,3 +301,15 @@ Existing firearm-follow preference, colour, range and shadow settings remain
 unchanged. Geometry and sample-lifetime checks cover software behavior. Head-shadow
 visibility, walls, leaning, turns, character changes and down/revive still need
 native headset testing. This does not establish full body/head alignment.
+
+## Left-pistol glove grip position
+
+The left gun's calibrated transfer now aligns the primary gun's authored wrist
+grip point with the currently skinned left glove wrist. It uses the same glove
+offset, rotation and model scale as rendering, including physical-hand selection
+in left-handed mode. The correction changes translation while preserving the
+calibrated gun rotation. That avoids treating a glove art correction as gun aim.
+Missing native wrist bones, unloaded or stale glove data and implausible grip
+displacements retain the earlier controller transfer. Muzzle capture and contact
+publication see the corrected final gun bones. This still needs headset alignment,
+roll, handedness, scale and native-glove fallback acceptance.
