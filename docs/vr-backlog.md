@@ -102,9 +102,9 @@ when a supported host state and the optional native bindings are available.
 An empty reload waits for acknowledged chambering after the slide stroke;
 tactical insertion retains its chamber. Pending gestures retain their backend
 and native handle through transient snapshot gaps. Current native ammo modes,
-unsupported capacities and dual/retained-left pistols still use their existing
-fallbacks. Mirrored hand roles, independent dual gestures and persistent
-magazine-object ownership remain unfinished.
+unsupported capacities and dual pistols still use their existing fallbacks.
+Retained-left single gestures are connected below. Independent dual gestures
+and persistent magazine-object ownership remain unfinished.
 
 Retained-left pistol contact geometry now uses the same controller frame as the
 visible weapon. Retargeting precedes magazine/slide and calibration publication;
@@ -114,25 +114,34 @@ hand's current anchor. Bolt snapshots now publish an anchor as well. Tracking
 freshness and connected poses constrain the shared controller frame rather than
 using attack-action availability as a rendering gate. Offline geometry checks
 cover a freely moving right hand, left-gun motion/rotation and hand changes.
-The right-hand reload gesture roles still need mirroring before retained-left
-manual reload is enabled. Headset, replacement-model and queued-render alignment
-remain unverified.
+Headset, replacement-model and queued-render alignment remain unverified.
 
 The reload-support role now also selects finger-curl input, anatomical network
 grip curls, glove/native curl overrides, calibrated held-ammo anchoring, waist
 side and interaction/weapon haptics. Glove grip state is a physical-hand mask,
 so switching the support hand invalidates cached palettes and moves the correct
 hand into the viewmodel projection layer. The existing left-handed layout keeps
-its default physical-side mapping. Retained-left manual reload remains on the
-native fallback until grip pickup/drop and reload input ownership are coordinated.
+its default physical-side mapping. Reload-support input ownership is coordinated
+with pickup as described below.
 
 Grip pickup now respects the active reload-support hand. A reserved hand cannot
 issue contact pickup or inherit a late pickup's held grip, and remains gated
 until it releases before a new pickup. Menu, unavailable-action and eligibility
 boundaries also require release. Native pistol ownership still follows actual
-inventory changes; the gun hand's release/drop behavior is preserved. Reload
-gesture controller coordinates and per-hand transaction selection still need
-mirroring before retained-left manual reload is enabled.
+inventory changes; the gun hand's release/drop behavior is preserved.
+
+Retained-left single pistols now route the existing magazine/slide gestures
+through the left-hand host transaction path. The free right grip supplies reload
+interaction input; right jump and flashlight retain their gameplay functions.
+Controller positions, probe angles, gun-relative movement, chamber masks and
+reply settlement follow the retained hand. A matching host state and optional
+native bindings replace the shared reload pulse; unsupported states retain the
+native fallback. Hidden-magazine contact publication uses a retargeted copy, and
+the slide's runtime sign hint is converted back to the native pre-retarget frame.
+Empty/tactical, finite/infinite and retained-magazine sequences are tested for
+both single hands. Native hand/model alignment, queued rendering, downing and
+matching co-op acceptance still need headset testing. Independent dual reloads
+and persistent magazine objects remain unfinished.
 
 Client native reload prediction is now guarded by separately validated pistol
 reload and reload-completion bindings. Fresh matching physical ownership blocks

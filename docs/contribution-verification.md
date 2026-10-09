@@ -102,8 +102,10 @@ still requires model work; this tool does not reconstruct it.
   slide. A loaded chamber needs no cycle. Verify matching host acknowledgement
   and native clip/reserve before completion, retained rounds, rejected insertion
   while grip is held, missing/late slide regions, snapshot gaps, timeout recovery
-  and downing/weapon-switch restoration. Dual and retained-left pistols keep the
-  shared native reload fallback until their hand roles and contacts are connected.
+  and downing/weapon-switch restoration. Repeat with a retained-left pistol using
+  right grip, including native gun drop while the support hand holds ammo. Jump
+  and flashlight must keep working. Dual pistols keep the shared native reload
+  fallback; unsupported single-hand hosts/states retain native reload.
 - Native firing boundary: switch to pistols and immediately fire either hand;
   verify multi-shot frames, effects, native clip replication and optional-hook
   fallback. Runtime per-hand ammo delivery and replication acceptance remain

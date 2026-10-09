@@ -8,6 +8,9 @@
 // custom bone matrices for the draw call, so the viewmodel uses the controller-anchored pose
 // sampled on the render thread (no shared-state writes, no tearing).
 // ------------------------------------------------------------
+static l4d2vr_dual::Hand ApplyIndependentDualPistolBones(VR* vr, void* state,
+    const std::string& modelName, void*& bones);
+
 namespace vr_vm_stabilize
 {
     struct Mat3x4
@@ -9068,9 +9071,28 @@ namespace
         if (pullAxis.Length() <= 0.0001f)
             return;
 
-        const Vector runtimeAxis = HooksNormalizeVector(
+        Vector runtimeAxis = HooksNormalizeVector(
             vr->m_MagazineInteractionBoltPullAxisWorld,
             pullAxis);
+        if (vr->GetPrimaryPistolHand() == l4d2vr_dual::Hand::Left)
+        {
+            // Bolt bones are moved in the native primary frame before the
+            // retained pistol is retargeted. Convert the runtime sign hint back.
+            VrHandMatrix4 right{}, left{};
+            if (!vr->BuildPistolControllerWorld(false, right) || !vr->BuildPistolControllerWorld(true, left)) return;
+            l4d2vr_dual::Matrix3x4 r{}, l{}, identity{}, transfer{};
+            for (int row = 0; row < 3; ++row)
+            {
+                identity.m[row][row] = 1.0f;
+                for (int col = 0; col < 4; ++col)
+                { r.m[row][col] = VrHandMath::Get(right, row, col); l.m[row][col] = VrHandMath::Get(left, row, col); }
+            }
+            if (!l4d2vr_dual::Retarget(r, l, identity, identity, transfer)) return;
+            runtimeAxis = Vector(
+                transfer.m[0][0] * runtimeAxis.x + transfer.m[1][0] * runtimeAxis.y + transfer.m[2][0] * runtimeAxis.z,
+                transfer.m[0][1] * runtimeAxis.x + transfer.m[1][1] * runtimeAxis.y + transfer.m[2][1] * runtimeAxis.z,
+                transfer.m[0][2] * runtimeAxis.x + transfer.m[1][2] * runtimeAxis.y + transfer.m[2][2] * runtimeAxis.z);
+        }
         if (runtimeAxis.Length() > 0.0001f && DotProduct(pullAxis, runtimeAxis) < 0.0f)
             pullAxis = pullAxis * -1.0f;
 
@@ -22689,6 +22711,7 @@ namespace
         const ModelRenderInfo_t& info,
         void*& pCustomBoneToWorld)
     {
+        MagazineInteractionRenderSnapshotScope reloadSnapshot(vr && vr->m_Game && vr->m_Game->GetMatQueueMode() != 0);
         MagazineInteractionFrozenViewmodelPoseCache& frozenCache = GetMagazineInteractionFrozenViewmodelPoseCache();
 
         const bool magazineInteractionActive = vr && vr->IsMagazineInteractionViewmodelOverrideActive();
@@ -22853,6 +22876,14 @@ namespace
         if (hideNativeClip &&
             !vr->m_MagazineInteractionCalibrationOverlayActive.load(std::memory_order_relaxed))
         {
+            void* publishedBones = copiedBones;
+            struct PublicationHandScope
+            {
+                l4d2vr_dual::Hand previous = VR::t_MagazineContactHand;
+                ~PublicationHandScope() { VR::t_MagazineContactHand = previous; }
+            } publicationHandScope;
+            if (vr->GetPrimaryPistolHand() == l4d2vr_dual::Hand::Left)
+                VR::t_MagazineContactHand = ApplyIndependentDualPistolBones(vr, drawState, modelName, publishedBones);
             DrawCurrentWeaponMagazineBox(
                 vr,
                 drawState,
@@ -22861,7 +22892,7 @@ namespace
                 info.entity_index,
                 info.hitboxset,
                 info.pModelToWorld,
-                copiedBones);
+                publishedBones);
 
             auto isClipOrDescendant = [&](int bone)
                 {

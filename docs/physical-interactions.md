@@ -212,10 +212,18 @@ through a transient snapshot gap. A new weapon or lost capability resets it.
 The host's magazine/chamber state restores unfinished right-pistol interactions
 after a lifecycle boundary when fresh model contact regions are available.
 
-Dual and retained-left pistols still use their shared native reload fallback.
-Mirrored hand roles, independent dual reload gestures and persistent magazine
-objects remain unfinished. Matching builds and gameplay acceptance are required
-before claiming independent physical reloads.
+Retained-left single pistols now use the same host transaction path for their
+left-hand magazine/chamber. Their free right grip grabs ammo and operates the
+slide. Right jump and flashlight keep their existing functions. Grip reservation
+prevents that hand from also requesting weapon pickup. Unsupported host state or
+native bindings retain conventional reload. The source-side controller and
+mechanical-frame routing is tested offline; headset/model and co-op acceptance
+are pending.
+
+Dual pistols still use their shared native reload fallback. Independent dual
+reload gestures and persistent magazine objects remain unfinished. Matching
+builds and gameplay acceptance are required before claiming independent physical
+reloads.
 
 An optional client prediction-command hook scopes local pistol bullet effects,
 hand haptics and predicted hit feedback to the command Source is simulating.

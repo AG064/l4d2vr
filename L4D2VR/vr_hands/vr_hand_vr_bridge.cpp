@@ -1463,8 +1463,9 @@ namespace
     {
         if (!vr)
             return VrHandMath::Normalize(fallbackAxis);
-        const Vector forward = vr->m_RightControllerForwardUnforced.IsZero()
-            ? vr->m_RightControllerForward : vr->m_RightControllerForwardUnforced;
+        const bool gunLeft = vr->GetPrimaryPistolHand() == l4d2vr_dual::Hand::Left;
+        const Vector forward = gunLeft ? vr->m_LeftControllerForward :
+            (vr->m_RightControllerForwardUnforced.IsZero() ? vr->m_RightControllerForward : vr->m_RightControllerForwardUnforced);
         const Vector rear = VrHandMath::Normalize(forward * -1.0f);
         return rear.IsZero() ? VrHandMath::Normalize(fallbackAxis) : rear;
     }
@@ -4370,6 +4371,8 @@ bool VR::IsMagazineInteractionShotgunServerHookActive(int weaponId) const
 
 bool VR::IsMagazineInteractionDetachableBackendActive(int weaponId) const
 {
+    if (weaponId == static_cast<int>(C_WeaponCSBase::WeaponID::PISTOL) && PistolMagazineProtocolSupported())
+        return true;
     return l4d2vr_remote_mag::IsDetachable(weaponId) &&
         RemoteMagazineProtocolSupported();
 }
@@ -4839,22 +4842,23 @@ bool VR::UpdateMagazineInteraction(
     // Use one native transaction path for the listen-host and joining clients.
     // Latch its availability into the session identity so a late capability or
     // timeout cannot mix a predicted local ejection with a server insertion.
+    const auto pistolHand = GetPrimaryPistolHand();
+    const unsigned pistolBit = l4d2vr_pistol::Bit(pistolHand);
     l4d2vr_pistol_sync::State pistolMagazineState{};
     const bool pistolGestureEligible = vrHandsInteractionAvailable &&
         activeWeaponId == C_WeaponCSBase::WeaponID::PISTOL &&
         l4d2vr_shell::ValidHandle(activeWeaponHandle) &&
         !m_Game->IsDualPistolWeapon(activeWeapon) &&
-        !m_LeftHandPistolActive.load(std::memory_order_acquire) &&
         PistolMagazineProtocolSupported();
     const bool havePistolMagazineState = pistolGestureEligible &&
         ReadPistolMagazineState(localPlayer, activeWeapon, pistolMagazineState);
     const bool authoritativePistol = pistolGestureEligible &&
-        ((havePistolMagazineState && pistolMagazineState.left == 0 && (pistolMagazineState.physical & 2u) == 0u) ||
+        ((havePistolMagazineState && l4d2vr_pistol_reload::MatchesSingleHand(pistolMagazineState, pistolHand)) ||
             (IsMagazineInteractionManualActive() && m_MagazineInteractionPistolHandle == activeWeaponHandle &&
                 m_MagazineInteractionWeapon == activeWeapon &&
                 m_MagazineInteractionSession.OwnerTag() == reinterpret_cast<uintptr_t>(localPlayer)));
-    if (havePistolMagazineState && (pistolMagazineState.physical & 1u) != 0u)
-        m_PhysicalReloadObservedEmpty = (pistolMagazineState.chambered & 1u) == 0u || activeClip <= 0;
+    if (havePistolMagazineState && (pistolMagazineState.physical & pistolBit) != 0u)
+        m_PhysicalReloadObservedEmpty = (pistolMagazineState.chambered & pistolBit) == 0u || activeClip <= 0;
     const bool authoritativeMagazine = !authoritativePistol && vrHandsInteractionAvailable &&
         l4d2vr_magazine::UseAuthoritativeMagazine(RemoteMagazineProtocolSupported(),
             MagazineInteractionWeaponUsesDetachableMagazine(activeWeaponId),
@@ -4884,7 +4888,7 @@ bool VR::UpdateMagazineInteraction(
     if (!vrHandsInteractionAvailable)
         return false;
 
-    if (m_DualPistolsNativeReloadFallbackEnabled && m_Game && localPlayer &&
+    if (!authoritativePistol && m_DualPistolsNativeReloadFallbackEnabled && m_Game && localPlayer &&
         (m_LeftHandPistolActive.load(std::memory_order_acquire) ||
             m_Game->IsDualPistolWeapon(reinterpret_cast<C_WeaponCSBase*>(localPlayer->GetActiveWeapon()))))
     {
@@ -4927,6 +4931,17 @@ bool VR::UpdateMagazineInteraction(
         bool& value;
         ~BodyAmmoPublication() { destination.store(value, std::memory_order_release); }
     } bodyAmmoPublication{ m_BodyAmmoAvailable, bodyAmmoAvailable };
+    const bool supportLeft = MagazineReloadSupportIsLeft();
+    const Vector supportPosition = supportLeft ? m_LeftControllerPosAbs : m_RightControllerPosAbs;
+    const QAngle supportAngles = supportLeft ? m_LeftControllerAngAbs : m_RightControllerAngAbs;
+    const Vector supportForward = supportLeft ? m_LeftControllerForward : m_RightControllerForward;
+    const Vector supportRight = supportLeft ? m_LeftControllerRight : m_RightControllerRight;
+    const Vector supportUp = supportLeft ? m_LeftControllerUp : m_RightControllerUp;
+    const Vector gunPosition = supportLeft ? m_RightControllerPosAbs : m_LeftControllerPosAbs;
+    const Vector gunForward = supportLeft ? m_RightControllerForward : m_LeftControllerForward;
+    const Vector gunForwardUnforced = supportLeft ? m_RightControllerForwardUnforced : m_LeftControllerForward;
+    const Vector gunRight = supportLeft ? m_RightControllerRight : m_LeftControllerRight;
+    const Vector gunUp = supportLeft ? m_RightControllerUp : m_LeftControllerUp;
     const auto now = std::chrono::steady_clock::now();
     const bool magazineInteractionPhysicalLeftHand = IsGameplayHandLeftPhysical(MagazineReloadSupportIsLeft());
     if (m_MagazineInteractionSuppressLeftInputUntilRelease && !leftGripDown)
@@ -5012,16 +5027,16 @@ bool VR::UpdateMagazineInteraction(
 
     auto leftControllerPosRelativeToHmd = [&]() -> Vector
     {
-        return m_LeftControllerPosAbs - m_HmdPosAbs;
+        return supportPosition - m_HmdPosAbs;
     };
 
     auto leftControllerPosRelativeToWeapon = [&]() -> Vector
     {
         Vector local{};
-        const Vector forward = m_RightControllerForwardUnforced.IsZero()
-            ? m_RightControllerForward : m_RightControllerForwardUnforced;
-        if (!l4d2vr_interaction::LocalHandPosition(m_LeftControllerPosAbs, m_RightControllerPosAbs,
-                forward, m_RightControllerUp, local))
+        const Vector forward = gunForwardUnforced.IsZero()
+            ? gunForward : gunForwardUnforced;
+        if (!l4d2vr_interaction::LocalHandPosition(supportPosition, gunPosition,
+                forward, gunUp, local))
             return Vector(std::numeric_limits<float>::quiet_NaN(), 0.0f, 0.0f);
         return local;
     };
@@ -5128,10 +5143,10 @@ bool VR::UpdateMagazineInteraction(
     {
         const VrHandMatrix4 controllerWorld = MagazineInteractionBuildViewmodelReprojectedControllerWorld(
             this,
-            m_LeftControllerPosAbs,
-            m_LeftControllerForward,
-            m_LeftControllerRight,
-            m_LeftControllerUp);
+            supportPosition,
+            supportForward,
+            supportRight,
+            supportUp);
         VrHandMatrix4 orientationWorld = MagazineInteractionBuildWorldFromControllerRelation(
             controllerWorld,
             m_MagazineInteractionControllerToMagazine);
@@ -5153,10 +5168,10 @@ bool VR::UpdateMagazineInteraction(
     {
         const VrHandMatrix4 controllerWorld = MagazineInteractionBuildViewmodelReprojectedControllerWorld(
             this,
-            m_LeftControllerPosAbs,
-            m_LeftControllerForward,
-            m_LeftControllerRight,
-            m_LeftControllerUp);
+            supportPosition,
+            supportForward,
+            supportRight,
+            supportUp);
         const l4d2vr_ammo_grip::Pose pose{m_MagazineInteractionControllerToMagazine,
             m_MagazineInteractionHeldMagazineCenterOffsetLocal};
         VrHandMatrix4 world{};
@@ -5563,7 +5578,7 @@ bool VR::UpdateMagazineInteraction(
         if (authoritativePistol && !pistolCycleConfirmed)
         {
             if (BeginPistolMagazineRequest(m_CurrentPredictedHitFeedbackCmdNumber,
-                l4d2vr_pistol::Hand::Right, l4d2vr_pistol::MagazineAction::Cycle))
+                pistolHand, l4d2vr_pistol::MagazineAction::Cycle))
             {
                 m_MagazineInteractionState = MagazineInteractionManualState::WaitingForServerPistolCycle;
                 m_PistolMagazineCycleSuppressInput = suppressLeftInputUntilRelease;
@@ -5962,8 +5977,8 @@ bool VR::UpdateMagazineInteraction(
 
         outDistance = MagazineInteractionNearestLeftHandProbeDistanceSourceUnits(
             targetBox,
-            m_LeftControllerPosAbs,
-            m_LeftControllerAngAbs,
+            supportPosition,
+            supportAngles,
             m_VRScale,
             this);
         return outDistance <= 0.0f;
@@ -5997,8 +6012,8 @@ bool VR::UpdateMagazineInteraction(
         const float exclusionPadding = std::max(0.0f, 0.006f * m_VRScale);
         const float distance = MagazineInteractionNearestLeftHandProbeDistanceSourceUnits(
             magazineTouchBox,
-            m_LeftControllerPosAbs,
-            m_LeftControllerAngAbs,
+            supportPosition,
+            supportAngles,
             m_VRScale,
             this);
         return distance <= exclusionPadding;
@@ -6019,8 +6034,8 @@ bool VR::UpdateMagazineInteraction(
 
         outDistance = MagazineInteractionNearestLeftHandProbeDistanceSourceUnits(
             stockBox,
-            m_LeftControllerPosAbs,
-            m_LeftControllerAngAbs,
+            supportPosition,
+            supportAngles,
             m_VRScale,
             this);
         return outDistance <= 0.0f;
@@ -6592,7 +6607,7 @@ bool VR::UpdateMagazineInteraction(
         int ammoType = -1, reserve = -1, reserveOffset = -1;
         if (authoritativePistol)
         {
-            if (!BeginPistolMagazineRequest(m_CurrentPredictedHitFeedbackCmdNumber, l4d2vr_pistol::Hand::Right,
+            if (!BeginPistolMagazineRequest(m_CurrentPredictedHitFeedbackCmdNumber, pistolHand,
                 static_cast<l4d2vr_pistol::MagazineAction>(action))) return false;
         }
         else if (!readClientPrimaryAmmo(ammoType, reserve, reserveOffset) ||
@@ -6622,7 +6637,7 @@ bool VR::UpdateMagazineInteraction(
         refreshSocketFromPublishedViewmodelBox();
         rebuildInputSocketFromSessionBox();
         const auto controller = MagazineInteractionBuildViewmodelReprojectedControllerWorld(this,
-            m_LeftControllerPosAbs, m_LeftControllerForward, m_LeftControllerRight, m_LeftControllerUp);
+            supportPosition, supportForward, supportRight, supportUp);
         Vector palm(0.0f, 0.0f, 0.0f);
         bool wrist = false;
         if (!MagazineInteractionResolveFreshMagazineHandAnchorWorld(this, controller, palm, wrist)) return false;
@@ -6653,12 +6668,12 @@ bool VR::UpdateMagazineInteraction(
             if (!PistolMagazineRequestPending()) CancelMagazineInteractionManual();
             return false;
         }
-        const auto outcome = l4d2vr_pistol_reload::SettleGesture(reply, l4d2vr_pistol::Hand::Right);
+        const auto outcome = l4d2vr_pistol_reload::SettleGesture(reply, pistolHand);
         if (outcome == l4d2vr_pistol_reload::GestureOutcome::Cycled)
             completeBoltStage("pistol-cycle-confirmed", m_PistolMagazineCycleSuppressInput, true);
         else if (outcome == l4d2vr_pistol_reload::GestureOutcome::RetryCycle)
         {
-            if (activeClip <= 0 || (havePistolMagazineState && (pistolMagazineState.chambered & 1u) != 0u))
+            if (activeClip <= 0 || (havePistolMagazineState && (pistolMagazineState.chambered & pistolBit) != 0u))
                 CancelMagazineInteractionManual();
             else
             {
@@ -6685,7 +6700,7 @@ bool VR::UpdateMagazineInteraction(
                 if (!PistolMagazineRequestPending()) CancelMagazineInteractionManual();
                 return false;
             }
-            const auto outcome = l4d2vr_pistol_reload::SettleGesture(pistolReply, l4d2vr_pistol::Hand::Right);
+            const auto outcome = l4d2vr_pistol_reload::SettleGesture(pistolReply, pistolHand);
             if (outcome == l4d2vr_pistol_reload::GestureOutcome::Cancel ||
                 outcome == l4d2vr_pistol_reload::GestureOutcome::Cycled ||
                 outcome == l4d2vr_pistol_reload::GestureOutcome::RetryCycle)
@@ -6698,7 +6713,7 @@ bool VR::UpdateMagazineInteraction(
             if (pistolReply.status == l4d2vr_pistol_reload::Status::Applied)
             {
                 m_MagazineInteractionOneInChamber =
-                    (pistolReply.result.state.chambered & 1u) != 0u && activeClip > 0;
+                    (pistolReply.result.state.chambered & pistolBit) != 0u && activeClip > 0;
                 m_MagazineInteractionChamberEmpty = !m_MagazineInteractionOneInChamber;
             }
         }
@@ -6772,8 +6787,8 @@ bool VR::UpdateMagazineInteraction(
     }
 
     if (authoritativePistol && havePistolMagazineState && !IsMagazineInteractionManualActive() &&
-        (pistolMagazineState.physical & 1u) != 0u &&
-        ((pistolMagazineState.attached & 1u) == 0u || (m_PhysicalReloadObservedEmpty && activeClip > 0)))
+        (pistolMagazineState.physical & pistolBit) != 0u &&
+        ((pistolMagazineState.attached & pistolBit) == 0u || (m_PhysicalReloadObservedEmpty && activeClip > 0)))
     {
         // Restore the host's magazine/chamber state after a weapon or player
         // lifecycle boundary. Do not eject a magazine that is already out.
@@ -6783,7 +6798,7 @@ bool VR::UpdateMagazineInteraction(
         beginMagazineInteractionSession(box);
         m_MagazineInteractionOneInChamber = !m_PhysicalReloadObservedEmpty;
         m_MagazineInteractionChamberEmpty = m_PhysicalReloadObservedEmpty;
-        m_MagazineInteractionOldMagazinePulled = (pistolMagazineState.attached & 1u) == 0u;
+        m_MagazineInteractionOldMagazinePulled = (pistolMagazineState.attached & pistolBit) == 0u;
         m_MagazineInteractionState = MagazineInteractionManualState::WaitingForFreshMagazine;
         if (!m_MagazineInteractionOldMagazinePulled && activeClip > 0)
         {
@@ -7199,8 +7214,8 @@ bool VR::UpdateMagazineInteraction(
         }
         const float grabDistance = MagazineInteractionNearestLeftHandProbeDistanceSourceUnits(
             grabBox,
-            m_LeftControllerPosAbs,
-            m_LeftControllerAngAbs,
+            supportPosition,
+            supportAngles,
             m_VRScale,
             this);
         const float grabRange = std::max(0.0f, MagazineInteractionResolveBoltGrabPaddingMeters(this)) * m_VRScale;
@@ -7371,8 +7386,8 @@ bool VR::UpdateMagazineInteraction(
             {
                 const float grabDistance = MagazineInteractionNearestLeftHandProbeDistanceSourceUnits(
                     boltBox,
-                    m_LeftControllerPosAbs,
-                    m_LeftControllerAngAbs,
+                    supportPosition,
+                    supportAngles,
                     m_VRScale,
                     this);
                 const float grabRange = std::max(0.0f, MagazineInteractionResolveBoltGrabPaddingMeters(this)) * m_VRScale;
@@ -7424,8 +7439,8 @@ bool VR::UpdateMagazineInteraction(
         {
             freshGrabDistance = MagazineInteractionNearestLeftHandProbeDistanceSourceUnits(
                 freshGrabBox,
-                m_LeftControllerPosAbs,
-                m_LeftControllerAngAbs,
+                supportPosition,
+                supportAngles,
                 m_VRScale,
                 this);
             updateMagazineInteractionContactHaptic(
@@ -7469,10 +7484,10 @@ bool VR::UpdateMagazineInteraction(
 
             const VrHandMatrix4 controllerWorld = MagazineInteractionBuildViewmodelReprojectedControllerWorld(
                 this,
-                m_LeftControllerPosAbs,
-                m_LeftControllerForward,
-                m_LeftControllerRight,
-                m_LeftControllerUp);
+                supportPosition,
+                supportForward,
+                supportRight,
+                supportUp);
             bool usedWristAnchor = false;
             Vector targetHandAnchorWorld{};
             Vector freshHandAnchorLocal{};
@@ -7803,8 +7818,8 @@ bool VR::UpdateMagazineInteraction(
     }
     const float distance = MagazineInteractionNearestLeftHandProbeDistanceSourceUnits(
         oldMagazineTouchBox,
-        m_LeftControllerPosAbs,
-        m_LeftControllerAngAbs,
+        supportPosition,
+        supportAngles,
         m_VRScale,
         this);
     const bool touchingOldMagazine = distance <= grabPadding;
@@ -7843,10 +7858,10 @@ bool VR::UpdateMagazineInteraction(
         oldMagazineTouchWorld = m_MagazineInteractionSocketWorld;
     const VrHandMatrix4 controllerWorld = MagazineInteractionBuildViewmodelReprojectedControllerWorld(
         this,
-        m_LeftControllerPosAbs,
-        m_LeftControllerForward,
-        m_LeftControllerRight,
-        m_LeftControllerUp);
+        supportPosition,
+        supportForward,
+        supportRight,
+        supportUp);
     {
         m_MagazineInteractionControllerToMagazine =
             MagazineInteractionBuildControllerRelation(controllerWorld, oldMagazineTouchWorld);

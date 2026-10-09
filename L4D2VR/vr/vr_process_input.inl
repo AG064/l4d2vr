@@ -294,7 +294,16 @@ void VR::ProcessInput()
     const bool leftHeldPistol = m_DualPistolsIndependentHandsEnabled && !m_MouseModeEnabled &&
         nativePistol && !nativeDualPistols && m_PistolOwnershipMask.load(std::memory_order_acquire) == 2u;
     m_LeftHandPistolActive.store(leftHeldPistol, std::memory_order_release);
-    const bool nativeDualReload = m_DualPistolsNativeReloadFallbackEnabled && (nativeDualPistols || leftHeldPistol);
+    l4d2vr_pistol_sync::State leftPistolReloadState{};
+    const bool leftPistolPhysicalReload = leftHeldPistol &&
+        ((ReadPistolMagazineState(localPlayer, reinterpret_cast<C_WeaponCSBase*>(localPlayer->GetActiveWeapon()), leftPistolReloadState) &&
+            l4d2vr_pistol_reload::MatchesSingleHand(leftPistolReloadState, l4d2vr_pistol::Hand::Left)) ||
+            (PistolMagazineProtocolSupported() && IsMagazineInteractionManualActive() &&
+                m_MagazineInteractionPistolHandle != 0u &&
+                m_MagazineInteractionWeapon == reinterpret_cast<C_WeaponCSBase*>(localPlayer->GetActiveWeapon()) &&
+                m_MagazineInteractionSession.OwnerTag() == reinterpret_cast<uintptr_t>(localPlayer)));
+    const bool nativeDualReload = m_DualPistolsNativeReloadFallbackEnabled &&
+        (nativeDualPistols || (leftHeldPistol && !leftPistolPhysicalReload));
     nativeDualReloadState = nativeDualReload ? 1u : 0u;
     const bool dualPistolsActive = m_DualPistolsIndependentHandsEnabled && !m_MouseModeEnabled && nativeDualPistols &&
         m_ServerPhysicalInteractionVersion.load(std::memory_order_acquire) == 1u;
@@ -473,7 +482,8 @@ void VR::ProcessInput()
     const vr::ETrackedControllerRole gameplayLeftRole = roleForGameplayHand(true);
     const vr::ETrackedControllerRole gameplayRightRole = roleForGameplayHand(false);
 
-    if ((m_GripReleaseDropEnabled || m_BodyGripInventoryEnabled) && m_Input &&
+    bool rightGripValid = false, rightGripDown = false, rightGripJustPressed = false;
+    if ((m_GripReleaseDropEnabled || m_BodyGripInventoryEnabled || leftPistolPhysicalReload) && m_Input &&
         m_ActionWeaponGrip != vr::k_ulInvalidActionHandle)
     {
         vr::VRInputValueHandle_t gripSource = vr::k_ulInvalidInputValueHandle;
@@ -484,6 +494,9 @@ void VR::ProcessInput()
             m_Input->GetDigitalActionData(m_ActionWeaponGrip, &gripData,
                 sizeof(gripData), gripSource) == vr::VRInputError_None)
         {
+            rightGripValid = gripData.bActive;
+            rightGripDown = gripData.bActive && gripData.bState;
+            rightGripJustPressed = rightGripDown && gripData.bChanged;
             weaponGripInputState = gripData.bActive
                 ? (1u | (gripData.bState ? 2u : 0u)) : 0u;
         }
@@ -723,25 +736,31 @@ void VR::ProcessInput()
         m_MagazineInteractionThreeFingerCurlDownPrev = false;
     }
 
-    const bool magazineButtonGripDown =
+    const bool legacyMagazineButtonGripDown =
         (offHandGripValid && offHandGripDown) ||
         (reloadFromLeftHand && reloadButtonDown) ||
         (crouchFromLeftHand && crouchButtonDown) ||
         (jumpFromLeftHand && jumpButtonDown) ||
         (secondaryAttackFromLeftHand && secondaryAttackActive);
-    const bool magazineButtonGripJustPressed =
+    const bool legacyMagazineButtonGripJustPressed =
         (offHandGripValid && offHandGripJustPressed) ||
         (reloadFromLeftHand && reloadJustPressed) ||
         (crouchFromLeftHand && crouchJustPressed) ||
         (jumpFromLeftHand && jumpJustPressed) ||
         (secondaryAttackFromLeftHand && secondaryAttackJustPressed);
+    // A retained-left pistol reload uses only the free right grip. Other right
+    // buttons keep their gameplay functions, including jump and flashlight.
+    const bool magazineButtonGripDown = leftHeldPistol
+        ? (rightGripValid && rightGripDown) : legacyMagazineButtonGripDown;
+    const bool magazineButtonGripJustPressed = leftHeldPistol
+        ? (rightGripValid && rightGripJustPressed) : legacyMagazineButtonGripJustPressed;
     const bool magazineButtonGripJustPressedFromReload = reloadFromLeftHand && reloadJustPressed;
     const bool magazineButtonGripJustPressedFromOther =
         (crouchFromLeftHand && crouchJustPressed) ||
         (jumpFromLeftHand && jumpJustPressed) ||
         (secondaryAttackFromLeftHand && secondaryAttackJustPressed);
     const bool allowGameplayInputOnTwoHandedGripRelease =
-        magazineButtonGripInput &&
+        !leftHeldPistol && magazineButtonGripInput &&
         magazineButtonGripJustPressedFromReload &&
         !magazineButtonGripJustPressedFromOther;
     const bool thumbIndexWasDown = m_MagazineInteractionThumbIndexCurlDownPrev;
@@ -800,7 +819,7 @@ void VR::ProcessInput()
         (!m_Game->m_VguiSurface || !m_Game->m_VguiSurface->IsCursorVisible()),
         magazineReleaseJustPressed, m_MagazineInteractionSessionGeneration.load(std::memory_order_acquire),
         static_cast<uint32_t>(GetTickCount64()));
-    if (IsMagazineInteractionLeftHandActive())
+    if (MagazineInteractionOwnsGrip(true))
     {
         if (reloadFromLeftHand)
         {
