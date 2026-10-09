@@ -11,7 +11,7 @@ friend-hosted shell and detachable-magazine transactions. See `physical-interact
 `manual-reload-input.md`, `weapon-calibration.md` and `vr-backlog.md` for their
 controls, limitations and remaining tests.
 
-The current runtime source passed 21 CTest suites and Windows Release x86
+The current runtime source passed 22 CTest suites and Windows Release x86
 DLL/pose-server builds with v143 in a temporary build tree. Seven native ammo
 signatures matched uniquely against the installed server binary. These are
 offline checks. Later documentation edits do not change the tested runtime.

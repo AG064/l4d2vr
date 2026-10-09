@@ -1275,10 +1275,14 @@ void __fastcall Hooks::dPistolPlayerRunCommand(void* owner, void*, CUserCmd* com
     }
     if (context.index > 0)
     {
+        m_Game->ProcessPistolMagazineRequests(context.index, context.command, static_cast<unsigned short>(context.serial));
         const auto active = ReadServerReloadWeapon(owner);
         l4d2vr_pistol::AmmoSnapshot current{}; int index = -1;
         if (ManualPistolReadAmmo(owner, reinterpret_cast<void*>(active.pointer), current, index) && index == context.index)
-            m_Game->PublishPistolAmmoState(index, current, context.command);
+        {
+            if (ManualPistolReadAmmo(owner, reinterpret_cast<void*>(active.pointer), current, index))
+                m_Game->PublishPistolAmmoState(index, current, context.command);
+        }
     }
 }
 
@@ -1290,7 +1294,7 @@ void __fastcall Hooks::dPistolGunFire(void* weapon, void*)
     const bool track = context && context->poseValid && context->attack && m_VR &&
         m_VR->m_DualPistolsIndependentHandsEnabled && ManualPistolReadAmmo(context->owner, weapon, before, index) &&
         index == context->index && before.ownerSerial == context->serial;
-    if (track && before.dual && m_Game->PistolAmmoClientReady(index, before.ownerSerial) &&
+    if (track && m_Game->PistolAmmoClientReady(index, before.ownerSerial) &&
         m_Game->GetConVarIntDirect("sv_infinite_ammo", -1) == 0)
     {
         int right = 0, left = 0;
@@ -1299,7 +1303,12 @@ void __fastcall Hooks::dPistolGunFire(void* weapon, void*)
             std::lock_guard<std::mutex> lock(m_Game->m_PistolAmmoMutex);
             known = m_Game->m_PistolAmmo[index].Counts(before, right, left);
         }
-        if (known && l4d2vr_pistol_prediction::BlocksEmptyHand(true, true, context->pose.hand, right, left))
+        bool unchambered = false;
+        {
+            std::lock_guard<std::mutex> lock(m_Game->m_PistolAmmoMutex);
+            unchambered = m_Game->m_PistolAmmo[index].BlocksUnchambered(before, context->pose.hand);
+        }
+        if (unchambered || (known && l4d2vr_pistol_prediction::BlocksEmptyHand(before.dual, true, context->pose.hand, right, left)))
         {
             if (m_VR->m_VrHandsDebugLog)
                 Game::logMsg("[VR][PistolAmmo][server] blocked player=%d command=%d hand=%u right=%d left=%d",
@@ -1855,6 +1864,7 @@ void __fastcall Hooks::dServerGameClientsClientCommand(
     if (m_Game && m_Game->HandleRemoteShellCommand(player, sourceCommand)) return;
     if (m_Game && m_Game->HandleRemoteMagazineCommand(player, sourceCommand)) return;
     if (m_Game && m_Game->HandlePistolAmmoCommand(player, sourceCommand)) return;
+    if (m_Game && m_Game->HandlePistolMagazineCommand(player, sourceCommand)) return;
 	if (m_Game &&
 		m_Game->HandleBuiltinVRPoseRelayCommand(
 			player,

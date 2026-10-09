@@ -3313,16 +3313,19 @@ void VR::OfferPistolAmmoProtocol(unsigned version, uint32_t token)
     {
         std::lock_guard<std::mutex> lock(m_PistolAmmoClientMutex);
         const auto previousToken = m_PistolAmmoClient.Token();
-        if (ammoModeAvailable && m_IsVREnabled && m_EncodeVRUsercmd && !m_ForceNonVRServerMovement &&
+        if (!m_PistolMagazineRequest.Blocked(token) && ammoModeAvailable && m_IsVREnabled && m_EncodeVRUsercmd && !m_ForceNonVRServerMovement &&
             l4d2vr_wire::SupportsPhysicalVersion(m_ServerPhysicalInteractionVersion.load(std::memory_order_acquire)) &&
             m_DualPistolsIndependentHandsEnabled && Hooks::hkClientPistolRunCommand.isEnabled &&
             Hooks::hkClientPistolGunFire.isEnabled)
             accepted = m_PistolAmmoClient.Offer(version, token);
         else m_PistolAmmoClient.Disconnect();
+        if (accepted) m_PistolMagazineRequest.Offer(token);
+        else if (!m_PistolMagazineRequest.Blocked(token)) m_PistolMagazineRequest.Disconnect();
         if (!accepted || m_PistolAmmoClient.Token() != previousToken)
         {
             m_PistolAmmoPrediction.Reset();
-            m_PistolAmmoCounts.store(0xffffffffu, std::memory_order_release);
+            m_PistolMagazineReplyReady = false;
+            m_PistolAmmoCounts.store(0xffffffffffffffffull, std::memory_order_release);
         }
     }
     if (m_Game && version == l4d2vr_pistol_sync::kVersion && token)
@@ -3343,7 +3346,8 @@ void VR::DisconnectPistolAmmoProtocol()
     std::lock_guard<std::mutex> lock(m_PistolAmmoClientMutex);
     m_PistolAmmoClient.Disconnect();
     m_PistolAmmoPrediction.Reset();
-    m_PistolAmmoCounts.store(0xffffffffu, std::memory_order_release);
+    m_PistolMagazineRequest.Disconnect(); m_PistolMagazineReplyReady = false;
+    m_PistolAmmoCounts.store(0xffffffffffffffffull, std::memory_order_release);
 }
 namespace
 {
@@ -3365,6 +3369,25 @@ namespace
         __except (EXCEPTION_EXECUTE_HANDLER) { return false; }
 #endif
     }
+    bool ReadClientPistolMagazineContext(Game* game, C_BasePlayer*& player, C_WeaponCSBase*& weapon,
+        uint32_t& handle, int& clip, int& reserve, bool& dual)
+    {
+        if (!game || !game->m_EngineClient) return false;
+#ifdef _MSC_VER
+        __try
+        {
+#endif
+            player = reinterpret_cast<C_BasePlayer*>(game->GetClientEntity(game->m_EngineClient->GetLocalPlayer()));
+            weapon = player ? reinterpret_cast<C_WeaponCSBase*>(player->GetActiveWeapon()) : nullptr;
+            int ammoType = -1;
+            return ReadClientPistolAmmoSnapshot(game, player, weapon, handle, clip, dual) &&
+                MagazineInteractionTryReadValue(weapon, VR::kPrimaryAmmoTypeOffset, ammoType) && ammoType >= 0 && ammoType < 32 &&
+                MagazineInteractionTryReadValue(player, VR::kAmmoArrayOffset + ammoType * static_cast<int>(sizeof(int)), reserve);
+#ifdef _MSC_VER
+        }
+        __except (EXCEPTION_EXECUTE_HANDLER) { return false; }
+#endif
+    }
 }
 void VR::UpdatePistolAmmoSnapshot(C_BasePlayer* player, C_WeaponCSBase* weapon)
 {
@@ -3380,15 +3403,34 @@ void VR::UpdatePistolAmmoSnapshot(C_BasePlayer* player, C_WeaponCSBase* weapon)
     l4d2vr_pistol_sync::State state{};
     // Serialize publication with disconnect and renegotiation, so an older input
     // sample cannot restore counts after those paths cleared the session.
+    uint32_t revokeToken = 0u;
+    {
     std::lock_guard<std::mutex> lock(m_PistolAmmoClientMutex);
     const auto owner = handle ? reinterpret_cast<uintptr_t>(player) : 0u;
     if (!m_PistolAmmoClient.ReadBaseline(owner, handle, dual, GetTickCount64(), state))
         m_PistolAmmoPrediction.Reset();
     else if (m_PistolAmmoPrediction.Refresh(owner, state))
         m_PistolAmmoPrediction.Counts(clip, 0u, 0u, right, left);
-    const uint32_t packed = right >= 0 && left >= 0
-        ? static_cast<uint32_t>(right) | (static_cast<uint32_t>(left) << 16) : 0xffffffffu;
-    m_PistolAmmoCounts.store(packed, std::memory_order_release);
+    const uint64_t packed = l4d2vr_pistol_prediction::Pack(right, left, state.physical, state.chambered);
+    l4d2vr_pistol_reload::Reply reloadReply{};
+    const auto reloadPoll = m_PistolMagazineRequest.Update(owner, handle, GetTickCount64(), state,
+        packed != 0xffffffffffffffffull, reloadReply);
+    if (reloadPoll == l4d2vr_pistol_reload::Client::Poll::Result || reloadPoll == l4d2vr_pistol_reload::Client::Poll::Timeout)
+    { m_PistolMagazineReply = reloadReply; m_PistolMagazineReplyReady = true; }
+    if (reloadPoll == l4d2vr_pistol_reload::Client::Poll::Timeout)
+    {
+        revokeToken = m_PistolAmmoClient.Token();
+        m_PistolAmmoClient.Disconnect(); m_PistolAmmoPrediction.Reset();
+        m_PistolAmmoCounts.store(0xffffffffffffffffull, std::memory_order_release);
+    }
+    else m_PistolAmmoCounts.store(packed, std::memory_order_release);
+    }
+    if (revokeToken && m_Game)
+    {
+        char command[96]{};
+        std::snprintf(command, sizeof(command), "l4d2vr_pistol_ammo_ack 0 %u\n", revokeToken);
+        m_Game->ClientCmd_Unrestricted(command);
+    }
 }
 
 bool VR::PreparePistolPredictionFire(C_BasePlayer* player, C_WeaponCSBase* weapon, int command,
@@ -3411,6 +3453,9 @@ bool VR::PreparePistolPredictionFire(C_BasePlayer* player, C_WeaponCSBase* weapo
     int right = -1, left = -1;
     m_PistolAmmoPrediction.Counts(clip, static_cast<uint32_t>(command), ordinal, right, left);
     blocked = l4d2vr_pistol_prediction::BlocksEmptyHand(dual, consumesAmmo, hand, right, left);
+    const unsigned bit = l4d2vr_pistol::Bit(hand);
+    blocked = blocked || (consumesAmmo && right >= 0 && left >= 0 &&
+        (state.physical & bit) != 0u && (state.chambered & bit) == 0u);
     fire = {owner, reinterpret_cast<uintptr_t>(weapon), state.token, handle,
         static_cast<uint32_t>(command), ordinal, hand, clip, dual};
     return true;
@@ -3431,14 +3476,52 @@ void VR::RecordPistolPredictionFire(const l4d2vr_pistol_prediction::Fire& fire, 
         m_PistolAmmoPrediction.Record(fire.command, fire.ordinal, fire.hand, fire.clip, clip, bullets);
     int right = -1, left = -1;
     m_PistolAmmoPrediction.Counts(clip, 0u, 0u, right, left);
-    m_PistolAmmoCounts.store(right >= 0 && left >= 0
-        ? static_cast<uint32_t>(right) | (static_cast<uint32_t>(left) << 16) : 0xffffffffu, std::memory_order_release);
+    m_PistolAmmoCounts.store(l4d2vr_pistol_prediction::Pack(right, left, state.physical, state.chambered), std::memory_order_release);
 }
 
 void VR::CancelPistolPredictionFire(const l4d2vr_pistol_prediction::Fire& fire)
 {
     std::lock_guard<std::mutex> lock(m_PistolAmmoClientMutex);
     if (fire.token == m_PistolAmmoClient.Token()) m_PistolAmmoPrediction.Cancel(fire.command, fire.ordinal);
+}
+
+bool VR::BeginPistolMagazineRequest(int commandNumber, l4d2vr_pistol::Hand hand, l4d2vr_pistol::MagazineAction action)
+{
+    if (commandNumber <= 0 || !m_Game || !m_Game->m_EngineClient || !m_IsVREnabled || !m_MagazineInteractionEnabled || !m_DualPistolsIndependentHandsEnabled ||
+        !m_FirstPersonControlReady.load(std::memory_order_acquire) ||
+        m_Game->GetConVarIntDirect("sv_infinite_ammo", -1) != 0) return false;
+    C_BasePlayer* player = nullptr; C_WeaponCSBase* weapon = nullptr;
+    uint32_t handle = 0u; int clip = -1, reserve = -1; bool dual = false;
+    if (!ReadClientPistolMagazineContext(m_Game, player, weapon, handle, clip, reserve, dual)) return false;
+    l4d2vr_pistol_reload::Request request{};
+    {
+        std::lock_guard<std::mutex> lock(m_PistolAmmoClientMutex);
+        l4d2vr_pistol_sync::State state{};
+        if (!m_PistolAmmoClient.ReadBaseline(reinterpret_cast<uintptr_t>(player), handle, dual, GetTickCount64(), state) ||
+            !m_PistolMagazineRequest.Begin(handle, clip, reserve, hand, action,
+                static_cast<uint32_t>(commandNumber), reinterpret_cast<uintptr_t>(player), GetTickCount64(), request))
+            return false;
+        m_PistolMagazineReplyReady = false;
+    }
+    char command[192]{};
+    std::snprintf(command, sizeof(command), "l4d2vr_pistol_mag_v1 %u %u %u %u %d %d %u %u\n",
+        request.token, request.sequence, request.handle, request.command, request.clip, request.reserve,
+        static_cast<unsigned>(hand), static_cast<unsigned>(action));
+    m_Game->ClientCmd_Unrestricted(command);
+    return true;
+}
+
+void VR::ReceivePistolMagazineReply(const l4d2vr_pistol_reload::Reply& reply)
+{
+    std::lock_guard<std::mutex> lock(m_PistolAmmoClientMutex);
+    m_PistolMagazineRequest.Receive(reply);
+}
+
+bool VR::ConsumePistolMagazineReply(l4d2vr_pistol_reload::Reply& reply)
+{
+    std::lock_guard<std::mutex> lock(m_PistolAmmoClientMutex);
+    if (!m_PistolMagazineReplyReady) return false;
+    reply = m_PistolMagazineReply; m_PistolMagazineReplyReady = false; return true;
 }
 void VR::ReceiveRemoteMagazineReply(const l4d2vr_remote_mag::Reply& reply)
 {

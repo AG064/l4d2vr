@@ -4,24 +4,34 @@
 
 namespace l4d2vr_pistol_sync
 {
-    constexpr unsigned kVersion = 2u;
+    constexpr unsigned kVersion = 3u;
     constexpr std::uint64_t kHeartbeatMs = 200u, kExpiryMs = 1000u;
     struct State
     {
         std::uint32_t token = 0u, sequence = 0u, handle = 0u, command = 0u;
         int capacity = 0, clip = 0, right = 0, left = 0;
         bool known = false, dual = false;
+        unsigned physical = 0u, attached = 0u, chambered = 0u;
+        std::uint32_t reloadSequence = 0u;
         bool ValidContents() const
         {
             if (!l4d2vr_shell::ValidHandle(handle) || !command || command > 0x7fffffffu ||
                 capacity <= 0 || capacity > 15 || clip < 0 || clip > capacity * (dual ? 2 : 1) ||
-                right < 0 || left < 0 || right > capacity || left > capacity) return false;
-            return known ? right + left == clip && (dual || right == 0 || left == 0) : right == 0 && left == 0;
+                right < 0 || left < 0 || right > capacity || left > capacity ||
+                physical > 3u || attached > 3u || chambered > 3u ||
+                ((chambered & 1u) != 0u && right == 0) || ((chambered & 2u) != 0u && left == 0) ||
+                (!physical && (attached || chambered)) ||
+                (!dual && (physical == 3u || ((attached | chambered) & ~physical) != 0u ||
+                    (physical == 1u && left > 0) || (physical == 2u && right > 0)))) return false;
+            return known ? right + left == clip && (dual || right == 0 || left == 0) :
+                right == 0 && left == 0 && !physical && !attached && !chambered;
         }
         bool SameContents(const State& other) const
         {
             return handle == other.handle && capacity == other.capacity && clip == other.clip &&
-                right == other.right && left == other.left && known == other.known && dual == other.dual;
+                right == other.right && left == other.left && known == other.known && dual == other.dual &&
+                physical == other.physical && attached == other.attached && chambered == other.chambered &&
+                reloadSequence == other.reloadSequence;
         }
     };
     class Sender

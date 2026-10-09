@@ -17,6 +17,7 @@
 #include "vr_remote_magazines.h"
 #include "vr_pistol_ammo_sync.h"
 #include "vr_pistol_prediction.h"
+#include "vr_pistol_reload.h"
 #include "vr_physical_controls.h"
 #include "vr_interaction_geometry.h"
 #include "vr_body_inventory.h"
@@ -2134,8 +2135,11 @@ public:
     mutable std::mutex m_PistolAmmoClientMutex;
     l4d2vr_pistol_sync::Receiver m_PistolAmmoClient;
     l4d2vr_pistol_prediction::Journal m_PistolAmmoPrediction;
+    l4d2vr_pistol_reload::Client m_PistolMagazineRequest;
+    l4d2vr_pistol_reload::Reply m_PistolMagazineReply{};
+    bool m_PistolMagazineReplyReady = false;
     // Both hand counts come from one accepted snapshot. All-ones means unknown.
-    std::atomic<uint32_t> m_PistolAmmoCounts{0xffffffffu};
+    std::atomic<uint64_t> m_PistolAmmoCounts{0xffffffffffffffffull};
     void OfferPistolAmmoProtocol(unsigned version, uint32_t token);
     void ReceivePistolAmmoState(const l4d2vr_pistol_sync::State& state);
     void DisconnectPistolAmmoProtocol();
@@ -2144,6 +2148,9 @@ public:
         unsigned ordinal, l4d2vr_dual::Hand hand, l4d2vr_pistol_prediction::Fire& fire, bool& blocked);
     void RecordPistolPredictionFire(const l4d2vr_pistol_prediction::Fire& fire, unsigned bullets);
     void CancelPistolPredictionFire(const l4d2vr_pistol_prediction::Fire& fire);
+    bool BeginPistolMagazineRequest(int command, l4d2vr_pistol::Hand hand, l4d2vr_pistol::MagazineAction action);
+    void ReceivePistolMagazineReply(const l4d2vr_pistol_reload::Reply& reply);
+    bool ConsumePistolMagazineReply(l4d2vr_pistol_reload::Reply& reply);
     l4d2vr_remote_mag::ClientRequest m_RemoteMagazineRequest;
     std::atomic<bool> m_NativeAmmoReloadFallbackActive{false};
     l4d2vr_magazine::NativeFallbackPulse m_NativeAmmoReloadFallbackPulse;

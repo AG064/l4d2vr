@@ -4251,6 +4251,19 @@ namespace
 
 }
 
+static bool PistolPhysicalReloadOwnsWeapon(void* owner, void* weapon)
+{
+    auto* game = Hooks::m_Game;
+    l4d2vr_pistol::AmmoSnapshot snapshot{}; int index = -1;
+    if (!game || !Hooks::m_VR || !Hooks::m_VR->m_DualPistolsIndependentHandsEnabled ||
+        !ManualPistolReadAmmo(owner, weapon, snapshot, index) ||
+        !game->PistolAmmoClientReady(index, snapshot.ownerSerial) ||
+        game->GetConVarIntDirect("sv_infinite_ammo", -1) != 0) return false;
+    std::lock_guard<std::mutex> lock(game->m_PistolAmmoMutex);
+    l4d2vr_pistol::MagazineState magazines{};
+    return game->m_PistolAmmo[index].MagazineInfo(snapshot, magazines) && magazines.physical != 0u;
+}
+
 static bool PhysicalNativeReloadIsBlocked(void* weapon)
 {
     Game* game = Hooks::m_Game;
@@ -4264,6 +4277,7 @@ static bool PhysicalNativeReloadIsBlocked(void* weapon)
         using Index = int(__thiscall*)(void*);
         void* owner = reinterpret_cast<Owner>(game->m_Offsets->PhysicalGunOwner.address)(weapon);
         if (!owner) return false;
+        if (PistolPhysicalReloadOwnsWeapon(owner, weapon)) return true;
         bool blocked = false;
         if (TryGetExecutingReloadGate(owner, weapon, blocked)) return blocked;
         const int index = reinterpret_cast<Index>(game->m_Offsets->CBaseEntity_entindex.address)(owner);

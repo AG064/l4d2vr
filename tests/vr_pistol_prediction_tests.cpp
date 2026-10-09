@@ -8,6 +8,10 @@ int main()
 {
     using namespace l4d2vr_pistol_prediction;
     using l4d2vr_pistol_sync::State;
+    CHECK(FiringMask(Pack(15, 15, 1u, 2u)) == 2u); // right magazine inserted, chamber still empty
+    CHECK(FiringMask(Pack(15, 15, 1u, 3u)) == 3u);
+    CHECK(FiringMask(Pack(15, 15, 2u, 1u)) == 1u);
+    CHECK(FiringMask(Pack(-1, -1, 0u, 0u)) == 3u);
     Journal journal;
     State state{42u, 1u, 0x3005u, 100u, 15, 16, 1, 15, true, true};
     int right = -1, left = -1;

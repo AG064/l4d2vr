@@ -15,6 +15,7 @@ class C_WeaponCSBase;
 #include "vr_server_pistol_commands.h"
 #include "vr_pistol_ammo.h"
 #include "vr_pistol_ammo_sync.h"
+#include "vr_pistol_reload.h"
 
 #include "vector.h"
 
@@ -255,6 +256,12 @@ public:
         edict_t* entity = nullptr;
         std::int16_t serial = 0;
         l4d2vr_pistol_sync::Sender sender;
+        l4d2vr_pistol_reload::Server reload;
+        l4d2vr_pistol_reload::Request pending{};
+        std::uint64_t queuedAt = 0u;
+        std::uint32_t executedCommand = 0u;
+        bool havePending = false;
+        std::uint32_t reloadSequence = 0u;
     };
     std::mutex m_PistolAmmoServerMutex;
     std::array<PistolAmmoServerClient, kMaxPlayers> m_PistolAmmoServerClients{};
@@ -263,6 +270,8 @@ public:
     void ResetPistolAmmoServerClients();
     bool HandlePistolAmmoCommand(edict_t* entity, const void* command);
     bool PistolAmmoClientReady(int index, unsigned ownerSerial);
+    bool HandlePistolMagazineCommand(edict_t* entity, const void* command);
+    void ProcessPistolMagazineRequests(int index, int command, unsigned ownerSerial);
     mutable std::mutex m_VRPoseMutex;
     std::atomic<bool> m_VRPoseServerCapable{ false };
     std::atomic<bool> m_VRPoseHelloSent{ false };

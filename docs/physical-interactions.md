@@ -164,7 +164,7 @@ capacities up to 15 rounds per pistol. Larger capacities retain the legacy
 split path. It does not replace the shared reload. Pickup-hand metadata is consumed from the simulated grip command;
 older hosts ignore that metadata and retain their existing pickup behavior.
 
-Matching listen-host/client builds negotiate pistol-ammo protocol v2 with a
+Matching listen-host/client builds negotiate pistol-ammo protocol v3 with a
 session acknowledgement. The host publishes the native clip with known right/left
 contents after command execution, and sends heartbeat snapshots while unchanged.
 The client accepts only its session token, increasing sequence numbers,
@@ -184,13 +184,20 @@ versions and nonzero/unreadable `sv_infinite_ammo` modes retain native behavior.
 The journal never writes predicted clip/reserve counters. Independent magazine
 and chamber transactions remain unfinished.
 
-The host ledger has a tested per-hand magazine/chamber policy, including an
-atomic native-writer boundary, finite reserve limits and detached-magazine
-contents. It is not yet connected to the live interaction protocol or hand
-controls. This does not enable independent physical reloads in the current
-build. The later integration must carry chamber state to both clients, suppress
-stock reload while physical ownership is active and preserve magazine contents
-when objects leave the weapon.
+The per-hand magazine/chamber policy is connected to validated host transactions.
+Requests wait until their input command has been simulated, then recheck the
+current weapon, clip, reserve and session. Duplicate requests reuse the result;
+hand-specific rate limits allow the other hand to act independently. Native
+clip/reserve replication and protocol-v3 chamber masks settle the client result,
+including when the other pistol fires while a request is pending. Empty chambers
+block native firing, and host stock reload is suppressed while physical ownership is
+active. Failed writers commit no magazine state. Fresh replacement reports
+released cached contents for object handoff.
+
+The client request/response API is implemented, but physical magazine grabs,
+slide gestures, persistent objects and client native reload prediction are not yet connected to it. The current
+control path therefore still uses the native shared reload. Matching builds and
+gameplay acceptance are required before claiming independent physical reloads.
 
 An optional client prediction-command hook scopes local pistol bullet effects,
 hand haptics and predicted hit feedback to the command Source is simulating.

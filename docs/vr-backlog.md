@@ -75,7 +75,7 @@ consumption by command/firing ordinal and removes acknowledged events. Replay
 projects only the preceding events at that simulation point. Bullet/delta
 mismatches invalidate attribution until a newer authoritative baseline arrives.
 Known empty hands are gated in trigger routing and at both native gun-firing
-boundaries after protocol-v2 acknowledgement. Unknown data, missing bindings,
+boundaries after protocol-v3 acknowledgement. Unknown data, missing bindings,
 old clients/hosts and non-default infinite-ammo modes keep native behavior.
 Independent chamber/magazine operations remain unfinished. Actual delivery,
 prediction timing, empty-hand behavior and replication need matching builds.
@@ -89,8 +89,16 @@ Failed native writers leave both hands unchanged. Replacing a cached magazine
 reports its released rounds for the later object handoff. Native/external ammo
 changes revoke inferred physical state. This policy is tested offline but is not
 yet connected to live RPCs, firing/reload gates or physical hand controls.
-Wire protocol, client state, object ownership and interaction integration remain
-required; the current playable build still uses native shared reload.
+Host transactions and client settlement are now connected to this policy.
+Queued requests wait for native command execution, then validate the current
+entity/session/clip/reserve before committing through the verified native writer.
+Deduplication and hand-specific rate limits protect both hands. Protocol v3
+replicates physical, magazine and chamber masks plus the applied reload sequence;
+client settlement also requires matching native ammo, including intervening shots.
+Counts and chamber gates are published coherently in one atomic sample. Firing
+and host stock reload now respect physical ownership. The client begin/receive/consume
+API is present, but physical gestures and magazine-object ownership remain to be
+connected, along with client native reload prediction; the current controls still use native shared reload.
 
 The optional client prediction-command hook now selects the command-specific
 hand ray for native local bullet effects and hit-feedback attribution, with

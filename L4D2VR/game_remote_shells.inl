@@ -67,10 +67,13 @@ namespace
         int oldReloadState = 0;
         int oldClip = 0, oldReserve = 0;
         bool infinite = false;
+        void* playerObject = nullptr;
+        void* weaponObject = nullptr;
+        bool dualPistol = false;
     };
     bool ReadRemoteShellNative(Game* game, edict_t* entity, int index,
         const l4d2vr_shell::Request& request, l4d2vr_shell::Snapshot& state, RemoteShellNativeState& native,
-        bool& unsupported, bool magazine = false)
+        bool& unsupported, bool magazine = false, bool pistol = false)
     {
         unsupported = magazine ? !RemoteMagazineBackendReady(game) : !RemoteShellBackendReady(game);
         if (unsupported || !entity || !game->IsValidPlayerIndex(index)) return false;
@@ -99,7 +102,10 @@ namespace
             if (id != request.weaponId || (magazine ? !l4d2vr_remote_mag::IsDetachable(id) : !l4d2vr_shell::IsShotgun(id)))
                 return false;
             auto* weaponBytes = reinterpret_cast<unsigned char*>(weapon);
-            if (magazine && id == 1 && weaponBytes[0x17dd] != 0u) return false; // native dual-pistol fallback
+            if (pistol && (id != 1 || weaponBytes[0x17dd] > 1u)) return false;
+            if (magazine && !pistol && id == 1 && weaponBytes[0x17dd] != 0u) return false; // native dual-pistol fallback
+            native.playerObject = player; native.weaponObject = weapon;
+            native.dualPistol = pistol && weaponBytes[0x17dd] != 0u;
             // CBaseEntity::entindex's signature validates the edict pointer at 0x28.
             edict_t* weaponEdict = *reinterpret_cast<edict_t**>(weaponBytes + 0x28);
             if (!weaponEdict || (weaponEdict->m_fStateFlags & 2u) != 0u ||

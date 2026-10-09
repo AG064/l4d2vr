@@ -6,6 +6,21 @@
 namespace l4d2vr_pistol_prediction
 {
     using Hand = l4d2vr_dual::Hand;
+    inline std::uint64_t Pack(int right, int left, unsigned physical, unsigned chambered)
+    {
+        return right >= 0 && right <= 15 && left >= 0 && left <= 15 && physical <= 3u && chambered <= 3u
+            ? static_cast<std::uint64_t>(right) | (static_cast<std::uint64_t>(left) << 16) |
+                (static_cast<std::uint64_t>(physical) << 32) | (static_cast<std::uint64_t>(chambered) << 34)
+            : 0xffffffffffffffffull;
+    }
+    inline unsigned FiringMask(std::uint64_t packed)
+    {
+        if (packed == 0xffffffffffffffffull) return 3u;
+        unsigned mask = ((packed & 0xffffu) > 0u ? 1u : 0u) | (((packed >> 16) & 0xffffu) > 0u ? 2u : 0u);
+        const auto physical = static_cast<unsigned>((packed >> 32) & 3u);
+        const auto chambered = static_cast<unsigned>((packed >> 34) & 3u);
+        return mask & (~physical | chambered);
+    }
     inline bool BlocksEmptyHand(bool dual, bool consumesAmmo, Hand hand, int right, int left)
     {
         return dual && consumesAmmo && right >= 0 && left >= 0 &&

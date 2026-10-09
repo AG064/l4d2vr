@@ -26,6 +26,7 @@ int main()
     Sender waiting; waiting.Reset(7u);
     CHECK(!waiting.Prepare(state, 1000u, wire));
     CHECK(!waiting.Acknowledge(1u, 7u) && !waiting.Ready());
+    CHECK(!waiting.Acknowledge(2u, 7u) && !waiting.Ready());
     CHECK(waiting.Acknowledge(kVersion, 7u) && waiting.Prepare(state, 1000u, wire));
     CHECK(!waiting.Acknowledge(0u, 8u) && waiting.Ready());
     CHECK(waiting.Acknowledge(0u, 7u) && !waiting.Ready());
@@ -77,6 +78,14 @@ int main()
     state.capacity = 8; state.handle = 0u; CHECK(!state.ValidContents());
     state.handle = 0x3005u; state.dual = false; state.clip = 2; state.right = state.left = 1;
     CHECK(!state.ValidContents());
+    State physical{99u, 1u, 0x3005u, 1u, 15, 16, 1, 15, true, true, 1u, 2u, 3u, 1u};
+    CHECK(physical.ValidContents());
+    auto invalidPhysical = physical; invalidPhysical.right = 0; invalidPhysical.clip = 15;
+    CHECK(!invalidPhysical.ValidContents());
+    invalidPhysical = physical; invalidPhysical.physical = 0u;
+    CHECK(!invalidPhysical.ValidContents());
+    invalidPhysical = physical; invalidPhysical.dual = false; invalidPhysical.clip = 1; invalidPhysical.left = 0;
+    CHECK(!invalidPhysical.ValidContents());
     Sender alias; alias.Reset(77u); CHECK(alias.Acknowledge(kVersion, 77u));
     State aliased{0u, 0u, 0x3005u, 1u, 15, 16, 1, 15, true, true};
     CHECK(alias.Prepare(aliased, 0u, aliased) && aliased.token == 77u && aliased.sequence == 1u);

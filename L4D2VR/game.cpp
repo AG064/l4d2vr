@@ -888,16 +888,32 @@ namespace
     }
     void __cdecl OnL4D2VRPistolAmmoState(const SourceCCommand& command)
     {
-        if (!g_Game || !g_Game->m_VR || !Hooks::s_ServerUnderstandsVR || command.ArgC() != 11) return;
-        uint32_t values[10]{};
-        constexpr uint32_t limits[10] = {0xffffffffu, 0xffffffffu, (1u << 22) - 1u,
-            0x7fffffffu, 15u, 30u, 15u, 15u, 1u, 1u};
-        for (int arg = 1; arg <= 10; ++arg)
+        if (!g_Game || !g_Game->m_VR || !Hooks::s_ServerUnderstandsVR || command.ArgC() != 15) return;
+        uint32_t values[14]{};
+        constexpr uint32_t limits[14] = {0xffffffffu, 0xffffffffu, (1u << 22) - 1u,
+            0x7fffffffu, 15u, 30u, 15u, 15u, 1u, 1u, 3u, 3u, 3u, 0xffffffffu};
+        for (int arg = 1; arg <= 14; ++arg)
             if (!l4d2vr_shell::ParseNumber(command.Arg(arg), limits[arg - 1], values[arg - 1])) return;
         l4d2vr_pistol_sync::State state{values[0], values[1], values[2], values[3],
             static_cast<int>(values[4]), static_cast<int>(values[5]), static_cast<int>(values[6]),
-            static_cast<int>(values[7]), values[8] != 0u, values[9] != 0u};
+            static_cast<int>(values[7]), values[8] != 0u, values[9] != 0u, values[10], values[11], values[12], values[13]};
         g_Game->m_VR->ReceivePistolAmmoState(state);
+    }
+    void __cdecl OnL4D2VRPistolMagazineResult(const SourceCCommand& command)
+    {
+        if (!g_Game || !g_Game->m_VR || !Hooks::s_ServerUnderstandsVR || command.ArgC() != 18) return;
+        uint32_t values[17]{};
+        constexpr uint32_t limits[17] = {0xffffffffu, 0xffffffffu, (1u << 22) - 1u, 0x7fffffffu,
+            30u, 5000u, 2u, 3u, 7u, 30u, 5000u, 15u, 15u, 15u, 3u, 3u, 3u};
+        for (int arg = 1; arg <= 17; ++arg)
+            if (!l4d2vr_shell::ParseNumber(command.Arg(arg), limits[arg - 1], values[arg - 1])) return;
+        l4d2vr_pistol_reload::Reply reply{};
+        reply.request = {values[0], values[1], values[2], values[3], static_cast<int>(values[4]), static_cast<int>(values[5]),
+            static_cast<l4d2vr_pistol::Hand>(values[6]), static_cast<l4d2vr_pistol::MagazineAction>(values[7])};
+        reply.status = static_cast<l4d2vr_shell::Status>(values[8]);
+        reply.result = {static_cast<int>(values[9]), static_cast<int>(values[10]), static_cast<int>(values[11]),
+            static_cast<int>(values[12]), static_cast<int>(values[13]), {values[14], values[15], values[16]}};
+        g_Game->m_VR->ReceivePistolMagazineReply(reply);
     }
     void __cdecl OnL4D2VRMagazineResult(const SourceCCommand& command)
     {
@@ -983,6 +999,9 @@ namespace
     SourceRegisteredConCommand g_L4D2VRPistolAmmoStateCommand(
         "l4d2vr_pistol_ammo_state", &OnL4D2VRPistolAmmoState,
         "Receive authoritative per-hand pistol ammunition.", kFcvarServerCanExecute);
+    SourceRegisteredConCommand g_L4D2VRPistolMagazineResultCommand(
+        "l4d2vr_pistol_mag_result", &OnL4D2VRPistolMagazineResult,
+        "Receive an independent pistol magazine transaction result.", kFcvarServerCanExecute);
     SourceRegisteredConCommand g_L4D2VRPoseReceiveCommand(
         kL4D2VRPoseReceiveCommandName,
         &OnL4D2VRPoseReceiveCommand,
@@ -1025,6 +1044,8 @@ namespace
                 cvar->RegisterConCommand(&g_L4D2VRPistolAmmoCapabilityCommand);
             if (!cvar->FindCommandBase("l4d2vr_pistol_ammo_state"))
                 cvar->RegisterConCommand(&g_L4D2VRPistolAmmoStateCommand);
+            if (!cvar->FindCommandBase("l4d2vr_pistol_mag_result"))
+                cvar->RegisterConCommand(&g_L4D2VRPistolMagazineResultCommand);
             if (!cvar->FindCommandBase(kL4D2VRPoseAckCommandName))
                 cvar->RegisterConCommand(&g_L4D2VRPoseAckCommand);
             if (!cvar->FindCommandBase(kL4D2VRPoseReceiveCommandName))
