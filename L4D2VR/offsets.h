@@ -189,6 +189,9 @@ public:
     // Client gun firing boundary: thiscall, no stack arguments, void return.
     Offset ClientPistolGunFire = { "client.dll", 0x0030C4C0,
         "55 8B EC 83 EC 2C 56 57 8B F1 E8 ? ? ? ? 8B F8 85 FF 0F 84 ? ? ? ? 80 BE 5A 0A 00 00 00", 0, true };
+    // C_Pistol::GetPrimaryAttackActivity: thiscall, no stack arguments, int return.
+    Offset ClientPistolFireActivity = { "client.dll", 0x00305A10,
+        "56 8B F1 8B 06 8B 90 58 06 00 00 FF D2 84 C0 8B 86 84 09 00 00 74 15", 0, true };
     // C_Pistol reload entries: thiscall, no stack arguments, bool/void returns.
     Offset ClientPistolReload = { "client.dll", 0x0030C150,
         "56 57 8B F1 E8 ? ? ? ? 8B F8 85 FF 0F 84 ? ? ? ? 8B 87 8C 1F 00 00 83 F8 FF", 0, true };

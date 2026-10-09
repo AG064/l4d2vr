@@ -357,6 +357,7 @@ Hooks::Hooks(Game* game)
     if (hkPistolGunFire.pTarget) hkPistolGunFire.enableHook();
     if (hkClientPistolRunCommand.pTarget) hkClientPistolRunCommand.enableHook();
     if (hkClientPistolGunFire.pTarget) hkClientPistolGunFire.enableHook();
+    if (hkClientPistolFireActivity.pTarget) hkClientPistolFireActivity.enableHook();
     if (hkClientPistolReload.pTarget) hkClientPistolReload.enableHook();
     if (hkClientPistolFinishReload.pTarget) hkClientPistolFinishReload.enableHook();
 	hkCreateMove.enableHook();
@@ -892,6 +893,8 @@ int Hooks::initSourceHooks()
         hkClientPistolRunCommand.createHook(reinterpret_cast<void*>(m_Game->m_Offsets->ClientPistolRunCommand.address), dClientPistolRunCommand);
     if (m_Game->m_Offsets->ClientPistolGunFire.valid)
         hkClientPistolGunFire.createHook(reinterpret_cast<void*>(m_Game->m_Offsets->ClientPistolGunFire.address), dClientPistolGunFire);
+    if (m_Game->m_Offsets->ClientPistolFireActivity.valid)
+        hkClientPistolFireActivity.createHook(reinterpret_cast<void*>(m_Game->m_Offsets->ClientPistolFireActivity.address), dClientPistolFireActivity);
     if (m_Game->m_Offsets->ClientPistolReload.valid)
         hkClientPistolReload.createHook(reinterpret_cast<void*>(m_Game->m_Offsets->ClientPistolReload.address), dClientPistolReload);
     if (m_Game->m_Offsets->ClientPistolFinishReload.valid)

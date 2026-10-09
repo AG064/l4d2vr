@@ -16,6 +16,24 @@ int main()
 {
     using namespace l4d2vr_pistol_fx;
     using l4d2vr_dual::Hand;
+    Check(FireActivity(true, Hand::Left, 191, 14) == 192,
+        "A left shot must select the authored left animation even when shared clip parity selects right");
+    Check(FireActivity(true, Hand::Right, 192, 14) == 191,
+        "A right shot must select the authored right animation");
+    const int leftAfter = RemainingAfterShot(true,Hand::Left,15,1);
+    Check(leftAfter == 0 && FireActivity(true,Hand::Left,192,leftAfter) == 481,
+        "The last left round locks its own slide even when the right pistol is full");
+    Check(FireActivity(true,Hand::Right,191,RemainingAfterShot(true,Hand::Right,1,15)) == 194,
+        "The last right round locks only the right slide");
+    Check(FireActivity(true,Hand::Left,194,RemainingAfterShot(false,Hand::Left,15,1)) == 192,
+        "Infinite ammo must not use a last-round animation");
+    Check(FireActivity(true,Hand::Left,194,-1) == 481 && FireActivity(true,Hand::Right,481,-1) == 194,
+        "Unknown per-hand ammo retains native last-round information while choosing the command's hand");
+    Check(FireActivity(false,Hand::Left,191,0) == 191 && FireActivity(true,Hand::None,192,0) == 192 &&
+        FireActivity(true,Hand::Left,180,0) == 180, "Unrelated, unmarked and single-pistol activity must retain its native behavior");
+    Check(RemainingAfterShot(true,Hand::None,15,15) == -1 &&
+        RemainingAfterShot(true,Hand::Left,15,-1) == -1 && RemainingAfterShot(true,Hand::Left,15,16) == -1,
+        "Unavailable or invalid ammo counts cannot invent a last-round state");
     Muzzles cache;
     const Key dual{100u, 200u, 0x1001u, 3u};
     cache.Observe(dual);

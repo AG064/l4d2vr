@@ -1461,6 +1461,14 @@ namespace
         mutable unsigned bullets = 0u;
     };
     thread_local const ClientPistolFire* g_ClientPistolFire = nullptr;
+    struct ClientPistolAnimation
+    {
+        uintptr_t weapon = 0u;
+        l4d2vr_dual::Hand hand = l4d2vr_dual::Hand::None;
+        bool dual = false;
+        int remaining = -1;
+    };
+    thread_local const ClientPistolAnimation* g_ClientPistolAnimation = nullptr;
     struct ClientPistolBulletOrigin
     {
         uintptr_t owner = 0u;
@@ -1541,6 +1549,7 @@ void __fastcall Hooks::dClientPistolGunFire(void* weapon, void*)
 {
     const auto* context = g_ClientPistolExecution;
     ClientPistolFire firing{};
+    ClientPistolAnimation animation{};
     bool tracked = false, blocked = false;
     if (context && context->owner && context->command > 0 && context->fireOrdinal < 64u && m_VR)
     {
@@ -1548,8 +1557,14 @@ void __fastcall Hooks::dClientPistolGunFire(void* weapon, void*)
         Vector position{}; QAngle angles{}; l4d2vr_dual::Hand hand = l4d2vr_dual::Hand::None;
         if (m_VR->GetExecutingDualPistolShotPose(context->command, context->owner,
             reinterpret_cast<uintptr_t>(weapon), position, angles, hand))
+        {
+            animation.weapon = reinterpret_cast<uintptr_t>(weapon);
+            animation.hand = hand;
+            animation.dual = m_Game && m_Game->IsDualPistolWeapon(reinterpret_cast<C_WeaponCSBase*>(weapon));
             tracked = m_VR->PreparePistolPredictionFire(reinterpret_cast<C_BasePlayer*>(context->owner),
                 reinterpret_cast<C_WeaponCSBase*>(weapon), context->command, ordinal, hand, firing.fire, blocked);
+            if (tracked) animation.remaining = firing.fire.handRemainingAfter;
+        }
     }
     if (blocked)
     {
@@ -1560,8 +1575,32 @@ void __fastcall Hooks::dClientPistolGunFire(void* weapon, void*)
         return;
     }
     l4d2vr_native_scope::Run<const ClientPistolFire>(g_ClientPistolFire, tracked ? &firing : nullptr,
-        [&]() { hkClientPistolGunFire.fOriginal(weapon); });
+        [&]()
+        {
+            l4d2vr_native_scope::Run<const ClientPistolAnimation>(g_ClientPistolAnimation,
+                animation.weapon ? &animation : nullptr, [&]() { hkClientPistolGunFire.fOriginal(weapon); });
+        });
     if (tracked) m_VR->RecordPistolPredictionFire(firing.fire, firing.bullets);
+}
+
+int __fastcall Hooks::dClientPistolFireActivity(void* weapon, void*)
+{
+    const int nativeActivity = hkClientPistolFireActivity.fOriginal(weapon);
+    const auto* animation = g_ClientPistolAnimation;
+    if (!animation || animation->weapon != reinterpret_cast<uintptr_t>(weapon)) return nativeActivity;
+    const int selected = l4d2vr_pistol_fx::FireActivity(animation->dual, animation->hand, nativeActivity, animation->remaining);
+    if (m_VR && m_VR->m_VrHandsDebugLog && selected != nativeActivity)
+    {
+        static uint64_t lastLogAt = 0u;
+        const uint64_t logAt = GetTickCount64();
+        if (logAt - lastLogAt >= 1000u)
+        {
+            lastLogAt = logAt;
+            Game::logMsg("[VR][PistolAnimation] hand=%u native=%d selected=%d remaining=%d",
+                static_cast<unsigned>(animation->hand), nativeActivity, selected, animation->remaining);
+        }
+    }
+    return selected;
 }
 
 bool __fastcall Hooks::dClientPistolReload(void* weapon, void*)

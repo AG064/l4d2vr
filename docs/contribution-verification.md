@@ -267,3 +267,20 @@ Geometry and ownership regression checks do not prove native visual acceptance.
 Muzzle flashes use the native animation parity/event path, which remains separate
 from this tracer change and still needs a command-to-event binding. Independent
 dual reload, left-pistol grip alignment and multiplayer acceptance remain pending.
+
+## Pistol firing animation selection
+
+Stock dual-pistol sequences identify right primary fire, left secondary fire and
+separate last-round animations. The native selector chooses between these from
+shared clip parity, which can disagree with the physical trigger that fired.
+An optional signature-verified selector hook now chooses the executing command's
+hand inside the existing native gun-fire scope. Available predicted per-hand ammo
+chooses that gun's last-round animation; infinite ammo retains loaded animations.
+Unknown ammo preserves native last-round information. Single pistols and unrelated
+or unscoped activity requests retain their normal selector result.
+
+This supplies the correct firing animation and its stock muzzle-flash event.
+The event's native attachment positioning remains a separate pending change;
+this selector alone does not establish that flashes follow the retargeted gun.
+Native ABI, stock sequence metadata and per-hand selection checks are software
+evidence. Headset, prediction replay and multiplayer acceptance remain pending.

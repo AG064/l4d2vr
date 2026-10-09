@@ -3602,6 +3602,7 @@ bool VR::PreparePistolPredictionFire(C_BasePlayer* player, C_WeaponCSBase* weapo
         (state.physical & bit) != 0u && (state.chambered & bit) == 0u);
     fire = {owner, reinterpret_cast<uintptr_t>(weapon), state.token, handle,
         static_cast<uint32_t>(command), ordinal, hand, clip, dual};
+    fire.handRemainingAfter = l4d2vr_pistol_fx::RemainingAfterShot(consumesAmmo, hand, right, left);
     return true;
 }
 

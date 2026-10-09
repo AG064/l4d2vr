@@ -16,6 +16,24 @@ namespace l4d2vr_pistol_fx
     inline unsigned HandBit(l4d2vr_dual::Hand hand)
     { return hand == l4d2vr_dual::Hand::Right ? 1u : hand == l4d2vr_dual::Hand::Left ? 2u : 0u; }
 
+    inline int RemainingAfterShot(bool consumes, l4d2vr_dual::Hand hand, int right, int left)
+    {
+        const int rounds = hand == l4d2vr_dual::Hand::Right ? right :
+            hand == l4d2vr_dual::Hand::Left ? left : -1;
+        if (rounds < 0 || rounds > 15) return -1;
+        return consumes && rounds > 0 ? rounds - 1 : rounds;
+    }
+
+    inline int FireActivity(bool dual, l4d2vr_dual::Hand hand, int nativeActivity, int remaining)
+    {
+        // Verified native activities and stock dual-pistol sequences:
+        // primary/right, secondary/left, dryfire/right, dryfire_left.
+        if (!dual || !HandBit(hand) || (nativeActivity != 191 && nativeActivity != 192 &&
+            nativeActivity != 194 && nativeActivity != 481)) return nativeActivity;
+        const bool lastRound = remaining >= 0 ? remaining == 0 : nativeActivity == 194 || nativeActivity == 481;
+        return hand == l4d2vr_dual::Hand::Left ? (lastRound ? 481 : 192) : (lastRound ? 194 : 191);
+    }
+
     class Muzzles
     {
     public:

@@ -108,6 +108,7 @@ typedef void(__thiscall* tPistolPlayerRunCommand)(void*, CUserCmd*, void*);
 typedef void(__thiscall* tPistolGunFire)(void*);
 typedef void(__thiscall* tClientPistolRunCommand)(void*, void*, CUserCmd*, void*);
 typedef void(__thiscall* tClientPistolGunFire)(void*);
+typedef int(__thiscall* tClientPistolFireActivity)(void*);
 typedef bool(__thiscall* tClientPistolReload)(void*);
 typedef void(__thiscall* tClientPistolFinishReload)(void*);
 typedef void* (__cdecl* tThrowableProjectileCreate)(const Vector& position, const QAngle& angles, const Vector& velocity, const Vector& angularVelocity, void* owner);
@@ -190,6 +191,7 @@ public:
     static inline Hook<tPistolGunFire> hkPistolGunFire;
     static inline Hook<tClientPistolRunCommand> hkClientPistolRunCommand;
     static inline Hook<tClientPistolGunFire> hkClientPistolGunFire;
+    static inline Hook<tClientPistolFireActivity> hkClientPistolFireActivity;
     static inline Hook<tClientPistolReload> hkClientPistolReload;
     static inline Hook<tClientPistolFinishReload> hkClientPistolFinishReload;
     static inline Hook<tPhysicalReload> hkPhysicalShotgunReload;
@@ -287,6 +289,7 @@ public:
     static void __fastcall dPistolGunFire(void* weapon, void* edx);
     static void __fastcall dClientPistolRunCommand(void* prediction, void* edx, void* player, CUserCmd* command, void* moveHelper);
     static void __fastcall dClientPistolGunFire(void* weapon, void* edx);
+    static int __fastcall dClientPistolFireActivity(void* weapon, void* edx);
     static bool __fastcall dClientPistolReload(void* weapon, void* edx);
     static void __fastcall dClientPistolFinishReload(void* weapon, void* edx);
 	static void* __cdecl dMolotovProjectileCreate(const Vector& position, const QAngle& angles, const Vector& velocity, const Vector& angularVelocity, void* owner);

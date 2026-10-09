@@ -34,6 +34,7 @@ namespace l4d2vr_pistol_prediction
         Hand hand = Hand::None;
         int clip = -1;
         bool dual = false;
+        int handRemainingAfter = -1;
     };
 
     // Only actual native consumption enters this journal. Projection is scoped
