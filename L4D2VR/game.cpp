@@ -23,6 +23,7 @@
 #include "vr_interaction_protocol.h"
 #include "vr_recv_interface.h"
 #include "vr_edict_identity.h"
+#include "vr_client_command.h"
 #include "offsets.h"
 #include "sigscanner.h"
 #include "vr_pose_protocol.h"
@@ -510,20 +511,6 @@ namespace
         virtual SourceConCommandBase* FindCommandBase(const char* name) = 0;
         virtual const SourceConCommandBase* FindCommandBase(const char* name) const = 0;
         virtual SourceConVar* FindVar(const char* varName) = 0;
-    };
-
-    // Small, stable interface exposed by engine.dll specifically for sending a
-    // command to one client. A listen server can use it directly from d3d9.dll.
-    class SourceIServerPluginHelpersPoseRelay
-    {
-    public:
-        virtual void CreateMessage(
-            edict_t*,
-            int,
-            void*,
-            void*) = 0;
-        virtual void ClientCommand(edict_t*, const char*) = 0;
-        virtual int StartQueryCvarValue(edict_t*, const char*) = 0;
     };
 
     class SourceCCommand
@@ -1401,6 +1388,13 @@ namespace
         return false;
     }
 
+    void* VRPoseCommandEngine()
+    {
+        // Keep interface lookup's C++ temporaries outside the SEH function.
+        static void* engineServer = TryInterfaceNoError("engine.dll", "VEngineServer022");
+        return engineServer;
+    }
+
     bool VRPoseRelaySendClientCommand(
         void* serverPluginHelpers,
         edict_t* entity,
@@ -1412,9 +1406,25 @@ namespace
         __try
         {
 #endif
-            static_cast<SourceIServerPluginHelpersPoseRelay*>(
-                serverPluginHelpers)->ClientCommand(entity, command);
-            return true;
+            // IServerPluginHelpers::ClientCommand is a fake client command on
+            // the server. Replies need the engine's server-to-client transport.
+            void* engineServer = VRPoseCommandEngine();
+            if (!engineServer) return false;
+            const auto module = reinterpret_cast<std::uintptr_t>(GetModuleHandleA("engine.dll"));
+            if (!module) return false;
+            const auto* dos = reinterpret_cast<const IMAGE_DOS_HEADER*>(module);
+            if (dos->e_magic != IMAGE_DOS_SIGNATURE || dos->e_lfanew <= 0 || dos->e_lfanew > 0x100000)
+                return false;
+            const auto* nt = reinterpret_cast<const IMAGE_NT_HEADERS32*>(module + dos->e_lfanew);
+            if (nt->Signature != IMAGE_NT_SIGNATURE || nt->OptionalHeader.Magic != IMAGE_NT_OPTIONAL_HDR32_MAGIC)
+                return false;
+            const auto target = (*reinterpret_cast<const std::uintptr_t* const*>(engineServer))[
+                l4d2vr_client_command::EngineSlot];
+            if (!l4d2vr_recv::Contains(module, nt->OptionalHeader.SizeOfImage, target, 30u) ||
+                !l4d2vr_client_command::SupportedCode(reinterpret_cast<const unsigned char*>(target), 30u))
+                return false;
+            using NativeSend = void (__cdecl*)(void*, edict_t*, const char*, ...);
+            return l4d2vr_client_command::Send(reinterpret_cast<NativeSend>(target), engineServer, entity, command);
 #ifdef _MSC_VER
         }
         __except (EXCEPTION_EXECUTE_HANDLER)

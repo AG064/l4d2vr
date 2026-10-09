@@ -187,3 +187,16 @@ array with the native stride. Tests cover the observed survivor, array bounds
 and alignment, invalid/free entities and distinct generations above 16 bits.
 Negotiation and interaction acceptance still require a matching native test.
 The layout follows the [L4D2 SDK edict header](https://github.com/alliedmodders/hl2sdk/blob/l4d2/public/edict.h).
+## Server-to-client reply transport
+
+Native negotiation progressed after correcting entity identity, but the host's
+capability and result commands appeared as unknown server commands. The built-in
+relay used IServerPluginHelpers::ClientCommand, which executes a fake client
+command on the server. Replies now use the verified VEngineServer022 client
+transport, with the correct x86 variadic calling convention and a fixed printf
+format. Its module bounds and native argument setup are checked before calling;
+unsupported code retains fallback. Tests check the observed native signature,
+argument convention and preservation of literal percent characters.
+The helper's fake-command semantics are demonstrated by
+[SourceMod's queue implementation](https://github.com/alliedmodders/sourcemod/blob/master/core/HalfLife2.cpp).
+Native delivery and physical-control acceptance remain separate checks.
