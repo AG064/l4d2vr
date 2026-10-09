@@ -143,6 +143,14 @@ both single hands. Native hand/model alignment, queued rendering, downing and
 matching co-op acceptance still need headset testing. Independent dual reloads
 and persistent magazine objects remain unfinished.
 
+Native pickup hand assignment now remaps verified single-pistol physical state
+to the receiving hand. Attached-magazine and chamber bits plus removed contents
+follow the same gun when its hand changes; the previous hand's bits are cleared.
+Different native ammo, capacity, entity serial or owner scope clears that state
+instead of retaining stale masks. Both transfer directions and loaded/empty
+chambers are checked offline. World-entity state transfer across players and
+pair-join preservation still need implementation and native acceptance.
+
 Client native reload prediction is now guarded by separately validated pistol
 reload and reload-completion bindings. Fresh matching physical ownership blocks
 refill attempts and clears reload flags without changing clip/reserve counters

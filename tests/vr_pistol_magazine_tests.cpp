@@ -6,6 +6,52 @@
 int main()
 {
     using namespace l4d2vr_pistol;
+    for (const auto originalHand : {Hand::Right, Hand::Left})
+    {
+        AmmoLedger handoff;
+        AmmoSnapshot held{10u, 50u, 2u, 3u, 15, false};
+        CHECK(handoff.Single(held, originalHand));
+        int nativeClip = 15, nativeReserve = 40;
+        auto apply = [&](int c, int r) { nativeClip = c; nativeReserve = r; return true; };
+        MagazineResult moved{};
+        CHECK(handoff.Magazine(held, originalHand, MagazineAction::Eject, nativeReserve, false, apply, moved));
+        held.clip = nativeClip;
+        const auto otherHand = Opposite(originalHand);
+        CHECK(handoff.Single(held, otherHand));
+        MagazineState state{};
+        CHECK(handoff.MagazineInfo(held, state));
+        CHECK(state.physical == Bit(otherHand) && state.attached == 0u && state.chambered == Bit(otherHand));
+        CHECK((otherHand == Hand::Right ? state.rightDetached : state.leftDetached) == 14);
+        CHECK((originalHand == Hand::Right ? state.rightDetached : state.leftDetached) == 0);
+        auto spent = held; spent.clip = 0;
+        CHECK(handoff.Shot(held, spent, 1, otherHand)); held = spent;
+        CHECK(handoff.Single(held, originalHand));
+        CHECK(handoff.BlocksUnchambered(held, originalHand));
+        CHECK(!handoff.BlocksUnchambered(held, otherHand));
+        CHECK(handoff.Magazine(held, originalHand, MagazineAction::Reinsert, nativeReserve, false, apply, moved));
+        CHECK(nativeClip == 14 && moved.added == 14 && nativeReserve == 40); held.clip = nativeClip;
+        CHECK(handoff.BlocksUnchambered(held, originalHand));
+        CHECK(handoff.Magazine(held, originalHand, MagazineAction::Cycle, nativeReserve, false, apply, moved));
+        CHECK(!handoff.BlocksUnchambered(held, originalHand));
+        CHECK(handoff.Single(held, otherHand));
+        CHECK(handoff.MagazineInfo(held, state) && state.physical == Bit(otherHand) &&
+            state.attached == Bit(otherHand) && state.chambered == Bit(otherHand));
+
+        // A native ammo or identity/capacity change invalidates the old state.
+        auto changed = held; --changed.clip;
+        CHECK(handoff.Single(changed, originalHand));
+        CHECK(handoff.MagazineInfo(changed, state) && state.physical == 0u && state.attached == 0u && state.chambered == 0u);
+        CHECK(handoff.Magazine(changed, originalHand, MagazineAction::Eject, nativeReserve, false, apply, moved));
+        changed.clip = nativeClip;
+        auto capacityChanged = changed; capacityChanged.capacity = 8;
+        CHECK(handoff.Single(capacityChanged, otherHand));
+        CHECK(handoff.MagazineInfo(capacityChanged, state) && state.physical == 0u);
+        CHECK(handoff.Magazine(capacityChanged, otherHand, MagazineAction::Eject, nativeReserve, false, apply, moved));
+        capacityChanged.clip = nativeClip;
+        auto replacement = capacityChanged; ++replacement.weaponSerial;
+        CHECK(handoff.Single(replacement, originalHand));
+        CHECK(handoff.MagazineInfo(replacement, state) && state.physical == 0u);
+    }
     AmmoLedger ledger;
     AmmoSnapshot gun{10u, 50u, 2u, 3u, 30, true};
     int clip = 30, reserve = 30, writes = 0;

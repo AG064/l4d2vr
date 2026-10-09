@@ -69,22 +69,27 @@ namespace l4d2vr_pistol
             Scope(snapshot);
             Entry& previous = Find(snapshot);
             auto retained = previous.magazines;
-            const bool keepPhysical = previous.exact &&
+            const Hand previousHand = previous.dual ? hand : previous.singleHand;
+            const bool keepPhysical = previous.exact && previous.capacity == snapshot.capacity &&
                 ((previous.dual && (hand == Hand::Right ? previous.right : previous.left) == snapshot.clip) ||
-                    (!previous.dual && previous.singleHand == hand && previous.right + previous.left == snapshot.clip));
+                    (!previous.dual && previous.right + previous.left == snapshot.clip));
             if (!Observe(snapshot)) return false;
             Entry& entry = Find(snapshot);
             entry.singleHand = hand;
             entry.right = hand == Hand::Right ? snapshot.clip : 0;
             entry.left = hand == Hand::Left ? snapshot.clip : 0;
             entry.exact = true;
-            if (keepPhysical)
+            entry.magazines = {};
+            const unsigned oldBit = Bit(previousHand);
+            if (keepPhysical && (retained.physical & oldBit) != 0u)
             {
                 const unsigned bit = Bit(hand);
-                retained.physical &= bit; retained.attached &= bit; retained.chambered &= bit;
-                if (hand == Hand::Right) retained.leftDetached = 0;
-                else retained.rightDetached = 0;
-                entry.magazines = retained.physical ? retained : MagazineState{};
+                entry.magazines.physical = bit;
+                entry.magazines.attached = (retained.attached & oldBit) != 0u ? bit : 0u;
+                entry.magazines.chambered = (retained.chambered & oldBit) != 0u ? bit : 0u;
+                const int detached = previousHand == Hand::Right ? retained.rightDetached : retained.leftDetached;
+                if (hand == Hand::Right) entry.magazines.rightDetached = detached;
+                else entry.magazines.leftDetached = detached;
             }
             return true;
         }
