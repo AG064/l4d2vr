@@ -2,9 +2,89 @@
 #include <cstdio>
 #include <cstdlib>
 #define CHECK(v) do { if (!(v)) { std::fprintf(stderr, "Pistol transaction failed at line %d\n", __LINE__); std::abort(); } } while(false)
+static void CheckSingleGestureReload(int startingClip, bool infiniteReserve)
+{
+    using namespace l4d2vr_pistol_reload;
+    Server server; server.Reset(123u);
+    Client client; client.Offer(123u);
+    l4d2vr_pistol::AmmoLedger ammo;
+    Snapshot native{true, 0x3005u, 200u, {10u, 50u, 2u, 3u, startingClip, false}, 40, infiniteReserve};
+    std::uint64_t now = 1000u;
+    std::uint32_t sequence = 0u;
+    auto act = [&](Action action)
+    {
+        now += 100u; ++native.command;
+        Request request{};
+        CHECK(client.Begin(native.handle, native.ammo.clip, native.reserve, Hand::Right,
+            action, native.command, native.ammo.owner, now, request));
+        int nextClip = native.ammo.clip, nextReserve = native.reserve;
+        const auto reply = server.Apply(request, native, now, ammo,
+            [&](int clip, int reserve) { nextClip = clip; nextReserve = reserve; return true; });
+        client.Receive(reply);
+        l4d2vr_pistol_sync::State state{};
+        Reply selected{};
+        if (reply.status == Status::Applied)
+        {
+            // A reply alone cannot finish the gesture before its native replica.
+            CHECK(client.Update(native.ammo.owner, native.handle, now + 1u, state, true, selected) == Client::Poll::Waiting);
+            native.ammo.clip = nextClip; native.reserve = nextReserve;
+            int right = -1, left = -1;
+            l4d2vr_pistol::MagazineState magazines{};
+            CHECK(ammo.Counts(native.ammo, right, left) && ammo.MagazineInfo(native.ammo, magazines));
+            state = {123u, ++sequence, native.handle, native.command, 15, nextClip,
+                right, left, true, false, magazines.physical, magazines.attached,
+                magazines.chambered, request.sequence};
+            CHECK(state.ValidContents());
+            CHECK(client.Update(native.ammo.owner, native.handle, now + 2u, state, false, selected) == Client::Poll::Waiting);
+        }
+        CHECK(client.Update(native.ammo.owner, native.handle, now + 3u, state, true, selected) == Client::Poll::Result);
+        CHECK(selected.request == request);
+        return selected;
+    };
+    auto reply = act(Action::Eject);
+    CHECK(SettleGesture(reply, Hand::Right) == GestureOutcome::Ejected);
+    CHECK(native.ammo.clip == (startingClip > 0 ? 1 : 0) && native.reserve == 40);
+    const int removed = reply.result.removed;
+    CHECK(removed == (startingClip > 0 ? startingClip - 1 : 0));
+    reply = act(Action::Cycle); // No chambering without an attached magazine.
+    CHECK(reply.status == Status::NoSpaceOrAmmo && SettleGesture(reply, Hand::Right) == GestureOutcome::RetryCycle);
+    reply = act(Action::Reinsert);
+    CHECK(reply.status == Status::Applied && reply.result.added == removed);
+    CHECK(native.ammo.clip == startingClip && native.reserve == 40);
+    CHECK(SettleGesture(reply, Hand::Right) == (startingClip > 0 ? GestureOutcome::MagazineReady : GestureOutcome::NeedsCycle));
+    reply = act(Action::Eject);
+    CHECK(SettleGesture(reply, Hand::Right) == GestureOutcome::Ejected);
+    reply = act(Action::Insert);
+    CHECK(reply.status == Status::Applied && reply.result.released == removed);
+    CHECK(native.ammo.clip == 15 && native.reserve == (infiniteReserve ? 40 : 40 - reply.result.added));
+    CHECK(SettleGesture(reply, Hand::Right) == (startingClip > 0 ? GestureOutcome::MagazineReady : GestureOutcome::NeedsCycle));
+    CHECK(ammo.BlocksUnchambered(native.ammo, Hand::Right) == (startingClip == 0));
+    const int clipBeforeCycle = native.ammo.clip, reserveBeforeCycle = native.reserve;
+    reply = act(Action::Cycle);
+    CHECK(native.ammo.clip == clipBeforeCycle && native.reserve == reserveBeforeCycle);
+    if (startingClip == 0)
+    {
+        CHECK(SettleGesture(reply, Hand::Right) == GestureOutcome::Cycled);
+        CHECK(!ammo.BlocksUnchambered(native.ammo, Hand::Right));
+    }
+    else CHECK(reply.status == Status::NoSpaceOrAmmo); // A loaded chamber needs no slide stroke.
+    CHECK(SettleGesture(reply, Hand::Left) == GestureOutcome::Cancel);
+    reply.status = Status::Backend;
+    CHECK(SettleGesture(reply, Hand::Right) == GestureOutcome::Cancel);
+    reply.status = Status::Stale;
+    CHECK(SettleGesture(reply, Hand::Right) == GestureOutcome::RetryCycle);
+    reply.request.action = Action::Insert;
+    CHECK(SettleGesture(reply, Hand::Right) == GestureOutcome::RetryMagazine);
+    reply.request.action = Action::Eject;
+    CHECK(SettleGesture(reply, Hand::Right) == GestureOutcome::Cancel);
+}
 int main()
 {
     using namespace l4d2vr_pistol_reload;
+    CheckSingleGestureReload(0, false);
+    CheckSingleGestureReload(7, false);
+    CheckSingleGestureReload(0, true);
+    CheckSingleGestureReload(7, true);
     CHECK(BlocksNativeReload(true, 1u));
     CHECK(BlocksNativeReload(true, 2u));
     CHECK(BlocksNativeReload(true, 3u));

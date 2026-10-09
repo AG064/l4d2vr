@@ -8,6 +8,7 @@ namespace l4d2vr_magazine
 {
     constexpr unsigned kAuthoritativeMagazineInputMode = 64u;
     constexpr unsigned kAuthoritativeShellInputMode = 128u;
+    constexpr unsigned kAuthoritativePistolInputMode = 256u;
     inline bool UseAuthoritativeMagazine(bool supported, bool detachable, bool nativeDual, bool leftHandPistol)
     {
         return supported && detachable && !nativeDual && !leftHandPistol;

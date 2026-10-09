@@ -201,10 +201,21 @@ shared firing cooldowns untouched. Unknown/expired state, another player or
 weapon, incapacitation and non-default ammo modes retain native behavior.
 New pistol transactions require both client reload bindings to be available.
 
-The client request/response API is implemented, but physical magazine grabs,
-slide gestures and persistent objects are not yet connected to it. The current
-control path therefore still uses the native shared reload. Matching builds and
-gameplay acceptance are required before claiming independent physical reloads.
+Single right-hand pistols now connect magazine release, retained/fresh magazine
+insertion and slide gestures to the request/response API. The host confirms the
+native ammo update before the gesture advances. An empty reload waits for a
+separate acknowledged slide cycle; a tactical reload preserves its chamber and
+needs no cycle. Quick Reload does not auto-cycle this path. Its client cleanup
+clears only reload flags, preserving native ammo and shared firing timers.
+The same native handle and owner keep an active gesture on its chosen backend
+through a transient snapshot gap. A new weapon or lost capability resets it.
+The host's magazine/chamber state restores unfinished right-pistol interactions
+after a lifecycle boundary when fresh model contact regions are available.
+
+Dual and retained-left pistols still use their shared native reload fallback.
+Mirrored hand roles, independent dual reload gestures and persistent magazine
+objects remain unfinished. Matching builds and gameplay acceptance are required
+before claiming independent physical reloads.
 
 An optional client prediction-command hook scopes local pistol bullet effects,
 hand haptics and predicted hit feedback to the command Source is simulating.

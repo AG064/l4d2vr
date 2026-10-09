@@ -253,7 +253,8 @@ enum class MagazineInteractionManualState
 	HoldingBolt,
 	AutoBolting,
     WaitingForServerShell,
-    WaitingForServerMagazine
+    WaitingForServerMagazine,
+    WaitingForServerPistolCycle
 };
 
 struct MagazineInteractionBoxSnapshot
@@ -2138,6 +2139,8 @@ public:
     l4d2vr_pistol_reload::Client m_PistolMagazineRequest;
     l4d2vr_pistol_reload::Reply m_PistolMagazineReply{};
     bool m_PistolMagazineReplyReady = false;
+    bool m_PistolMagazineCycleSuppressInput = false;
+    uint32_t m_MagazineInteractionPistolHandle = 0u;
     // Both hand counts come from one accepted snapshot. All-ones means unknown.
     std::atomic<uint64_t> m_PistolAmmoCounts{0xffffffffffffffffull};
     void OfferPistolAmmoProtocol(unsigned version, uint32_t token);
@@ -2149,6 +2152,9 @@ public:
     void RecordPistolPredictionFire(const l4d2vr_pistol_prediction::Fire& fire, unsigned bullets);
     void CancelPistolPredictionFire(const l4d2vr_pistol_prediction::Fire& fire);
     bool BeginPistolMagazineRequest(int command, l4d2vr_pistol::Hand hand, l4d2vr_pistol::MagazineAction action);
+    bool ReadPistolMagazineState(C_BasePlayer* player, C_WeaponCSBase* weapon, l4d2vr_pistol_sync::State& state);
+    bool PistolMagazineProtocolSupported() const;
+    bool PistolMagazineRequestPending() const;
     void ReceivePistolMagazineReply(const l4d2vr_pistol_reload::Reply& reply);
     bool ConsumePistolMagazineReply(l4d2vr_pistol_reload::Reply& reply);
     bool BlockPistolNativeReload(C_WeaponCSBase* weapon);

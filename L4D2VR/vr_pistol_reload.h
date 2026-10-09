@@ -29,6 +29,32 @@ namespace l4d2vr_pistol_reload
         Status status = Status::Backend;
         l4d2vr_pistol::MagazineResult result{};
     };
+    enum class GestureOutcome
+    { Cancel, Ejected, MagazineReady, NeedsCycle, Cycled, RetryMagazine, RetryCycle };
+    // Only a settled host transaction may advance the physical gesture.
+    inline GestureOutcome SettleGesture(const Reply& reply, Hand hand)
+    {
+        if ((hand != Hand::Right && hand != Hand::Left) || reply.request.hand != hand ||
+            static_cast<unsigned>(reply.request.action) > 3u)
+            return GestureOutcome::Cancel;
+        if (reply.status != Status::Applied)
+        {
+            if (reply.status != Status::Stale && reply.status != Status::RateLimited &&
+                reply.status != Status::NoSpaceOrAmmo) return GestureOutcome::Cancel;
+            return reply.request.action == Action::Cycle ? GestureOutcome::RetryCycle :
+                reply.request.action == Action::Eject ? GestureOutcome::Cancel : GestureOutcome::RetryMagazine;
+        }
+        const unsigned bit = l4d2vr_pistol::Bit(hand);
+        if ((reply.result.state.physical & bit) == 0u) return GestureOutcome::Cancel;
+        const bool attached = (reply.result.state.attached & bit) != 0u;
+        const bool chambered = (reply.result.state.chambered & bit) != 0u;
+        if (reply.request.action == Action::Eject)
+            return !attached ? GestureOutcome::Ejected : GestureOutcome::Cancel;
+        if (!attached) return GestureOutcome::Cancel;
+        if (reply.request.action == Action::Cycle)
+            return chambered ? GestureOutcome::Cycled : GestureOutcome::Cancel;
+        return chambered ? GestureOutcome::MagazineReady : GestureOutcome::NeedsCycle;
+    }
     struct Snapshot
     {
         bool eligible = false;

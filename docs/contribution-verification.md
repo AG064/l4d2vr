@@ -97,6 +97,13 @@ still requires model work; this tool does not reconstruct it.
 - Pistol ammunition: join unequal clips, fire from one hand, and drop either
   pistol. Retained plus dropped ammunition must match the native shared total,
   including native reloads, weapon replacement, owner changes and unknown pairs.
+- Single right-pistol gestures: eject with Magazine Release, catch/reinsert an
+  existing magazine or insert a fresh one, then cycle an empty chamber with the
+  slide. A loaded chamber needs no cycle. Verify matching host acknowledgement
+  and native clip/reserve before completion, retained rounds, rejected insertion
+  while grip is held, missing/late slide regions, snapshot gaps, timeout recovery
+  and downing/weapon-switch restoration. Dual and retained-left pistols keep the
+  shared native reload fallback until their hand roles and contacts are connected.
 - Native firing boundary: switch to pistols and immediately fire either hand;
   verify multi-shot frames, effects, native clip replication and optional-hook
   fallback. Runtime per-hand ammo delivery and replication acceptance remain

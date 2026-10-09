@@ -87,8 +87,8 @@ contents without consuming reserve. Shots auto feed only while the magazine is
 attached, and the retained single pistol preserves its chamber and catch state.
 Failed native writers leave both hands unchanged. Replacing a cached magazine
 reports its released rounds for the later object handoff. Native/external ammo
-changes revoke inferred physical state. This policy is tested offline but is not
-yet connected to live RPCs, firing/reload gates or physical hand controls.
+changes revoke inferred physical state. This policy is tested offline;
+native gameplay and hand-control acceptance are still pending.
 Host transactions and client settlement are now connected to this policy.
 Queued requests wait for native command execution, then validate the current
 entity/session/clip/reserve before committing through the verified native writer.
@@ -96,9 +96,15 @@ Deduplication and hand-specific rate limits protect both hands. Protocol v3
 replicates physical, magazine and chamber masks plus the applied reload sequence;
 client settlement also requires matching native ammo, including intervening shots.
 Counts and chamber gates are published coherently in one atomic sample. Firing
-and host stock reload now respect physical ownership. The client begin/receive/consume
-API is present, but physical gestures and magazine-object ownership remain to be
-connected; the current controls still use native shared reload.
+and host stock reload now respect physical ownership. Single right-hand pistol
+ejection, retained/fresh magazine insertion and slide gestures now use that API
+when a supported host state and the optional native bindings are available.
+An empty reload waits for acknowledged chambering after the slide stroke;
+tactical insertion retains its chamber. Pending gestures retain their backend
+and native handle through transient snapshot gaps. Current native ammo modes,
+unsupported capacities and dual/retained-left pistols still use their existing
+fallbacks. Mirrored hand roles, independent dual gestures and persistent
+magazine-object ownership remain unfinished.
 
 Client native reload prediction is now guarded by separately validated pistol
 reload and reload-completion bindings. Fresh matching physical ownership blocks

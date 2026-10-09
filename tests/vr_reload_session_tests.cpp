@@ -65,6 +65,11 @@ int main()
     Check(ammoSession.Observe(true, 1u, 2u, 2, authoritativeMode), "A late ammo capability must fence the old predicted reload");
     Check(!ammoSession.Observe(true, 1u, 2u, 2, authoritativeMode), "Local hook heartbeats must not move an authoritative reload back to prediction");
     Check(!MayCommitAmmo(2, 2, 2, 7u, 8u), "A previously queued local clip write cannot cross the backend boundary");
+    const unsigned pistolMode = 3u | kAuthoritativePistolInputMode;
+    Check(ammoSession.Observe(true, 1u, 2u, 2, pistolMode), "Pistol transactions fence the older magazine protocol");
+    Check(!ammoSession.Observe(true, 1u, 2u, 2, pistolMode), "A pending pistol gesture retains its backend session");
+    Check((kAuthoritativePistolInputMode & (kAuthoritativeMagazineInputMode | kAuthoritativeShellInputMode)) == 0u,
+        "Pistol, magazine and shell session capabilities remain distinct");
     Check(ammoSession.Observe(true, 1u, 2u, 2, 3u), "Losing the transaction lease must cancel its pending hand state");
     Check(!UseAuthoritativeMagazine(false, true, false, false), "An absent capability cannot invent transaction support");
     Check(!UseAuthoritativeMagazine(true, true, true, false), "Native dual pistols keep their explicit shared reload fallback");
