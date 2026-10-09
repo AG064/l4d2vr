@@ -80,6 +80,18 @@ old clients/hosts and non-default infinite-ammo modes keep native behavior.
 Independent chamber/magazine operations remain unfinished. Actual delivery,
 prediction timing, empty-hand behavior and replication need matching builds.
 
+The host ammo ledger now contains an independent magazine/chamber policy for
+each hand. Ejection keeps only that pistol's chambered round; insertion preserves
+an empty chamber until cycling; reinsertion restores the removed magazine's
+contents without consuming reserve. Shots auto feed only while the magazine is
+attached, and the retained single pistol preserves its chamber and catch state.
+Failed native writers leave both hands unchanged. Replacing a cached magazine
+reports its released rounds for the later object handoff. Native/external ammo
+changes revoke inferred physical state. This policy is tested offline but is not
+yet connected to live RPCs, firing/reload gates or physical hand controls.
+Wire protocol, client state, object ownership and interaction integration remain
+required; the current playable build still uses native shared reload.
+
 The optional client prediction-command hook now selects the command-specific
 hand ray for native local bullet effects and hit-feedback attribution, with
 owner/weapon/handle/age guards and exception-safe scope restoration. Missing scoped

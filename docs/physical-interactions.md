@@ -184,6 +184,14 @@ versions and nonzero/unreadable `sv_infinite_ammo` modes retain native behavior.
 The journal never writes predicted clip/reserve counters. Independent magazine
 and chamber transactions remain unfinished.
 
+The host ledger has a tested per-hand magazine/chamber policy, including an
+atomic native-writer boundary, finite reserve limits and detached-magazine
+contents. It is not yet connected to the live interaction protocol or hand
+controls. This does not enable independent physical reloads in the current
+build. The later integration must carry chamber state to both clients, suppress
+stock reload while physical ownership is active and preserve magazine contents
+when objects leave the weapon.
+
 An optional client prediction-command hook scopes local pistol bullet effects,
 hand haptics and predicted hit feedback to the command Source is simulating.
 An older left-hand command cannot borrow the latest right-hand ray. Cached
