@@ -1517,6 +1517,18 @@ void __fastcall Hooks::dClientPistolGunFire(void* weapon, void*)
     if (tracked) m_VR->RecordPistolPredictionFire(firing.fire, firing.bullets);
 }
 
+bool __fastcall Hooks::dClientPistolReload(void* weapon, void*)
+{
+    if (m_VR && m_VR->BlockPistolNativeReload(reinterpret_cast<C_WeaponCSBase*>(weapon))) return false;
+    return hkClientPistolReload.fOriginal(weapon);
+}
+
+void __fastcall Hooks::dClientPistolFinishReload(void* weapon, void*)
+{
+    if (m_VR && m_VR->BlockPistolNativeReload(reinterpret_cast<C_WeaponCSBase*>(weapon))) return;
+    hkClientPistolFinishReload.fOriginal(weapon);
+}
+
 int Hooks::dClientFireTerrorBullets(
 	int playerId,
 	const Vector& vecOrigin,

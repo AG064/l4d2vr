@@ -2151,6 +2151,7 @@ public:
     bool BeginPistolMagazineRequest(int command, l4d2vr_pistol::Hand hand, l4d2vr_pistol::MagazineAction action);
     void ReceivePistolMagazineReply(const l4d2vr_pistol_reload::Reply& reply);
     bool ConsumePistolMagazineReply(l4d2vr_pistol_reload::Reply& reply);
+    bool BlockPistolNativeReload(C_WeaponCSBase* weapon);
     l4d2vr_remote_mag::ClientRequest m_RemoteMagazineRequest;
     std::atomic<bool> m_NativeAmmoReloadFallbackActive{false};
     l4d2vr_magazine::NativeFallbackPulse m_NativeAmmoReloadFallbackPulse;

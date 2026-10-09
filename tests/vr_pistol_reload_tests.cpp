@@ -5,6 +5,12 @@
 int main()
 {
     using namespace l4d2vr_pistol_reload;
+    CHECK(BlocksNativeReload(true, 1u));
+    CHECK(BlocksNativeReload(true, 2u));
+    CHECK(BlocksNativeReload(true, 3u));
+    CHECK(!BlocksNativeReload(false, 3u));
+    CHECK(!BlocksNativeReload(true, 0u));
+    CHECK(!BlocksNativeReload(true, 4u));
     Server server; server.Reset(42u);
     l4d2vr_pistol::AmmoLedger ammo;
     Snapshot snapshot{true, 0x3005u, 100u, {10u, 50u, 2u, 3u, 30, true}, 30, false};

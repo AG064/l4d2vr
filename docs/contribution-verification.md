@@ -107,6 +107,10 @@ still requires model work; this tool does not reconstruct it.
 - Client pistol prediction: replay an older left shot after a newer right shot;
   check ray, haptic hand and hit-feedback command, owner/weapon replacement,
   capture expiry, non-prediction events and the optional-hook fallback.
+- Client pistol reload guard: stock reload and empty auto reload, a timed reload
+  started before physical ownership, magazine ejection/insertion, loaded other
+  hand, expiry/revocation, weapon/player changes, downing and native fallback.
+  Confirm that the guard never writes clip/reserve or resets firing cooldowns.
 - Per-hand ammo prediction: acknowledgement and older-protocol fallback; right
   empty/left loaded and the reverse; simultaneous triggers; native reload and
   down/revive; server acknowledgement arriving during replay; same-command

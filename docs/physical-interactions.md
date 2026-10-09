@@ -194,8 +194,15 @@ block native firing, and host stock reload is suppressed while physical ownershi
 active. Failed writers commit no magazine state. Fresh replacement reports
 released cached contents for object handoff.
 
+Optional verified client reload and reload-completion hooks now suppress native
+prediction for the currently held pistol while its fresh host state reports
+physical ownership. They clear only reload flags, leaving ammo counters and
+shared firing cooldowns untouched. Unknown/expired state, another player or
+weapon, incapacitation and non-default ammo modes retain native behavior.
+New pistol transactions require both client reload bindings to be available.
+
 The client request/response API is implemented, but physical magazine grabs,
-slide gestures, persistent objects and client native reload prediction are not yet connected to it. The current
+slide gestures and persistent objects are not yet connected to it. The current
 control path therefore still uses the native shared reload. Matching builds and
 gameplay acceptance are required before claiming independent physical reloads.
 

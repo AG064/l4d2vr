@@ -3488,6 +3488,7 @@ void VR::CancelPistolPredictionFire(const l4d2vr_pistol_prediction::Fire& fire)
 bool VR::BeginPistolMagazineRequest(int commandNumber, l4d2vr_pistol::Hand hand, l4d2vr_pistol::MagazineAction action)
 {
     if (commandNumber <= 0 || !m_Game || !m_Game->m_EngineClient || !m_IsVREnabled || !m_MagazineInteractionEnabled || !m_DualPistolsIndependentHandsEnabled ||
+        !Hooks::hkClientPistolReload.isEnabled || !Hooks::hkClientPistolFinishReload.isEnabled ||
         !m_FirstPersonControlReady.load(std::memory_order_acquire) ||
         m_Game->GetConVarIntDirect("sv_infinite_ammo", -1) != 0) return false;
     C_BasePlayer* player = nullptr; C_WeaponCSBase* weapon = nullptr;
@@ -3522,6 +3523,37 @@ bool VR::ConsumePistolMagazineReply(l4d2vr_pistol_reload::Reply& reply)
     std::lock_guard<std::mutex> lock(m_PistolAmmoClientMutex);
     if (!m_PistolMagazineReplyReady) return false;
     reply = m_PistolMagazineReply; m_PistolMagazineReplyReady = false; return true;
+}
+
+bool VR::BlockPistolNativeReload(C_WeaponCSBase* candidate)
+{
+    if (!m_Game || !candidate || !m_IsVREnabled || !m_EncodeVRUsercmd || m_ForceNonVRServerMovement ||
+        !m_DualPistolsIndependentHandsEnabled || !m_MagazineInteractionEnabled ||
+        !Hooks::hkClientPistolReload.isEnabled || !Hooks::hkClientPistolFinishReload.isEnabled ||
+        !m_FirstPersonControlReady.load(std::memory_order_acquire) ||
+        m_RenderPlayerIncap.load(std::memory_order_relaxed) || m_RenderPlayerControlledBySI.load(std::memory_order_relaxed) ||
+        m_Game->GetConVarIntDirect("sv_infinite_ammo", -1) != 0) return false;
+    C_BasePlayer* player = nullptr; C_WeaponCSBase* weapon = nullptr;
+    uint32_t handle = 0u; int clip = -1, reserve = -1; bool dual = false;
+    if (!ReadClientPistolMagazineContext(m_Game, player, weapon, handle, clip, reserve, dual) || weapon != candidate) return false;
+    bool blocked = false;
+    {
+        std::lock_guard<std::mutex> lock(m_PistolAmmoClientMutex);
+        l4d2vr_pistol_sync::State state{};
+        blocked = m_PistolAmmoClient.ReadBaseline(reinterpret_cast<uintptr_t>(player), handle, dual, GetTickCount64(), state) &&
+            l4d2vr_pistol_reload::BlocksNativeReload(true, state.physical);
+    }
+    if (!blocked) return false;
+    // Clear only reload ownership. Shared firing cadence and native ammo stay
+    // untouched, including a loaded pistol in the other hand.
+    unsigned char inReload = 0u, fromEmpty = 0u; int stage = 0;
+    if (MagazineInteractionTryReadValue(weapon, 0x9bd, inReload) && inReload <= 1u && inReload)
+        MagazineInteractionTryWriteValue<unsigned char>(weapon, 0x9bd, 0u);
+    if (MagazineInteractionTryReadValue(weapon, 0xce8, stage) && stage >= 0 && stage <= 4 && stage)
+        MagazineInteractionTryWriteValue<int>(weapon, 0xce8, 0);
+    if (MagazineInteractionTryReadValue(weapon, 0xcef, fromEmpty) && fromEmpty <= 1u && fromEmpty)
+        MagazineInteractionTryWriteValue<unsigned char>(weapon, 0xcef, 0u);
+    return true;
 }
 void VR::ReceiveRemoteMagazineReply(const l4d2vr_remote_mag::Reply& reply)
 {

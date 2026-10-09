@@ -98,7 +98,15 @@ client settlement also requires matching native ammo, including intervening shot
 Counts and chamber gates are published coherently in one atomic sample. Firing
 and host stock reload now respect physical ownership. The client begin/receive/consume
 API is present, but physical gestures and magazine-object ownership remain to be
-connected, along with client native reload prediction; the current controls still use native shared reload.
+connected; the current controls still use native shared reload.
+
+Client native reload prediction is now guarded by separately validated pistol
+reload and reload-completion bindings. Fresh matching physical ownership blocks
+refill attempts and clears reload flags without changing clip/reserve counters
+or shared firing cadence. Current player/weapon, session, age and ordinary ammo
+mode constrain the guard. Transaction initiation requires both optional client
+bindings. Native timing, interruption/recovery and remote acceptance still need
+testing before the physical gestures are enabled.
 
 The optional client prediction-command hook now selects the command-specific
 hand ray for native local bullet effects and hit-feedback attribution, with

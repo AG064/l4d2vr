@@ -8,6 +8,8 @@ namespace l4d2vr_pistol_reload
     using Hand = l4d2vr_pistol::Hand;
     using Action = l4d2vr_pistol::MagazineAction;
     using Status = l4d2vr_shell::Status;
+    inline bool BlocksNativeReload(bool eligible, unsigned physical)
+    { return eligible && physical != 0u && physical <= 3u; }
     struct Request
     {
         std::uint32_t token = 0u, sequence = 0u, handle = 0u, command = 0u;

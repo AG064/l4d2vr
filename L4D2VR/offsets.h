@@ -185,6 +185,11 @@ public:
     // Client gun firing boundary: thiscall, no stack arguments, void return.
     Offset ClientPistolGunFire = { "client.dll", 0x0030C4C0,
         "55 8B EC 83 EC 2C 56 57 8B F1 E8 ? ? ? ? 8B F8 85 FF 0F 84 ? ? ? ? 80 BE 5A 0A 00 00 00", 0, true };
+    // C_Pistol reload entries: thiscall, no stack arguments, bool/void returns.
+    Offset ClientPistolReload = { "client.dll", 0x0030C150,
+        "56 57 8B F1 E8 ? ? ? ? 8B F8 85 FF 0F 84 ? ? ? ? 8B 87 8C 1F 00 00 83 F8 FF", 0, true };
+    Offset ClientPistolFinishReload = { "client.dll", 0x0030C2E0,
+        "56 8B F1 E8 ? ? ? ? 33 C0 39 86 E8 0C 00 00 74 06 89 86 E8 0C 00 00 38 86 EE 0C 00 00", 0, true };
     Offset PhysicalShellEdictAccessor = { "server.dll", 0x000ED4B0,
         "51 8B 0D ? ? ? ? 8B 11 8B 82 84 01 00 00 FF D0 C3", 0, true };
     Offset PhysicalShellReloadLayout = { "server.dll", 0x003C30C4,
