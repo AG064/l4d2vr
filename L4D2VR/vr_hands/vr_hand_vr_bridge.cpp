@@ -4919,6 +4919,23 @@ bool VR::UpdateMagazineInteraction(
     const bool nativeAmmoFallback = m_MagazineInteractionEnabled &&
         MagazineInteractionWeaponUsesPhysicalReload(activeWeaponId) && !authoritativeMagazine &&
         !authoritativePistol && !authoritativeShell;
+    if (m_VrHandsDebugLog && MagazineInteractionWeaponUsesPhysicalReload(activeWeaponId))
+    {
+        static uint32_t lastHandle = 0u;
+        static unsigned lastMode = ~0u;
+        static uint64_t lastLogAt = 0u;
+        const unsigned mode = (authoritativeMagazine ? 1u : 0u) | (authoritativePistol ? 2u : 0u) |
+            (authoritativeShell ? 4u : 0u) | (nativeAmmoFallback ? 8u : 0u);
+        const uint64_t logAt = GetTickCount64();
+        if ((activeWeaponHandle != lastHandle || mode != lastMode) && logAt - lastLogAt >= 1000u)
+        {
+            lastHandle = activeWeaponHandle; lastMode = mode; lastLogAt = logAt;
+            Game::logMsg("[VR][ReloadBackend] weaponId=%d physicalMagazine=%d physicalPistol=%d physicalShell=%d nativeFallback=%d protocol=%u encode=%d",
+                activeWeaponIdInt, authoritativeMagazine ? 1 : 0, authoritativePistol ? 1 : 0,
+                authoritativeShell ? 1 : 0, nativeAmmoFallback ? 1 : 0,
+                m_ServerPhysicalInteractionVersion.load(std::memory_order_acquire), m_EncodeVRUsercmd ? 1 : 0);
+        }
+    }
     if (nativeAmmoFallback)
     {
         // Native reload owns the counters when this server cannot negotiate
@@ -5724,8 +5741,21 @@ bool VR::UpdateMagazineInteraction(
                 MagazineInteractionBoxCenterLocal(m_MagazineInteractionSocketBox));
             const Vector portCenter = MagazineInteractionMatrixPointWorld(socketWorld,
                 MagazineInteractionBoxCenterLocal(socketCaptureBox));
-            return l4d2vr_interaction::ShellTouchesPort(shellCenter, portCenter,
-                std::max(0.02f, m_MagazineInteractionSocketCaptureRadiusMeters) * m_VRScale);
+            const float radius = std::max(0.02f, m_MagazineInteractionSocketCaptureRadiusMeters) * m_VRScale;
+            const bool touching = l4d2vr_interaction::ShellTouchesPort(shellCenter, portCenter, radius);
+            if (m_VrHandsDebugLog)
+            {
+                static uint64_t lastLogAt = 0u;
+                const uint64_t logAt = GetTickCount64();
+                if (logAt - lastLogAt >= 1000u)
+                {
+                    lastLogAt = logAt;
+                    Game::logMsg("[VR][ShellInsert][client] weaponId=%d touching=%d distanceUnits=%.2f radiusUnits=%.2f inputSocket=%d clip=%d",
+                        activeWeaponIdInt, touching ? 1 : 0, (shellCenter - portCenter).Length(), radius,
+                        useInputSocket ? 1 : 0, activeClip);
+                }
+            }
+            return touching;
         }
         const Vector detachedAxes[3] =
         {
@@ -6071,9 +6101,8 @@ bool VR::UpdateMagazineInteraction(
         (m_MagazineInteractionState == MagazineInteractionManualState::WaitingForFreshMagazine ||
             m_MagazineInteractionState == MagazineInteractionManualState::WaitingForBoltGrab ||
             m_MagazineInteractionState == MagazineInteractionManualState::HoldingBolt);
-    const bool manualReloadOwnsOffhandInput =
-        (IsMagazineInteractionManualActive() && !continuousPumpSupport) ||
-        nativeReloadSuppressWindowActiveForWeapon();
+    const bool manualReloadOwnsOffhandInput = !continuousPumpSupport &&
+        (IsMagazineInteractionManualActive() || nativeReloadSuppressWindowActiveForWeapon());
 
     auto releaseMountFriendlyGrip = [&](const char* reason, bool feedback)
     {
@@ -7615,14 +7644,27 @@ bool VR::UpdateMagazineInteraction(
             {
                 captureShotgunStableSocketCapture("shell-insert-request");
                 int ammoType = -1, reserve = -1, reserveOffset = -1;
-                if (!readClientPrimaryAmmo(ammoType, reserve, reserveOffset)) return false;
-                if (BeginRemoteShellRequest(activeWeaponHandle, activeWeaponIdInt, activeClip, reserve,
+                const bool ammoRead = readClientPrimaryAmmo(ammoType, reserve, reserveOffset);
+                if (ammoRead && BeginRemoteShellRequest(activeWeaponHandle, activeWeaponIdInt, activeClip, reserve,
                     reinterpret_cast<uintptr_t>(localPlayer),
                     m_MagazineInteractionSessionGeneration.load(std::memory_order_acquire)))
                 {
                     m_MagazineInteractionState = MagazineInteractionManualState::WaitingForServerShell;
                     m_MagazineInteractionLeftHandHolding = false;
                     m_MagazineInteractionLeftHandPoseActive.store(0, std::memory_order_relaxed);
+                }
+                else if (m_VrHandsDebugLog)
+                {
+                    static uint64_t lastLogAt = 0u;
+                    const uint64_t logAt = GetTickCount64();
+                    if (logAt - lastLogAt >= 1000u)
+                    {
+                        lastLogAt = logAt;
+                        Game::logMsg("[VR][ShellInsert][client] request deferred ammoRead=%d ammoType=%d reserve=%d handleValid=%d command=%d controlReady=%d supported=%d",
+                            ammoRead ? 1 : 0, ammoType, reserve, l4d2vr_shell::ValidHandle(activeWeaponHandle) ? 1 : 0,
+                            m_CurrentPredictedHitFeedbackCmdNumber, m_FirstPersonControlReady.load(std::memory_order_acquire) ? 1 : 0,
+                            RemoteShellProtocolSupported() ? 1 : 0);
+                    }
                 }
                 return false;
             }
@@ -8192,8 +8234,8 @@ bool VR::DrawVrHandsForEyeImmediate(
     const QAngle currentViewmodelAngles = GetRecommendedViewmodelAbsAngle();
     Vector rightHandPoseOffsetMeters = m_VrHandsRightPoseOffsetMeters;
     Vector rightHandPoseRotationOffsetDeg = m_VrHandsRightPoseRotationOffsetDeg;
-    const bool twoHandedGripPoseActive = IsVrHandsTwoHandedGripPoseActive() &&
-        !(m_ManualPumpEnabled && m_ManualPumpBlockingFire.load(std::memory_order_acquire));
+    // A spent shell blocks firing, not the support hand's attachment to the pump.
+    const bool twoHandedGripPoseActive = IsVrHandsTwoHandedGripPoseActive();
     Vector leftHandPoseOffsetMeters = twoHandedGripPoseActive
         ? Vector(0.0f, 0.0f, 0.0f)
         : m_VrHandsLeftPoseOffsetMeters;
@@ -8202,6 +8244,9 @@ bool VR::DrawVrHandsForEyeImmediate(
         : m_VrHandsLeftPoseRotationOffsetDeg;
     const bool vrHandsRightUseViewmodelPose =
         m_VrHandsRightUseViewmodelPose && !(emptyHandsPlaceholderActive && m_GripReleaseDropEnabled) &&
+        // Native throwable animations can retain their release pose. Keep this
+        // hand on the controller through preparation and throwing instead.
+        (m_ManualThrowViewmodelInputState.load(std::memory_order_acquire) & 1u) == 0u &&
         m_PistolOwnershipMask.load(std::memory_order_acquire) != 2u;
     if (!vrHandsRightUseViewmodelPose)
     {

@@ -1,9 +1,31 @@
 #pragma once
 #include "sdk/vector.h"
+#include <algorithm>
 #include <cmath>
+#include <vector>
 
 namespace l4d2vr_interaction
 {
+    inline bool BoneInBranch(const std::vector<int>& parents, int bone, int root)
+    {
+        if (parents.size() > 512u) return false;
+        const int count = static_cast<int>(parents.size());
+        if (root < 0 || root >= count) return false;
+        for (int guard = 0; guard < count && bone >= 0 && bone < count; ++guard)
+        {
+            if (bone == root) return true;
+            bone = parents[static_cast<std::size_t>(bone)];
+        }
+        return false;
+    }
+
+    inline bool PumpMovesBone(const std::vector<int>& parents, int bone, int pump, int heldWrist)
+    {
+        // The support wrist is usually a sibling of the weapon, not its child.
+        // The union also avoids translating a nested wrist twice.
+        return BoneInBranch(parents, bone, pump) || BoneInBranch(parents, bone, heldWrist);
+    }
+
     inline bool Finite(const Vector& v)
     {
         return std::isfinite(v.x) && std::isfinite(v.y) && std::isfinite(v.z);

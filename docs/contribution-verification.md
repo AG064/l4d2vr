@@ -218,3 +218,24 @@ networked owner is excluded. Left-hand pickup remains restricted to pistols.
 The existing release reservation and pickup latch create IN_USE once; the native
 server remains responsible for finding and authorizing the actual pickup.
 This path still requires headset contact and multiplayer acceptance.
+
+## Pump support and throwable hand continuity
+
+Requiring a pump cycle no longer switches the glove to its free-hand pose.
+The held support wrist and fingers receive the pump's travel even when the
+native rig places that wrist beside the weapon branch. Each bone moves once;
+the receiver, gun hand and elbow retain their existing transforms. Releasing
+grip removes that wrist from pump travel. Native reload suppression also leaves
+continuous pump support available. Parent-chain regression checks cover sibling
+and nested wrists, release and malformed cycles.
+
+With manual throw enabled, the throwing glove follows its tracked controller
+through the throwable's preparation and release instead of taking the native
+throw animation's wrist pose. This requires headset verification after pipe,
+molotov and bile throws and a switch back to a firearm.
+
+Bounded debug logs now distinguish physical ammo backends from native fallback,
+shell-to-port contact, request deferral, server acknowledgement and replicated
+ammo confirmation. The reported automatic reload and failed shell insertion
+remain pending native reproduction in the current build; these diagnostics do
+not establish that those failures are fixed.

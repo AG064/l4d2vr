@@ -9032,17 +9032,35 @@ namespace
         VR* vr,
         const std::string& modelName,
         const ModelRenderInfo_t& info,
+        const std::vector<std::string>& boneNames,
         const std::vector<int>& boneParents,
         int boltBone,
         vr_vm_stabilize::Mat3x4* bones,
         int numBones)
     {
-        if (!vr || !vr->ShouldMoveMagazineInteractionBolt() || !bones ||
-            boltBone < 0 || boltBone >= numBones ||
+        if (!vr || !vr->ShouldMoveMagazineInteractionBolt() || !bones || numBones <= 0 || numBones > 512 ||
             static_cast<int>(boneParents.size()) < numBones)
         {
             return;
         }
+
+        const bool haveBolt = boltBone >= 0 && boltBone < numBones;
+        int heldWrist = -1;
+        const auto weaponId = static_cast<C_WeaponCSBase::WeaponID>(vr->m_MagazineInteractionWeaponId);
+        if (vr->m_ManualPumpEnabled && vr->IsVrHandsTwoHandedGripPoseActive() &&
+            vr->m_MagazineInteractionState == MagazineInteractionManualState::HoldingBolt &&
+            (weaponId == C_WeaponCSBase::WeaponID::PUMPSHOTGUN ||
+                weaponId == C_WeaponCSBase::WeaponID::SHOTGUN_CHROME) &&
+            static_cast<int>(boneNames.size()) >= numBones)
+        {
+            for (int bone = 0; bone < numBones; ++bone)
+            {
+                const std::string name = vr_vm_stabilize::ToLowerAscii(boneNames[static_cast<size_t>(bone)]);
+                if (name == "valvebiped.bip01_l_hand" || name == "valvebiped.bip01_l_wrist")
+                { heldWrist = bone; break; }
+            }
+        }
+        if (!haveBolt && heldWrist < 0) return;
 
         const float maxPull = std::max(
             0.0f,
@@ -9056,17 +9074,21 @@ namespace
         if (!(pullDistance > 0.0001f))
             return;
 
-        Vector pullAxis = BuildMagazineInteractionBoltPullAxisWorld(
-            vr,
-            modelName,
-            bones,
-            numBones,
-            boneParents,
-            ResolveMagazineInteractionWeaponIdForConfig(vr),
-            boltBone,
-            bones[boltBone],
-            ResolveMagazineInteractionProfileKeyForConfig(vr),
-            info.pModelToWorld);
+        // A separate arms draw has no pump bone. It shares the current manual
+        // stroke's world axis with the gun draw, without indexing a missing bone.
+        Vector pullAxis = vr->m_MagazineInteractionBoltPullAxisWorld;
+        if (haveBolt)
+            pullAxis = BuildMagazineInteractionBoltPullAxisWorld(
+                vr,
+                modelName,
+                bones,
+                numBones,
+                boneParents,
+                ResolveMagazineInteractionWeaponIdForConfig(vr),
+                boltBone,
+                bones[boltBone],
+                ResolveMagazineInteractionProfileKeyForConfig(vr),
+                info.pModelToWorld);
         pullAxis = HooksNormalizeVector(pullAxis, Vector(0.0f, 0.0f, 0.0f));
         if (pullAxis.Length() <= 0.0001f)
             return;
@@ -9096,31 +9118,16 @@ namespace
         if (runtimeAxis.Length() > 0.0001f && DotProduct(pullAxis, runtimeAxis) < 0.0f)
             pullAxis = pullAxis * -1.0f;
 
-        vr_vm_stabilize::Mat3x4 targetBolt = bones[boltBone];
-        targetBolt.m[0][3] += pullAxis.x * pullDistance;
-        targetBolt.m[1][3] += pullAxis.y * pullDistance;
-        targetBolt.m[2][3] += pullAxis.z * pullDistance;
-
-        vr_vm_stabilize::Mat3x4 inverseCurrentBolt{};
-        vr_vm_stabilize::InvertTR(bones[boltBone], inverseCurrentBolt);
+        // Pump/slide travel is a world translation. Keep bone rotation and scale.
         vr_vm_stabilize::Mat3x4 delta{};
-        vr_vm_stabilize::Mul(targetBolt, inverseCurrentBolt, delta);
-
-        auto isBoltOrDescendant = [&](int bone)
-            {
-                int current = bone;
-                for (int guard = 0; guard < numBones && current >= 0 && current < numBones; ++guard)
-                {
-                    if (current == boltBone)
-                        return true;
-                    current = boneParents[static_cast<size_t>(current)];
-                }
-                return false;
-            };
+        delta.m[0][0] = delta.m[1][1] = delta.m[2][2] = 1.0f;
+        delta.m[0][3] = pullAxis.x * pullDistance;
+        delta.m[1][3] = pullAxis.y * pullDistance;
+        delta.m[2][3] = pullAxis.z * pullDistance;
 
         for (int bone = 0; bone < numBones; ++bone)
         {
-            if (!isBoltOrDescendant(bone))
+            if (!l4d2vr_interaction::PumpMovesBone(boneParents, bone, haveBolt ? boltBone : -1, heldWrist))
                 continue;
 
             vr_vm_stabilize::Mat3x4 moved{};
@@ -22868,6 +22875,7 @@ namespace
             vr,
             modelName,
             info,
+            boneNames,
             boneParents,
             magazineInteractionBoltBone,
             copiedBones,

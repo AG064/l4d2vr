@@ -20,6 +20,23 @@ static bool Near(const Vector& a, const Vector& b) { return (a-b).LengthSqr() < 
 int main()
 {
     using namespace l4d2vr_interaction;
+    // Native shotgun rigs keep the support arm beside the weapon branch.
+    // Pumping must move its wrist/fingers without moving the receiver or gun hand.
+    const std::vector<int> siblings{-1, 0, 1, 0, 3, 4, 0, 6};
+    Check(PumpMovesBone(siblings, 1, 1, 4) && PumpMovesBone(siblings, 2, 1, 4),
+        "Pump and attached geometry move together");
+    Check(PumpMovesBone(siblings, 4, 1, 4) && PumpMovesBone(siblings, 5, 1, 4),
+        "A sibling support wrist and its fingers must follow the pump");
+    Check(!PumpMovesBone(siblings, 0, 1, 4) && !PumpMovesBone(siblings, 3, 1, 4) &&
+        !PumpMovesBone(siblings, 7, 1, 4), "Pump travel must leave the receiver, elbow and gun hand fixed");
+    Check(!PumpMovesBone(siblings, 5, 1, -1), "Releasing support grip frees its wrist");
+    Check(PumpMovesBone(siblings, 5, -1, 4) && !PumpMovesBone(siblings, 7, -1, 4),
+        "A separate arms draw without a pump bone must move only the support wrist branch");
+    const std::vector<int> nested{-1, 0, 1, 2};
+    Check(PumpMovesBone(nested, 3, 1, 2), "A wrist under the pump belongs to one movement union");
+    const std::vector<int> cyclic{-1, 2, 1};
+    Check(!BoneInBranch(cyclic, 1, 0) && !BoneInBranch(cyclic, 10, 0) &&
+        !BoneInBranch(cyclic, 0, -1), "Malformed parent chains must terminate safely");
     const Vector forward(1.0f,0.0f,0.0f), right(0.0f,-1.0f,0.0f), up(0.0f,0.0f,1.0f);
     Check(std::fabs(BodyYaw(Vector(0.0f,1.0f,0.0f),0.0f,90.0f,true)-90.0f)<0.001f,
         "A 90-degree stick turn must be applied once, not twice");
