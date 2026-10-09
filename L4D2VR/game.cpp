@@ -22,10 +22,14 @@
 #include "hooks.h"
 #include "vr_interaction_protocol.h"
 #include "vr_recv_interface.h"
+#include "vr_edict_identity.h"
 #include "offsets.h"
 #include "sigscanner.h"
 #include "vr_pose_protocol.h"
 #include "sdk/ivdebugoverlay.h"
+
+static_assert(sizeof(edict_t) == sizeof(l4d2vr_edict::Layout32), "Unexpected L4D2 native edict size");
+static_assert(offsetof(CBaseEdict, m_NetworkSerialNumber) == 4u, "Unexpected L4D2 native serial offset");
 
 static std::mutex logMutex;
 static std::once_flag logResetOnce;
@@ -1389,37 +1393,12 @@ namespace
 #endif
     }
 
-    bool VRPoseRelayReadEdictIdentity(
-        edict_t* entity,
-        int& outPlayerIndex,
-        std::int16_t& outSerial)
+    bool VRPoseRelayReadEdictIdentity(edict_t* entity, int& outPlayerIndex, unsigned& outSerial)
     {
-        outPlayerIndex = -1;
-        outSerial = 0;
-        if (!entity)
-            return false;
-#ifdef _MSC_VER
-        __try
-        {
-#endif
-            if ((entity->m_fStateFlags & kSourceEdictFreeFlag) != 0 ||
-                !entity->m_pUnk)
-            {
-                return false;
-            }
-            outPlayerIndex = static_cast<int>(entity->m_EdictIndex);
-            outSerial = entity->m_NetworkSerialNumber;
-            return outPlayerIndex >= 1 &&
-                outPlayerIndex <= kVRPoseRelayMaxPlayerIndex;
-#ifdef _MSC_VER
-        }
-        __except (EXCEPTION_EXECUTE_HANDLER)
-        {
-            outPlayerIndex = -1;
-            outSerial = 0;
-            return false;
-        }
-#endif
+        if (g_Game && g_Game->ReadServerEdictIdentity(entity, outPlayerIndex, outSerial) &&
+            outPlayerIndex >= 1 && outPlayerIndex <= kVRPoseRelayMaxPlayerIndex) return true;
+        outPlayerIndex = -1; outSerial = 0u;
+        return false;
     }
 
     bool VRPoseRelaySendClientCommand(
@@ -1772,7 +1751,7 @@ void Game::ObserveBuiltinVRPoseRelayClient(
     }
 
     int edictPlayerIndex = -1;
-    std::int16_t edictSerial = 0;
+    unsigned edictSerial = 0u;
     if (!VRPoseRelayReadEdictIdentity(
             entity,
             edictPlayerIndex,
@@ -1847,7 +1826,7 @@ bool Game::HandleBuiltinVRPoseRelayCommand(
         return false;
 
     int playerIndex = -1;
-    std::int16_t edictSerial = 0;
+    unsigned edictSerial = 0u;
     if (!VRPoseRelayReadEdictIdentity(
             entity,
             playerIndex,
@@ -1959,7 +1938,7 @@ bool Game::HandleBuiltinVRPoseRelayCommand(
             continue;
 
         int currentIndex = -1;
-        std::int16_t currentSerial = 0;
+        unsigned currentSerial = 0u;
         if (!VRPoseRelayReadEdictIdentity(
                 recipient.entity,
                 currentIndex,
@@ -2614,6 +2593,26 @@ const char* Game::GetNetworkClassName(uintptr_t* entity) const
     {
         return nullptr;
     }
+}
+
+bool Game::ReadServerEdictIdentity(const edict_t* entity, int& index, unsigned& serial,
+    const void* expectedEntity) const
+{
+    index = -1; serial = 0u;
+    if (!entity || !m_Offsets || !m_Offsets->CBaseEntity_entindex.valid) return false;
+    __try
+    {
+        if ((entity->m_fStateFlags & 2u) != 0u || (entity->m_fStateFlags & 4u) == 0u || !entity->m_pUnk)
+            return false;
+        const void* object = entity->m_pUnk->GetBaseEntity();
+        if (!object || (expectedEntity && expectedEntity != object) ||
+            *reinterpret_cast<edict_t* const*>(static_cast<const unsigned char*>(object) + 0x28) != entity)
+            return false;
+        using NativeIndex = int (__thiscall*)(const void*);
+        return l4d2vr_edict::Identity(reinterpret_cast<NativeIndex>(m_Offsets->CBaseEntity_entindex.address)(object),
+            entity->m_NetworkSerialNumber, static_cast<unsigned>(entity->m_fStateFlags), index, serial);
+    }
+    __except (EXCEPTION_EXECUTE_HANDLER) { index = -1; serial = 0u; return false; }
 }
 
 int Game::FindRecvPropOffset(const char* networkName, const char* propName) const

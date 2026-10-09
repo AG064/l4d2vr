@@ -1154,11 +1154,12 @@ namespace
             if (bytes[0xf0] != 0u || *reinterpret_cast<const int*>(bytes + 0x238) != 2) return false;
             using Index = int (__thiscall*)(void*);
             const int index = reinterpret_cast<Index>(Hooks::m_Game->m_Offsets->CBaseEntity_entindex.address)(owner);
-            if (!entity || (entity->m_fStateFlags & 2u) != 0u || index <= 0 ||
-                !Hooks::m_Game->IsValidPlayerIndex(index) || entity->m_EdictIndex != index || command->command_number <= 0)
+            int edictIndex = -1; unsigned serial = 0u;
+            if (!Hooks::m_Game->ReadServerEdictIdentity(entity, edictIndex, serial, owner) || index <= 0 ||
+                !Hooks::m_Game->IsValidPlayerIndex(index) || edictIndex != index || command->command_number <= 0)
                 return false;
             result.owner = owner; result.index = index; result.command = command->command_number;
-            result.serial = static_cast<unsigned short>(entity->m_NetworkSerialNumber);
+            result.serial = serial;
             result.attack = (command->buttons & 1) != 0;
             result.use = (command->buttons & (1 << 5)) != 0;
             return true;
@@ -1199,11 +1200,11 @@ namespace
             if (!weapon || !l4d2vr_calibration::IsFirearm(weapon->GetWeaponID())) return {};
             auto* entity = *reinterpret_cast<edict_t**>(reinterpret_cast<unsigned char*>(weapon) + 0x28);
             using Index = int (__thiscall*)(void*);
-            if (!entity || (entity->m_fStateFlags & 2u) != 0u || (entity->m_fStateFlags & 4u) == 0u ||
-                entity->m_EdictIndex <= 0 || reinterpret_cast<Index>(
-                    Hooks::m_Game->m_Offsets->CBaseEntity_entindex.address)(weapon) != entity->m_EdictIndex)
+            int edictIndex = -1; unsigned serial = 0u;
+            if (!Hooks::m_Game->ReadServerEdictIdentity(entity, edictIndex, serial, weapon) ||
+                reinterpret_cast<Index>(Hooks::m_Game->m_Offsets->CBaseEntity_entindex.address)(weapon) != edictIndex)
                 return {};
-            return {reinterpret_cast<uintptr_t>(weapon), static_cast<unsigned short>(entity->m_NetworkSerialNumber)};
+            return {reinterpret_cast<uintptr_t>(weapon), serial};
 #ifdef _MSC_VER
         }
         __except (EXCEPTION_EXECUTE_HANDLER) { return {}; }

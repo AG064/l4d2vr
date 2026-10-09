@@ -8,7 +8,7 @@ void Game::ResetRemoteMagazineServerClients()
 void Game::OfferRemoteMagazineProtocol(edict_t* entity)
 {
     if (!RemoteMagazineBackendReady(this)) return;
-    int index = -1; std::int16_t serial = 0;
+    int index = -1; unsigned serial = 0u;
     if (!VRPoseRelayReadEdictIdentity(entity, index, serial)) return;
     uint32_t token = 0;
     {
@@ -44,7 +44,7 @@ bool Game::HandleRemoteMagazineCommand(edict_t* entity, const void* sourceComman
     l4d2vr_remote_mag::Request request{values[0], values[1], values[2], values[3],
         static_cast<int>(values[4]), static_cast<int>(values[5]), static_cast<int>(values[6]),
         static_cast<l4d2vr_remote_mag::Action>(values[7])};
-    int index = -1; std::int16_t serial = 0;
+    int index = -1; unsigned serial = 0u;
     if (!VRPoseRelayReadEdictIdentity(entity, index, serial)) return true;
     l4d2vr_remote_mag::Reply reply{};
     {

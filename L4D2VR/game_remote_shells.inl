@@ -108,14 +108,18 @@ namespace
             native.dualPistol = pistol && weaponBytes[0x17dd] != 0u;
             // CBaseEntity::entindex's signature validates the edict pointer at 0x28.
             edict_t* weaponEdict = *reinterpret_cast<edict_t**>(weaponBytes + 0x28);
-            if (!weaponEdict || (weaponEdict->m_fStateFlags & 2u) != 0u ||
-                reinterpret_cast<Index>(game->m_Offsets->CBaseEntity_entindex.address)(weapon) != weaponEdict->m_EdictIndex ||
+            int weaponIndex = -1; unsigned weaponSerial = 0u;
+            int ownerIndex = -1; unsigned ownerSerial = 0u;
+            if (!game->ReadServerEdictIdentity(entity, ownerIndex, ownerSerial, player) || ownerIndex != index ||
+                !game->ReadServerEdictIdentity(weaponEdict, weaponIndex, weaponSerial, weapon) ||
+                !weaponEdict || (weaponEdict->m_fStateFlags & 2u) != 0u ||
+                reinterpret_cast<Index>(game->m_Offsets->CBaseEntity_entindex.address)(weapon) != weaponIndex ||
                 (weaponEdict->m_fStateFlags & 4u) == 0u) return false;
             // SendProxy_EHandleToInt transmits the entity-list handle serial,
             // not the edict allocation serial. Project that native handle into
             // the client's 12-entry/10-serial-bit representation.
             const uint32_t activeHandle = *reinterpret_cast<uint32_t*>(playerBytes + 0x19d4);
-            if (activeHandle == 0xffffffffu || (activeHandle & 0xfffu) != static_cast<unsigned>(weaponEdict->m_EdictIndex) ||
+            if (activeHandle == 0xffffffffu || (activeHandle & 0xfffu) != static_cast<unsigned>(weaponIndex) ||
                 !l4d2vr_shell::HandleMatches(request.handle, static_cast<int>(activeHandle & 0xfffu), activeHandle >> 12))
                 return false;
             const int ammoType = *reinterpret_cast<int*>(weaponBytes + 0x140c);
@@ -216,7 +220,7 @@ void Game::ResetRemoteShellServerClients()
 void Game::OfferRemoteShellProtocol(edict_t* entity)
 {
     if (!RemoteShellBackendReady(this)) return;
-    int index = -1; std::int16_t serial = 0;
+    int index = -1; unsigned serial = 0u;
     if (!VRPoseRelayReadEdictIdentity(entity, index, serial)) return;
     uint32_t token = 0u;
     {
@@ -244,7 +248,7 @@ bool Game::HandleRemoteShellCommand(edict_t* entity, const void* sourceCommand)
         return false;
     l4d2vr_shell::Request request{};
     if (!ParseRemoteShellRequest(*static_cast<const SourceCCommand*>(sourceCommand), request)) return true;
-    int index = -1; std::int16_t serial = 0;
+    int index = -1; unsigned serial = 0u;
     if (!VRPoseRelayReadEdictIdentity(entity, index, serial)) return true;
     l4d2vr_shell::Reply reply{};
     {

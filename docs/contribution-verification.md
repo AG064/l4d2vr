@@ -169,3 +169,21 @@ out-of-module pointer returns an unavailable offset. Regression checks include
 the installed getter bytes, an ASLR relocation, the old HUD method bytes,
 truncated code and invalid or overflowing image bounds. Native map-loading and
 headset acceptance must be recorded separately from these software checks.
+## Native entity identity and physical capability
+
+After the receive-interface fix, a solo hotel-map test reached a controllable
+survivor, but physical interaction negotiation remained unavailable. Live
+inspection showed native player index 1 and a 32-bit allocation serial of 396 at
+edict byte 4. The copied newer-Source layout treated that serial as a cached
+index, so it rejected this player and kept physical drop, dual-hand firing and
+manual reload/pump behavior in native fallback.
+
+The main SDK declarations now use L4D2's 16-byte edict with a full serial and no
+cached index. Shared server identity checks call the verified native entindex
+function, verify the reciprocal entity/edict pointer and retain the full serial.
+The relay, pistol accounting, reload gates, drops and ammo transactions use those
+checks. The optional pose plugin derives indices from ServerActivate's edict
+array with the native stride. Tests cover the observed survivor, array bounds
+and alignment, invalid/free entities and distinct generations above 16 bits.
+Negotiation and interaction acceptance still require a matching native test.
+The layout follows the [L4D2 SDK edict header](https://github.com/alliedmodders/hl2sdk/blob/l4d2/public/edict.h).

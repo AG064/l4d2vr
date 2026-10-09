@@ -187,7 +187,7 @@ struct Player
 struct VRPoseRelayServerClient
 {
     edict_t* entity = nullptr;
-    std::int16_t edictSerial = 0;
+    unsigned edictSerial = 0u;
     bool protocolSupported = false;
     bool haveSequence = false;
     std::uint16_t lastSequence = 0;
@@ -254,7 +254,7 @@ public:
     struct PistolAmmoServerClient
     {
         edict_t* entity = nullptr;
-        std::int16_t serial = 0;
+        unsigned serial = 0u;
         l4d2vr_pistol_sync::Sender sender;
         l4d2vr_pistol_reload::Server reload;
         l4d2vr_pistol_reload::Request pending{};
@@ -283,7 +283,7 @@ public:
     struct RemoteShellServerClient
     {
         edict_t* entity = nullptr;
-        std::int16_t serial = 0;
+        unsigned serial = 0u;
         l4d2vr_shell::ServerLedger ledger;
     };
     std::mutex m_RemoteShellServerMutex;
@@ -294,7 +294,7 @@ public:
     struct RemoteMagazineServerClient
     {
         edict_t* entity = nullptr;
-        std::int16_t serial = 0;
+        unsigned serial = 0u;
         l4d2vr_remote_mag::ServerLedger ledger;
     };
     std::mutex m_RemoteMagazineServerMutex;
@@ -319,6 +319,8 @@ public:
     char* getNetworkName(uintptr_t* entity);
     const char* GetNetworkClassName(uintptr_t* entity) const;
     int FindRecvPropOffset(const char* networkName, const char* propName) const;
+    bool ReadServerEdictIdentity(const edict_t* entity, int& index, unsigned& serial,
+        const void* expectedEntity = nullptr) const;
     bool IsDualPistolWeapon(C_WeaponCSBase* weapon, int* clip = nullptr) const;
 
     // === Rendering Thread Mode ===

@@ -20,16 +20,16 @@ namespace
             entity = *reinterpret_cast<edict_t**>(owner + 0x28);
             auto* weaponEntity = *reinterpret_cast<edict_t**>(weapon + 0x28);
             using Active = void* (__thiscall*)(void*);
-            if (!entity || !weaponEntity || (entity->m_fStateFlags & 2u) != 0u ||
-                (weaponEntity->m_fStateFlags & 2u) != 0u || entity->m_EdictIndex != index ||
-                static_cast<unsigned short>(entity->m_NetworkSerialNumber) != snapshot.ownerSerial ||
-                static_cast<unsigned short>(weaponEntity->m_NetworkSerialNumber) != snapshot.weaponSerial ||
+            int ownerIndex = -1, weaponIndex = -1; unsigned ownerSerial = 0u, weaponSerial = 0u;
+            if (!game->ReadServerEdictIdentity(entity, ownerIndex, ownerSerial, owner) ||
+                !game->ReadServerEdictIdentity(weaponEntity, weaponIndex, weaponSerial, weapon) || ownerIndex != index ||
+                ownerSerial != snapshot.ownerSerial || weaponSerial != snapshot.weaponSerial ||
                 *reinterpret_cast<const int*>(weapon + 0x1414) != snapshot.clip ||
                 reinterpret_cast<Active>(game->m_Offsets->GetActiveWeapon.address)(owner) != weapon) return false;
             const uint32_t nativeHandle = *reinterpret_cast<uint32_t*>(owner + 0x19d4);
             handle = ((nativeHandle >> 12) & 0x3ffu) << 12 | (nativeHandle & 0xfffu);
             return nativeHandle != 0xffffffffu && l4d2vr_shell::ValidHandle(handle) &&
-                (handle & 0xfffu) == static_cast<unsigned>(weaponEntity->m_EdictIndex);
+                (handle & 0xfffu) == static_cast<unsigned>(weaponIndex);
 #ifdef _MSC_VER
         }
         __except (EXCEPTION_EXECUTE_HANDLER) { return false; }
@@ -45,7 +45,7 @@ void Game::ResetPistolAmmoServerClients()
 void Game::OfferPistolAmmoProtocol(edict_t* entity)
 {
     if (!PistolAmmoBackendReady(this)) return;
-    int index = -1; std::int16_t serial = 0;
+    int index = -1; unsigned serial = 0u;
     if (!VRPoseRelayReadEdictIdentity(entity, index, serial)) return;
     uint32_t token = 0u;
     {
@@ -84,7 +84,7 @@ void Game::PublishPistolAmmoState(int index, const l4d2vr_pistol::AmmoSnapshot& 
     {
         std::lock_guard<std::mutex> lock(m_PistolAmmoServerMutex);
         auto& client = m_PistolAmmoServerClients[index];
-        if (client.entity != entity || static_cast<unsigned short>(client.serial) != snapshot.ownerSerial) return;
+        if (client.entity != entity || client.serial != snapshot.ownerSerial) return;
         state.reloadSequence = client.reloadSequence;
         if (!client.sender.Prepare(state, GetTickCount64(), state)) return;
     }
@@ -103,7 +103,7 @@ bool Game::HandlePistolAmmoCommand(edict_t* entity, const void* sourceCommand)
     uint32_t version = 0u, token = 0u;
     if (command.ArgC() != 3 || !l4d2vr_shell::ParseNumber(command.Arg(1), 255u, version) ||
         !l4d2vr_shell::ParseNumber(command.Arg(2), 0xffffffffu, token)) return true;
-    int index = -1; std::int16_t serial = 0;
+    int index = -1; unsigned serial = 0u;
     if (!VRPoseRelayReadEdictIdentity(entity, index, serial)) return true;
     bool newlyReady = false;
     {
@@ -130,7 +130,7 @@ bool Game::PistolAmmoClientReady(int index, unsigned ownerSerial)
     if (index <= 0 || !IsValidPlayerIndex(index)) return false;
     std::lock_guard<std::mutex> lock(m_PistolAmmoServerMutex);
     const auto& client = m_PistolAmmoServerClients[index];
-    return client.entity && static_cast<unsigned short>(client.serial) == ownerSerial && client.sender.Ready();
+    return client.entity && client.serial == ownerSerial && client.sender.Ready();
 }
 
 bool Game::HandlePistolMagazineCommand(edict_t* entity, const void* sourceCommand)
@@ -146,7 +146,7 @@ bool Game::HandlePistolMagazineCommand(edict_t* entity, const void* sourceComman
     const l4d2vr_pistol_reload::Request request{values[0], values[1], values[2], values[3],
         static_cast<int>(values[4]), static_cast<int>(values[5]),
         static_cast<l4d2vr_pistol::Hand>(values[6]), static_cast<l4d2vr_pistol::MagazineAction>(values[7])};
-    int index = -1; std::int16_t serial = 0;
+    int index = -1; unsigned serial = 0u;
     if (!VRPoseRelayReadEdictIdentity(entity, index, serial)) return true;
     std::uint32_t executed = 0u;
     {
@@ -159,7 +159,7 @@ bool Game::HandlePistolMagazineCommand(edict_t* entity, const void* sourceComman
         client.pending = request; client.havePending = true; client.queuedAt = GetTickCount64();
         executed = client.executedCommand;
     }
-    if (request.command <= executed) ProcessPistolMagazineRequests(index, static_cast<int>(executed), static_cast<unsigned short>(serial));
+    if (request.command <= executed) ProcessPistolMagazineRequests(index, static_cast<int>(executed), serial);
     return true;
 }
 
@@ -172,7 +172,7 @@ void Game::ProcessPistolMagazineRequests(int index, int command, unsigned ownerS
     {
         std::lock_guard<std::mutex> lock(m_PistolAmmoServerMutex);
         auto& client = m_PistolAmmoServerClients[index];
-        if (!client.entity || static_cast<unsigned short>(client.serial) != ownerSerial) return;
+        if (!client.entity || client.serial != ownerSerial) return;
         client.executedCommand = std::max(client.executedCommand, static_cast<uint32_t>(command));
         if (static_cast<uint32_t>(command) < client.executedCommand) return;
         const uint64_t now = GetTickCount64();
@@ -188,7 +188,7 @@ void Game::ProcessPistolMagazineRequests(int index, int command, unsigned ownerS
     l4d2vr_pistol::AmmoSnapshot ammo{};
     if (eligible)
         ammo = {reinterpret_cast<uintptr_t>(native.playerObject), reinterpret_cast<uintptr_t>(native.weaponObject),
-            ownerSerial, static_cast<unsigned short>(native.weapon->m_NetworkSerialNumber), nativeAmmo.clip,
+            ownerSerial, static_cast<unsigned>(native.weapon->m_NetworkSerialNumber), nativeAmmo.clip,
             native.dualPistol, nativeAmmo.capacity};
     const l4d2vr_pistol_reload::Snapshot snapshot{eligible && ammo.Valid() && PistolAmmoBackendReady(this) &&
         m_VR && m_VR->m_MagazineInteractionEnabled && GetConVarIntDirect("sv_infinite_ammo", -1) == 0,
@@ -197,7 +197,7 @@ void Game::ProcessPistolMagazineRequests(int index, int command, unsigned ownerS
     {
         std::lock_guard<std::mutex> lock(m_PistolAmmoServerMutex);
         auto& client = m_PistolAmmoServerClients[index];
-        if (client.entity != entity || static_cast<unsigned short>(client.serial) != ownerSerial ||
+        if (client.entity != entity || client.serial != ownerSerial ||
             !client.sender.Ready() || client.sender.Token() != request.token) return;
         if (!expired)
         {

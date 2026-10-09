@@ -2200,14 +2200,15 @@ namespace
             auto* weaponEdict = *reinterpret_cast<edict_t* const*>(bytes + 0x28);
             const auto entindex = reinterpret_cast<Index>(game->m_Offsets->CBaseEntity_entindex.address);
             index = entindex(owner);
-            if (!ownerEdict || !weaponEdict || !game->IsValidPlayerIndex(index) || index <= 0 ||
-                ownerEdict->m_EdictIndex != index || weaponEdict->m_EdictIndex <= 0 ||
-                entindex(weapon) != weaponEdict->m_EdictIndex || (ownerEdict->m_fStateFlags & 2u) != 0u ||
+            int ownerIndex = -1, weaponIndex = -1; unsigned ownerSerial = 0u, weaponSerial = 0u;
+            if (!game->ReadServerEdictIdentity(ownerEdict, ownerIndex, ownerSerial, owner) ||
+                !game->ReadServerEdictIdentity(weaponEdict, weaponIndex, weaponSerial, weapon) ||
+                !game->IsValidPlayerIndex(index) || index <= 0 || ownerIndex != index ||
+                entindex(weapon) != weaponIndex || (ownerEdict->m_fStateFlags & 2u) != 0u ||
                 (weaponEdict->m_fStateFlags & 2u) != 0u || (weaponEdict->m_fStateFlags & 4u) == 0u ||
                 bytes[0x17DD] > 1u || bytes[0x17DC] > 1u) return false;
             result = {reinterpret_cast<uintptr_t>(owner), reinterpret_cast<uintptr_t>(weapon),
-                static_cast<unsigned short>(ownerEdict->m_NetworkSerialNumber),
-                static_cast<unsigned short>(weaponEdict->m_NetworkSerialNumber),
+                ownerSerial, weaponSerial,
                 *reinterpret_cast<const int*>(bytes + 0x1414), bytes[0x17DD] != 0u,
                 reinterpret_cast<Capacity>(game->m_Offsets->PhysicalShellMaxClip.address)(weapon)};
             return result.Valid();
@@ -3091,9 +3092,7 @@ namespace
 		bool resolvedBySpatialFallback = false;
 		// L4D2's own CBaseEntity::entindex implementation subtracts the global
 		// edict base and shifts right by four, proving that this server build's
-		// native edict stride is 16 bytes. The public SDK edict_t declaration
-		// includes a trailing freetime field and is 20 bytes in this project;
-		// typed pointer arithmetic therefore lands on the wrong entity.
+		// native edict stride is 16 bytes, matching the corrected SDK layout.
 		constexpr size_t kNativeEdictStride = 16;
 #ifdef _MSC_VER
 		__try
