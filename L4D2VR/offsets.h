@@ -182,6 +182,9 @@ public:
     // Capture the command being simulated instead of the latest CreateMove pose.
     Offset ClientPistolRunCommand = { "client.dll", 0x0017B460,
         "55 8B EC 83 EC 18 53 56 8B 75 08 57 8B 7D 0C 57 8B D9 89 BE 28 14 00 00 E8 ? ? ? ?", 0, true };
+    // Client gun firing boundary: thiscall, no stack arguments, void return.
+    Offset ClientPistolGunFire = { "client.dll", 0x0030C4C0,
+        "55 8B EC 83 EC 2C 56 57 8B F1 E8 ? ? ? ? 8B F8 85 FF 0F 84 ? ? ? ? 80 BE 5A 0A 00 00 00", 0, true };
     Offset PhysicalShellEdictAccessor = { "server.dll", 0x000ED4B0,
         "51 8B 0D ? ? ? ? 8B 11 8B 82 84 01 00 00 FF D0 C3", 0, true };
     Offset PhysicalShellReloadLayout = { "server.dll", 0x003C30C4,

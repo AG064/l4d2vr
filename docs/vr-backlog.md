@@ -57,7 +57,7 @@ feed a per-player/per-weapon ammunition ledger. Known partitions preserve the
 selected pistol's ammunition when splitting; unknown partial pairs and native
 ammunition changes fall back to a conservative balanced split. Retained single
 pistols keep their hand identity for another pickup. Actual per-hand reloads,
-chambers, empty-hand firing gates, capacity variants and gameplay acceptance
+chambers, larger capacity variants and gameplay acceptance
 remain unfinished.
 
 An optional native firing-boundary adapter now captures actual gun identity
@@ -70,16 +70,22 @@ A versioned host-to-client pistol-ammo feed now carries known per-hand contents
 with the native shared clip. Current weapon handle/serial, session, message and
 command ordering, owner changes, native replica matching and expiry constrain
 client acceptance. Its first consumer publishes coherent hand counts from input
-processing. This is the authoritative baseline for per-hand prediction/reload;
-the prediction journal, independent chamber/magazine operations and firing gates
-remain unfinished. Actual delivery and replication timing need matching builds.
+processing. A bounded client prediction journal now accounts for native clip
+consumption by command/firing ordinal and removes acknowledged events. Replay
+projects only the preceding events at that simulation point. Bullet/delta
+mismatches invalidate attribution until a newer authoritative baseline arrives.
+Known empty hands are gated in trigger routing and at both native gun-firing
+boundaries after protocol-v2 acknowledgement. Unknown data, missing bindings,
+old clients/hosts and non-default infinite-ammo modes keep native behavior.
+Independent chamber/magazine operations remain unfinished. Actual delivery,
+prediction timing, empty-hand behavior and replication need matching builds.
 
 The optional client prediction-command hook now selects the command-specific
 hand ray for native local bullet effects and hit-feedback attribution, with
 owner/weapon/handle/age guards and exception-safe scope restoration. Missing scoped
 poses retain the native ray rather than adopting a newer hand's shot; haptics
 and extra hit attribution are omitted when the hand is unknown. This provides the client execution context
-needed by the pending per-hand ammo prediction journal. Native timing, replay,
+used by the per-hand ammo prediction journal. Native timing, replay,
 first-shot weapon selection and feedback still need headset acceptance.
 
 The server now has an optional native execution hook and per-command hand/pose

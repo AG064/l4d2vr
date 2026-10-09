@@ -87,3 +87,36 @@ void Game::PublishPistolAmmoState(int index, const l4d2vr_pistol::AmmoSnapshot& 
         state.known ? 1u : 0u, state.dual ? 1u : 0u);
     VRPoseRelaySendClientCommand(m_ServerPluginHelpers, entity, response);
 }
+
+bool Game::HandlePistolAmmoCommand(edict_t* entity, const void* sourceCommand)
+{
+    VRPoseRelayCommandView view{};
+    if (!VRPoseRelayReadCommand(sourceCommand, view) || std::strcmp(view.name, "l4d2vr_pistol_ammo_ack") != 0) return false;
+    const auto& command = *static_cast<const SourceCCommand*>(sourceCommand);
+    uint32_t version = 0u, token = 0u;
+    if (command.ArgC() != 3 || !l4d2vr_shell::ParseNumber(command.Arg(1), 255u, version) ||
+        !l4d2vr_shell::ParseNumber(command.Arg(2), 0xffffffffu, token)) return true;
+    int index = -1; std::int16_t serial = 0;
+    if (!VRPoseRelayReadEdictIdentity(entity, index, serial)) return true;
+    bool newlyReady = false;
+    {
+        std::lock_guard<std::mutex> lock(m_PistolAmmoServerMutex);
+        auto& client = m_PistolAmmoServerClients[index];
+        if (client.entity == entity && client.serial == serial)
+        {
+            const bool wasReady = client.sender.Ready();
+            client.sender.Acknowledge(version, token);
+            newlyReady = client.sender.Ready() && !wasReady;
+        }
+    }
+    if (newlyReady) Game::logMsg("[VR][PistolAmmo][server] player=%d protocol=%u acknowledged", index, version);
+    return true;
+}
+
+bool Game::PistolAmmoClientReady(int index, unsigned ownerSerial)
+{
+    if (index <= 0 || !IsValidPlayerIndex(index)) return false;
+    std::lock_guard<std::mutex> lock(m_PistolAmmoServerMutex);
+    const auto& client = m_PistolAmmoServerClients[index];
+    return client.entity && static_cast<unsigned short>(client.serial) == ownerSerial && client.sender.Ready();
+}

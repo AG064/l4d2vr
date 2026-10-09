@@ -11,7 +11,7 @@ friend-hosted shell and detachable-magazine transactions. See `physical-interact
 `manual-reload-input.md`, `weapon-calibration.md` and `vr-backlog.md` for their
 controls, limitations and remaining tests.
 
-The current runtime source passed 19 CTest suites and Windows Release x86
+The current runtime source passed 20 CTest suites and Windows Release x86
 DLL/pose-server builds with v143 in a temporary build tree. Seven native ammo
 signatures matched uniquely against the installed server binary. These are
 offline checks. Later documentation edits do not change the tested runtime.
@@ -107,6 +107,12 @@ still requires model work; this tool does not reconstruct it.
 - Client pistol prediction: replay an older left shot after a newer right shot;
   check ray, haptic hand and hit-feedback command, owner/weapon replacement,
   capture expiry, non-prediction events and the optional-hook fallback.
+- Per-hand ammo prediction: acknowledgement and older-protocol fallback; right
+  empty/left loaded and the reverse; simultaneous triggers; native reload and
+  down/revive; server acknowledgement arriving during replay; same-command
+  multiple firing events; native infinite-ammo modes; clip replication and
+  missing/unexpected native bullet events. Confirm no duplicate consumption or
+  guessed clip/reserve writes on either player.
 - Native pistol execution: command-to-hand association across delayed commands,
   backup packets, weapon changes, two players and the optional-hook fallback.
 - Executed reload policy: packet batching, grip/pull commands, ordinary reload

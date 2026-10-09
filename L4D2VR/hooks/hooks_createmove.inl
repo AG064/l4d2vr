@@ -2030,7 +2030,10 @@ bool __fastcall Hooks::dCreateMove(void* ecx, void* edx, float flInputSampleTime
             !m_VR->m_RenderPlayerControlledBySI.load(std::memory_order_relaxed) &&
             !m_VR->IsMagazineInteractionBlockingFire() && !s_pistolOwnership.Awaiting() &&
             (cmd->buttons & (1u << 5)) == 0u;
-        const unsigned firingMask = pistolMask ? pistolMask : 3u;
+        unsigned firingMask = pistolMask ? pistolMask : 3u;
+        const uint32_t handAmmo = m_VR->m_PistolAmmoCounts.load(std::memory_order_acquire);
+        if (handAmmo != 0xffffffffu && m_Game->GetConVarIntDirect("sv_infinite_ammo", -1) == 0)
+            firingMask &= ((handAmmo & 0xffffu) > 0u ? 1u : 0u) | ((handAmmo >> 16) > 0u ? 2u : 0u);
         dualShotHand = s_dualPistolTriggers.Update(eligible,
             (firingMask & 1u) != 0u && (triggers & 2u) != 0u,
             (firingMask & 2u) != 0u && (triggers & 8u) != 0u, clip);

@@ -159,22 +159,30 @@ The pair still uses L4D2's shared clip, firing cadence, animations, and native
 reload. A split uses the stock single-pistol model, so the distinct left-hand
 Glock appearance is not retained after detachment. Independent magazines,
 chambers, safeties, and per-pistol cosmetic identity remain unfinished.
-Per-hand accounting currently controls detachment, using validated native script
+Per-hand accounting controls detachment and negotiated empty-hand firing, using validated native script
 capacities up to 15 rounds per pistol. Larger capacities retain the legacy
-split path. It does not enforce an independently empty hand or replace the shared
-reload. Pickup-hand metadata is consumed from the simulated grip command;
+split path. It does not replace the shared reload. Pickup-hand metadata is consumed from the simulated grip command;
 older hosts ignore that metadata and retain their existing pickup behavior.
 
-Matching listen-host/client builds can negotiate a separate, read-only per-hand
-ammo feed. The host publishes the native clip together with known right/left
+Matching listen-host/client builds negotiate pistol-ammo protocol v2 with a
+session acknowledgement. The host publishes the native clip with known right/left
 contents after command execution, and sends heartbeat snapshots while unchanged.
 The client accepts only its session token, increasing sequence numbers,
 nondecreasing command numbers, the current weapon handle and matching native
-clip/dual state. Unknown contents,
-owner changes, mismatched replication and snapshots older than one second expose
+dual state. A bounded journal projects actual native client shots newer than the
+host acknowledgement. Each firing event has a command/ordinal key; an older
+replay excludes newer events and cannot charge an existing event twice. Bullet
+events must match native clip loss. Projected hand counts must sum to the actual
+client clip. Unknown contents, owner changes, mismatched replication, unexpected
+consumption and snapshots older than one second expose
 no independent counts. Both hand counts are published atomically for subsequent
-hand interactions. This feed does not yet replace native reloads, implement
-magazine/chamber transactions or enforce empty-hand firing.
+hand interactions. In ordinary finite-clip mode, a known empty pistol is filtered
+from trigger routing and blocked at both native firing boundaries, while the
+loaded pistol remains usable. The host gates only after a matching client
+acknowledges the session. Missing hooks, unknown partitions, older protocol
+versions and nonzero/unreadable `sv_infinite_ammo` modes retain native behavior.
+The journal never writes predicted clip/reserve counters. Independent magazine
+and chamber transactions remain unfinished.
 
 An optional client prediction-command hook scopes local pistol bullet effects,
 hand haptics and predicted hit feedback to the command Source is simulating.
@@ -184,7 +192,7 @@ and a bounded capture age. With
 the hook active, missing or replaced poses preserve the native bullet ray and
 omit additional haptics and predicted hit attribution. An unsupported hook retains the earlier latest-pose
 fallback. Native prediction replay and first-shot weapon changes need gameplay
-acceptance; independent ammo prediction and reloads remain unfinished.
+acceptance; independent reloads remain unfinished.
 First-person bone retargeting does not yet separate remote world-model
 pistols. Body inventory follows tracked head position and yaw; full body IK
 and character-specific avatar fitting remain separate work.

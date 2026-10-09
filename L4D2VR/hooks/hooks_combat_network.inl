@@ -1290,6 +1290,23 @@ void __fastcall Hooks::dPistolGunFire(void* weapon, void*)
     const bool track = context && context->poseValid && context->attack && m_VR &&
         m_VR->m_DualPistolsIndependentHandsEnabled && ManualPistolReadAmmo(context->owner, weapon, before, index) &&
         index == context->index && before.ownerSerial == context->serial;
+    if (track && before.dual && m_Game->PistolAmmoClientReady(index, before.ownerSerial) &&
+        m_Game->GetConVarIntDirect("sv_infinite_ammo", -1) == 0)
+    {
+        int right = 0, left = 0;
+        bool known = false;
+        {
+            std::lock_guard<std::mutex> lock(m_Game->m_PistolAmmoMutex);
+            known = m_Game->m_PistolAmmo[index].Counts(before, right, left);
+        }
+        if (known && l4d2vr_pistol_prediction::BlocksEmptyHand(true, true, context->pose.hand, right, left))
+        {
+            if (m_VR->m_VrHandsDebugLog)
+                Game::logMsg("[VR][PistolAmmo][server] blocked player=%d command=%d hand=%u right=%d left=%d",
+                    index, context->command, static_cast<unsigned>(context->pose.hand), right, left);
+            return;
+        }
+    }
     const unsigned firstBullet = track ? context->pistolBulletCalls : 0u;
     hkPistolGunFire.fOriginal(weapon);
     if (!track) return;
@@ -1425,8 +1442,15 @@ namespace
     {
         uintptr_t owner = 0u;
         int command = 0;
+        mutable unsigned fireOrdinal = 0u;
     };
     thread_local const ClientPistolExecution* g_ClientPistolExecution = nullptr;
+    struct ClientPistolFire
+    {
+        l4d2vr_pistol_prediction::Fire fire{};
+        mutable unsigned bullets = 0u;
+    };
+    thread_local const ClientPistolFire* g_ClientPistolFire = nullptr;
 
     bool ReadClientPistolExecution(void* player, CUserCmd* command, ClientPistolExecution& result)
     {
@@ -1457,6 +1481,33 @@ void __fastcall Hooks::dClientPistolRunCommand(void* prediction, void*, void* pl
         [&]() { hkClientPistolRunCommand.fOriginal(prediction, player, command, moveHelper); });
 }
 
+void __fastcall Hooks::dClientPistolGunFire(void* weapon, void*)
+{
+    const auto* context = g_ClientPistolExecution;
+    ClientPistolFire firing{};
+    bool tracked = false, blocked = false;
+    if (context && context->owner && context->command > 0 && context->fireOrdinal < 64u && m_VR)
+    {
+        const unsigned ordinal = ++context->fireOrdinal;
+        Vector position{}; QAngle angles{}; l4d2vr_dual::Hand hand = l4d2vr_dual::Hand::None;
+        if (m_VR->GetExecutingDualPistolShotPose(context->command, context->owner,
+            reinterpret_cast<uintptr_t>(weapon), position, angles, hand))
+            tracked = m_VR->PreparePistolPredictionFire(reinterpret_cast<C_BasePlayer*>(context->owner),
+                reinterpret_cast<C_WeaponCSBase*>(weapon), context->command, ordinal, hand, firing.fire, blocked);
+    }
+    if (blocked)
+    {
+        if (m_VR->m_VrHandsDebugLog)
+            Game::logMsg("[VR][PistolAmmo][client] blocked command=%u ordinal=%u hand=%u clip=%d",
+                firing.fire.command, firing.fire.ordinal, static_cast<unsigned>(firing.fire.hand), firing.fire.clip);
+        m_VR->CancelPistolPredictionFire(firing.fire);
+        return;
+    }
+    l4d2vr_native_scope::Run<const ClientPistolFire>(g_ClientPistolFire, tracked ? &firing : nullptr,
+        [&]() { hkClientPistolGunFire.fOriginal(weapon); });
+    if (tracked) m_VR->RecordPistolPredictionFire(firing.fire, firing.bullets);
+}
+
 int Hooks::dClientFireTerrorBullets(
 	int playerId,
 	const Vector& vecOrigin,
@@ -1471,6 +1522,9 @@ int Hooks::dClientFireTerrorBullets(
 	QAngle vecNewAngles = vecAngles;
     l4d2vr_dual::Hand dualShotHand = l4d2vr_dual::Hand::None;
     const int localIndex = m_Game && m_Game->m_EngineClient ? m_Game->m_EngineClient->GetLocalPlayer() : -1;
+    if (g_ClientPistolFire && g_ClientPistolExecution && playerId == localIndex &&
+        g_ClientPistolFire->fire.owner == g_ClientPistolExecution->owner && g_ClientPistolFire->bullets < 64u)
+        ++g_ClientPistolFire->bullets;
     const bool dualCandidate = m_VR && m_VR->m_IsVREnabled && playerId == localIndex &&
         (m_VR->m_DualPistolsActive.load(std::memory_order_acquire) ||
             m_VR->m_LeftHandPistolActive.load(std::memory_order_acquire));
@@ -1800,6 +1854,7 @@ void __fastcall Hooks::dServerGameClientsClientCommand(
 	(void)edx;
     if (m_Game && m_Game->HandleRemoteShellCommand(player, sourceCommand)) return;
     if (m_Game && m_Game->HandleRemoteMagazineCommand(player, sourceCommand)) return;
+    if (m_Game && m_Game->HandlePistolAmmoCommand(player, sourceCommand)) return;
 	if (m_Game &&
 		m_Game->HandleBuiltinVRPoseRelayCommand(
 			player,

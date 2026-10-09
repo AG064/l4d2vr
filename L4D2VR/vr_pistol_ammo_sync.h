@@ -4,7 +4,7 @@
 
 namespace l4d2vr_pistol_sync
 {
-    constexpr unsigned kVersion = 1u;
+    constexpr unsigned kVersion = 2u;
     constexpr std::uint64_t kHeartbeatMs = 200u, kExpiryMs = 1000u;
     struct State
     {
@@ -29,9 +29,17 @@ namespace l4d2vr_pistol_sync
     public:
         void Reset(std::uint32_t token) { *this = {}; m_Token = token; }
         std::uint32_t Token() const { return m_Sequence == 0xffffffffu ? 0u : m_Token; }
+        bool Ready() const { return m_Ready && Token() != 0u; }
+        bool Acknowledge(unsigned version, std::uint32_t token)
+        {
+            if (!token || token != Token()) return false;
+            if (version == 0u) { m_Ready = false; return true; }
+            if (version != kVersion) return false;
+            m_Ready = true; return true;
+        }
         bool Prepare(State state, std::uint64_t now, State& result)
         {
-            if (!m_Token || !state.ValidContents() || m_Sequence == 0xffffffffu ||
+            if (!Ready() || !state.ValidContents() || m_Sequence == 0xffffffffu ||
                 (m_HaveState && (state.command < m_Last.command || now < m_SentAt))) return false;
             if (m_HaveState && state.SameContents(m_Last) && now - m_SentAt < kHeartbeatMs) return false;
             state.token = m_Token; state.sequence = ++m_Sequence;
@@ -43,6 +51,7 @@ namespace l4d2vr_pistol_sync
         State m_Last{};
         std::uint64_t m_SentAt = 0u;
         bool m_HaveState = false;
+        bool m_Ready = false;
     };
     class Receiver
     {
@@ -67,11 +76,18 @@ namespace l4d2vr_pistol_sync
         bool Read(std::uintptr_t owner, std::uint32_t handle, int clip, bool dual,
             std::uint64_t now, State& result)
         {
+            State state{};
+            if (!ReadBaseline(owner, handle, dual, now, state) || state.clip != clip) return false;
+            result = state; return true;
+        }
+        bool ReadBaseline(std::uintptr_t owner, std::uint32_t handle, bool dual,
+            std::uint64_t now, State& result)
+        {
             if (!owner) { m_Owner = 0u; m_HaveState = false; return false; }
             if (m_Owner && m_Owner != owner) m_HaveState = false;
             m_Owner = owner;
             if (!m_Token || !m_HaveState || !m_State.known || m_State.handle != handle ||
-                m_State.clip != clip || m_State.dual != dual || now < m_ReceivedAt ||
+                m_State.dual != dual || now < m_ReceivedAt ||
                 now - m_ReceivedAt > kExpiryMs) return false;
             result = m_State; return true;
         }

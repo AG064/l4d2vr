@@ -261,6 +261,8 @@ public:
     void OfferPistolAmmoProtocol(edict_t* entity);
     void PublishPistolAmmoState(int index, const l4d2vr_pistol::AmmoSnapshot& snapshot, int command);
     void ResetPistolAmmoServerClients();
+    bool HandlePistolAmmoCommand(edict_t* entity, const void* command);
+    bool PistolAmmoClientReady(int index, unsigned ownerSerial);
     mutable std::mutex m_VRPoseMutex;
     std::atomic<bool> m_VRPoseServerCapable{ false };
     std::atomic<bool> m_VRPoseHelloSent{ false };
