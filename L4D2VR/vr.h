@@ -15,6 +15,7 @@
 #include "vr_magazine_policy.h"
 #include "vr_remote_shells.h"
 #include "vr_pistol_effects.h"
+#include "vr_flashlight_pose.h"
 #include "vr_remote_magazines.h"
 #include "vr_pistol_ammo_sync.h"
 #include "vr_pistol_prediction.h"
@@ -2710,6 +2711,11 @@ public:
 	bool m_FlashlightEnhancementEnabled = false;
 	bool m_FlashlightFollowHmd = true;
 	bool m_FlashlightFollowHmdForFirearms = false;
+    float m_FlashlightHmdForwardOffsetMeters = 0.18f;
+    mutable std::mutex m_HmdFlashlightMutex;
+    l4d2vr_flashlight::Pose m_HmdFlashlightPose{};
+    void UpdateHmdFlashlightPose(C_BasePlayer* player);
+    bool ReadHmdFlashlightPose(uintptr_t owner, l4d2vr_flashlight::Pose& pose) const;
 	bool m_FlashlightEnhancementApplied = false;
 	bool m_FlashlightEnhancementOriginalsCaptured = false;
 	float m_FlashlightEnhancement3rdPersonRange = 300.0f;

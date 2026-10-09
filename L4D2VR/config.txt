@@ -524,6 +524,7 @@ nb_shadow_cull_dist=500.584991
 r_flashlightinfectedshadows=true
 FlashlightFollowHmd=true
 FlashlightFollowHmdForFirearms=false
+FlashlightHmdForwardOffsetMeters=0.18
 AutoFlashlightEnabled=false
 AutoFlashlightDarkThreshold=8
 AutoFlashlightBrightThreshold=8

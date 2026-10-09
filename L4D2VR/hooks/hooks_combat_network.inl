@@ -831,13 +831,23 @@ namespace
 		if (!TextureNameIsFlashlight(textureName))
 			return false;
 
-		origin = vr->m_HmdPosAbs;
-		forward = vr->m_HmdForward;
-		right = vr->m_HmdRight;
-		up = vr->m_HmdUp;
+        l4d2vr_flashlight::Pose mount{};
+        const auto owner = reinterpret_cast<uintptr_t>(Hooks::m_Game->GetClientEntity(localPlayerIndex));
+        if (vr->ReadHmdFlashlightPose(owner,mount))
+        {
+            origin = mount.origin; forward = mount.forward; right = mount.right; up = mount.up;
+            return true;
+        }
 
-		if (forward.IsZero() || right.IsZero() || up.IsZero())
-			QAngle::AngleVectors(vr->m_HmdAngAbs, &forward, &right, &up);
+        // A missing or expired collision sample must not extrapolate the
+        // forward mount through a wall. Keep a fresh tracked viewpoint instead.
+        VRWorldPoseTrackingSnapshot tracking{};
+        const auto now = GetTickCount64();
+        if (!vr->ReadWorldPoseTrackingSnapshot(tracking) || !tracking.hmdValid || !tracking.capturedAtMs ||
+            now < tracking.capturedAtMs || now - tracking.capturedAtMs > 150u) return false;
+
+        origin = tracking.hmdPosition;
+        QAngle::AngleVectors(tracking.hmdAngles,&forward,&right,&up);
 
 		if (forward.IsZero() || !IsFiniteVector(origin) || !IsFiniteVector(forward) ||
 			!IsFiniteVector(right) || !IsFiniteVector(up))

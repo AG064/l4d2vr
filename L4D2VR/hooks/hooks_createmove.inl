@@ -2126,6 +2126,7 @@ bool __fastcall Hooks::dCreateMove(void* ecx, void* edx, float flInputSampleTime
 
 	if (m_Game && m_VR)
 		m_Game->PublishLocalVRPose(m_VR, localPlayerForAutoActions);
+    if (m_VR) m_VR->UpdateHmdFlashlightPose(localPlayerForAutoActions);
 
     if (m_VR)
     {

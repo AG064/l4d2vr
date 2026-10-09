@@ -3,6 +3,7 @@
 #include "game.h"
 #include "hooks.h"
 #include "sdk.h"
+#include "trace.h"
 #include "vr_hand_system.h"
 #include "vr_hand_math.h"
 #include "vr_hand_vm_pose.h"
@@ -3883,6 +3884,76 @@ void VR::RecordManualPumpShot()
     m_ManualPumpCycles.ObserveOwner(true, reinterpret_cast<uintptr_t>(player));
     m_ManualPumpCycles.NotifyShot(reinterpret_cast<uintptr_t>(weapon), static_cast<int>(id), clip);
     Game::logMsg("[VR][ManualPump] shot observed weaponId=%d clip=%d", static_cast<int>(id), clip);
+}
+
+namespace
+{
+    bool TraceHmdFlashlightMount(IEngineTrace* engine, const Ray_t& ray, CTraceFilter* filter, CGameTrace& trace)
+    {
+        if (!engine) return false;
+#ifdef _MSC_VER
+        __try
+#endif
+        {
+            engine->TraceRay(ray, MASK_STATICWORLD | CONTENTS_MOVEABLE, filter, &trace);
+            return true;
+        }
+#ifdef _MSC_VER
+        __except (EXCEPTION_EXECUTE_HANDLER) { return false; }
+#endif
+    }
+}
+
+void VR::UpdateHmdFlashlightPose(C_BasePlayer* player)
+{
+    l4d2vr_flashlight::Pose pose{};
+    VRWorldPoseTrackingSnapshot tracking{};
+    const auto now = GetTickCount64();
+    const bool eligible = player && m_IsVREnabled && m_FlashlightFollowHmd && !m_MouseModeEnabled &&
+        !IsThirdPersonCameraActive() && !m_RenderTpObserver.load(std::memory_order_acquire) &&
+        m_Game && m_Game->m_EngineClient && m_Game->m_EngineClient->IsInGame() &&
+        ReadWorldPoseTrackingSnapshot(tracking) && tracking.hmdValid && tracking.capturedAtMs != 0u &&
+        now >= tracking.capturedAtMs && now - tracking.capturedAtMs <= 150u &&
+        std::isfinite(tracking.hmdAngles.x) && std::isfinite(tracking.hmdAngles.y) && std::isfinite(tracking.hmdAngles.z);
+    if (eligible)
+    {
+        Vector forward{},right{},up{};
+        QAngle::AngleVectors(tracking.hmdAngles,&forward,&right,&up);
+        const float offset = l4d2vr_flashlight::OffsetMeters(m_FlashlightHmdForwardOffsetMeters);
+        float fraction = 0.0f;
+        bool startSolid = false, allSolid = false;
+        if (offset == 0.0f) fraction = 1.0f;
+        else if (l4d2vr_interaction::Finite(tracking.hmdPosition) && std::isfinite(m_VRScale) && m_VRScale > 0.001f)
+        {
+            // CreateMove owns collision queries. Render callbacks consume only
+            // this published sample, including its matching head basis.
+            const float radius = 0.015f * m_VRScale;
+            const Vector target = tracking.hmdPosition + forward * (offset * m_VRScale);
+            if (std::isfinite(radius) && l4d2vr_interaction::Finite(target) && l4d2vr_interaction::Finite(forward))
+            {
+                Ray_t ray;
+                ray.Init(tracking.hmdPosition,target,Vector(-radius,-radius,-radius),Vector(radius,radius,radius));
+                CTraceFilterSkipThreeEntities filter(reinterpret_cast<IHandleEntity*>(player), nullptr,
+                    reinterpret_cast<IHandleEntity*>(player->GetActiveWeapon()),0);
+                CGameTrace trace{};
+                if (TraceHmdFlashlightMount(m_Game->m_EngineTrace,ray,&filter,trace))
+                {
+                    fraction = trace.fraction; startSolid = trace.startsolid; allSolid = trace.allsolid;
+                }
+            }
+        }
+        l4d2vr_flashlight::Capture(reinterpret_cast<uintptr_t>(player),tracking.capturedAtMs,
+            tracking.hmdPosition,forward,right,up,m_VRScale,offset,fraction,startSolid,allSolid,pose);
+    }
+    std::lock_guard<std::mutex> lock(m_HmdFlashlightMutex);
+    m_HmdFlashlightPose = pose;
+}
+
+bool VR::ReadHmdFlashlightPose(uintptr_t owner, l4d2vr_flashlight::Pose& pose) const
+{
+    std::lock_guard<std::mutex> lock(m_HmdFlashlightMutex);
+    return l4d2vr_flashlight::Resolve(m_HmdFlashlightPose,owner,GetTickCount64(),
+        m_VRScale,m_FlashlightHmdForwardOffsetMeters,pose);
 }
 
 void VR::PublishBodyInventoryModelPose(uintptr_t owner, uintptr_t model, uint64_t generation,

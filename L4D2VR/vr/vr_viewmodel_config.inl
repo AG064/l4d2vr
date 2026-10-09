@@ -3814,6 +3814,8 @@ void VR::ParseConfigFile()
         getBool("FlashlightEnhancementEnabled", m_FlashlightEnhancementEnabled);
     m_FlashlightFollowHmd = getBool("FlashlightFollowHmd", m_FlashlightFollowHmd);
     m_FlashlightFollowHmdForFirearms = getBool("FlashlightFollowHmdForFirearms", m_FlashlightFollowHmdForFirearms);
+    m_FlashlightHmdForwardOffsetMeters = l4d2vr_flashlight::OffsetMeters(
+        getFloat("FlashlightHmdForwardOffsetMeters", m_FlashlightHmdForwardOffsetMeters));
     m_FlashlightEnhancementSettingsDirty.store(true, std::memory_order_release);
     m_LocalVScriptConvarsEnabled =
         getBool("LocalVScriptConvarsEnabled", m_LocalVScriptConvarsEnabled);

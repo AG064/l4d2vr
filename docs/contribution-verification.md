@@ -284,3 +284,20 @@ The event's native attachment positioning remains a separate pending change;
 this selector alone does not establish that flashes follow the retargeted gun.
 Native ABI, stock sequence metadata and per-hand selection checks are software
 evidence. Headset, prediction replay and multiplayer acceptance remain pending.
+
+## HMD flashlight mount
+
+`FlashlightHmdForwardOffsetMeters` moves an HMD-follow light in front of the eyes
+to avoid placing it inside the local character's head. Its default is 0.18m;
+zero restores the previous viewpoint mount. CreateMove checks a small hull from
+the head toward the mount against world geometry and movable props, skipping the
+owner and held weapon. A wall shortens that displacement with a small clearance;
+a solid start or unavailable trace leaves it at the viewpoint.
+
+The light callbacks consume one matching origin/basis sample. They perform no
+new collision queries on render workers. Owner, timestamp, scale and live offset
+changes reject stale samples; a fresh tracked viewpoint provides the fallback.
+Existing firearm-follow preference, colour, range and shadow settings remain
+unchanged. Geometry and sample-lifetime checks cover software behavior. Head-shadow
+visibility, walls, leaning, turns, character changes and down/revive still need
+native headset testing. This does not establish full body/head alignment.
