@@ -227,6 +227,20 @@ report associates crashes with Grip Pull; neither establishes the friend's cause
 
 Related: [Grip Pull crash report #400](https://github.com/keyou91/l4d2vr/issues/400).
 
+Related campaign-load report: [Pimax Dream Air with sboys3 #410](https://github.com/keyou91/l4d2vr/issues/410).
+Its attached log reaches local survivor rendering but has no exception address
+or stack trace. Several final render/cache messages belong to release code that
+is absent from the public source, so this branch cannot establish binary parity
+or infer a crash cause from the last message.
+
+The controller-tip driver boundary now validates interfaces, device indices,
+input errors, model-property errors, bounded string termination and finite tip
+transforms. Missing optional controller components fall back to the controller
+origin. Overlay intersections also check pose-array bounds and connected poses.
+Offline driver mocks cover these failures and recovery. These changes fix a
+concrete uninitialized-string path, but are not a confirmed resolution of #410.
+Matching crash-dump and Pimax campaign-load evidence remain required.
+
 ## VR-008: Complete pistol, Magnum and ammunition models
 
 Priority: medium. Rotated stock weapons expose missing or culled surfaces.

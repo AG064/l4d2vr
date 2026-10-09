@@ -11,6 +11,7 @@
 #include "trace.h"
 #include "vr_hands/vr_hand_manifest.h"
 #include "vr_hands/vr_hand_system.h"
+#include "vr_controller_tip.h"
 #include "sdk/ivdebugoverlay.h"
 #include <iostream>
 #include <fstream>
