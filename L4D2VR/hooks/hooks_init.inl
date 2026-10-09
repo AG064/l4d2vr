@@ -363,6 +363,7 @@ Hooks::Hooks(Game* game)
 	hkCreateMove.enableHook();
 	hkTestMeleeSwingCollisionClient.enableHook();
 	hkTestMeleeSwingCollisionServer.enableHook();
+    if (hkPhysicalMeleeShootPosition.pTarget) hkPhysicalMeleeShootPosition.enableHook();
 	hkDoMeleeSwingServer.enableHook();
 	hkStartMeleeSwingServer.enableHook();
 	hkPrimaryAttackServer.enableHook();
@@ -609,6 +610,8 @@ int Hooks::initSourceHooks()
 
 	LPVOID MeleeSwingServerAddr = (LPVOID)(m_Game->m_Offsets->TestMeleeSwingServer.address);
 	hkTestMeleeSwingCollisionServer.createHook(MeleeSwingServerAddr, &dTestMeleeSwingCollisionServer);
+    if (m_Game->m_Offsets->PhysicalMeleeShootPosition.valid)
+        hkPhysicalMeleeShootPosition.createHook(reinterpret_cast<void*>(m_Game->m_Offsets->PhysicalMeleeShootPosition.address), dPhysicalMeleeShootPosition);
 
 	LPVOID DoMeleeSwingServerAddr = (LPVOID)(m_Game->m_Offsets->DoMeleeSwingServer.address);
 	hkDoMeleeSwingServer.createHook(DoMeleeSwingServerAddr, &dDoMeleeSwingServer);

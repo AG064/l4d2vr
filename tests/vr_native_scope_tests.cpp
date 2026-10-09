@@ -5,6 +5,19 @@
 #include <Windows.h>
 #endif
 static const int* current = nullptr;
+#if defined(_MSC_VER) && defined(_M_IX86)
+// Native melee writes AL and leaves the upper result register unspecified.
+__declspec(naked) static bool __cdecl NativeFalseByte()
+{
+    __asm { mov eax, 01000000h }
+    __asm { ret }
+}
+__declspec(naked) static bool __cdecl NativeTrueByte()
+{
+    __asm { mov eax, 01000001h }
+    __asm { ret }
+}
+#endif
 static void Check(bool value)
 {
     if (!value) { std::puts("Native execution scope check failed"); std::abort(); }
@@ -23,6 +36,9 @@ static bool StructuredFailure(const int* value)
 #endif
 int main()
 {
+#if defined(_MSC_VER) && defined(_M_IX86)
+    Check(!NativeFalseByte() && NativeTrueByte());
+#endif
     const int outer = 1, first = 2, second = 3;
     current = &outer;
     l4d2vr_native_scope::Run(current, &first, [&]()

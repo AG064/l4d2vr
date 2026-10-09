@@ -2040,6 +2040,32 @@ void __fastcall Hooks::dServerGameClientsClientCommand(
 		original(ecx, player, sourceCommand);
 }
 
+namespace
+{
+    struct ServerMeleeSweepPose
+    {
+        void* owner = nullptr;
+        Vector origin{};
+        QAngle angles{};
+    };
+    thread_local const ServerMeleeSweepPose* g_ServerMeleeSweepPose = nullptr;
+
+    bool TryGetServerMeleeSweepPose(void* owner, Vector& origin, QAngle& angles)
+    {
+        if (!g_ServerMeleeSweepPose || !owner || g_ServerMeleeSweepPose->owner != owner) return false;
+        origin = g_ServerMeleeSweepPose->origin; angles = g_ServerMeleeSweepPose->angles;
+        return IsFiniteVector(origin) && std::isfinite(angles.x) && std::isfinite(angles.y) && std::isfinite(angles.z);
+    }
+}
+
+Vector* __fastcall Hooks::dPhysicalMeleeShootPosition(void* player, void*, Vector* position)
+{
+    Vector origin{}; QAngle angles{};
+    if (position && TryGetServerMeleeSweepPose(player,origin,angles))
+    { *position = origin; return position; }
+    return hkPhysicalMeleeShootPosition.fOriginal(player,position);
+}
+
 float __fastcall Hooks::dProcessUsercmds(void* ecx, void* edx, edict_t* player,
 	void* buf, int numcmds, int totalcmds,
 	int dropped_packets, bool ignore, bool paused)
@@ -2327,8 +2353,6 @@ float __fastcall Hooks::dProcessUsercmds(void* ecx, void* edx, edict_t* player,
                 {
 					m_Game->m_Hooks->hkGetPrimaryAttackActivity.fOriginal(curWep, meleeWepInfo); // Needed to call TestMeleeSwingCollision
 
-					m_Game->m_PerformingMelee = true;
-
 					Vector traceDirection = initialMeleeDirection;
 					const int numTraces = sweepSamples;
 					const float traceAngle = canTraceSwing ? swingAngle / numTraces : 0.0f;
@@ -2339,18 +2363,20 @@ float __fastcall Hooks::dProcessUsercmds(void* ecx, void* edx, edict_t* player,
                             traceDirection = VectorRotate(traceDirection, pivot, traceAngle);
                         else
                             traceDirection = finalMeleeDirection;
-                        swingPlayer.controllerPos = swingPlayer.hasPrevControllerPose
+                        const Vector traceOrigin = swingPlayer.hasPrevControllerPose
                             ? swingPlayer.prevControllerPos + swingTranslation * (static_cast<float>(i + 1) / numTraces)
                             : finalControllerPosition;
 						const int entitiesHitBefore = curWep->entitiesHitThisSwing;
-						const int collisionResult = m_Game->m_Hooks->hkTestMeleeSwingCollisionServer.fOriginal(curWep, traceDirection);
+                        QAngle traceAngles{};
+                        QAngle::VectorAngles(traceDirection,traceAngles);
+                        const ServerMeleeSweepPose pose{pPlayer,traceOrigin,traceAngles};
+                        bool collisionResult = false;
+                        l4d2vr_native_scope::Run<const ServerMeleeSweepPose>(g_ServerMeleeSweepPose,&pose,
+                            [&]() { collisionResult = m_Game->m_Hooks->hkTestMeleeSwingCollisionServer.fOriginal(curWep,traceDirection); });
 						const int entitiesHitAfter = curWep->entitiesHitThisSwing;
 						if (collisionResult != 0 || entitiesHitAfter > entitiesHitBefore)
 							confirmedMeleeCollision = true;
 					}
-
-                    swingPlayer.controllerPos = finalControllerPosition;
-					m_Game->m_PerformingMelee = false;
 
 					if (confirmedMeleeCollision && m_VR && index == m_Game->m_EngineClient->GetLocalPlayer())
 						m_VR->NotifyMeleeHitConfirmed(0);

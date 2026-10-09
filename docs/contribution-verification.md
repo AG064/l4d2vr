@@ -313,3 +313,21 @@ Missing native wrist bones, unloaded or stale glove data and implausible grip
 displacements retain the earlier controller transfer. Muzzle capture and contact
 publication see the corrected final gun bones. This still needs headset alignment,
 roll, handedness, scale and native-glove fallback acceptance.
+
+## Physical melee native origins and result type
+
+The manual sweep already invokes the game's melee collision routine without an
+attack button. That routine fetches the survivor's WeaponShootPosition, which
+can bypass the generic eye-position override previously used by the sweep.
+An optional, signature-verified shoot-position hook now supplies each interpolated
+hand origin only during that survivor's native collision call. Eye getters share
+the same owner-specific scope. Native-scope cleanup restores it on nested and
+exception exits; the sweep no longer temporarily overwrites shared player pose.
+
+Client and server collision routines return a boolean in AL. Their hook type now
+matches that native result rather than interpreting the whole EAX register as a
+hit. The server collision signature now identifies its full entry instead of a
+short fragment before it. The native hit counter remains at verified offset 17F0.
+Existing native damage, hit limits, gore and duplicate-command guards remain in
+use. Binding and scope checks are software evidence; actual melee contact, damage,
+gore, reach, weapon variants and friend-hosted acceptance remain unverified.

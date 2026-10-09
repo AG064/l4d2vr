@@ -98,7 +98,7 @@ typedef void(__thiscall* tDrawScreenSpaceRectangle)(
 	float srcX0, float srcY0, float srcX1, float srcY1,
 	int srcWidth, int srcHeight,
 	void* clientRenderable, int xDice, int yDice);
-typedef int(__thiscall* tTestMeleeSwingCollision)(void* thisptr, Vector const& vec);
+typedef bool(__thiscall* tTestMeleeSwingCollision)(void* thisptr, Vector const& vec);
 typedef void(__thiscall* tDoMeleeSwing)(void* thisptr);
 typedef void(__thiscall* tStartMeleeSwing)(void* thisptr, void* player, bool a3);
 typedef int(__thiscall* tPrimaryAttack)(void* thisptr);
@@ -200,6 +200,7 @@ public:
 	static inline Hook<tGetPrimaryAttackActivity> hkGetPrimaryAttackActivity;
 	static inline Hook<tEyePosition> hkEyePosition;
 	static inline Hook<tEyePosition> hkServerPlayerEyePosition;
+    static inline Hook<tEyePosition> hkPhysicalMeleeShootPosition;
 	static inline Hook<tEyePosition> hkClientPlayerEyePosition;
 	static inline Hook<tEyeVectors> hkClientPlayerEyeVectors;
 	static inline Hook<tEyeAngles> hkServerPlayerEyeAngles;
@@ -279,8 +280,9 @@ public:
 		float srcX0, float srcY0, float srcX1, float srcY1,
 		int srcWidth, int srcHeight,
 		void* clientRenderable, int xDice, int yDice);
-	static int __fastcall dTestMeleeSwingCollisionClient(void* ecx, void* edx, Vector const& vec);
-	static int __fastcall dTestMeleeSwingCollisionServer(void* ecx, void* edx, Vector const& vec);
+	static bool __fastcall dTestMeleeSwingCollisionClient(void* ecx, void* edx, Vector const& vec);
+	static bool __fastcall dTestMeleeSwingCollisionServer(void* ecx, void* edx, Vector const& vec);
+    static Vector* __fastcall dPhysicalMeleeShootPosition(void* player, void*, Vector* position);
 	static void __fastcall dDoMeleeSwingServer(void* ecx, void* edx);
 	static void __fastcall dStartMeleeSwingServer(void* ecx, void* edx, void* player, bool a3);
 	static int __fastcall dPrimaryAttackServer(void* ecx, void* edx);

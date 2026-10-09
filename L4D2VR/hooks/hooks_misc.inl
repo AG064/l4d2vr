@@ -23023,14 +23023,14 @@ void Hooks::dGetViewport(void* ecx, void* edx, int& x, int& y, int& width, int& 
     hkGetViewport.fOriginal(ecx, x, y, width, height);
 }
 
-int Hooks::dTestMeleeSwingCollisionClient(void* ecx, void* edx, Vector const& vec)
+bool Hooks::dTestMeleeSwingCollisionClient(void* ecx, void* edx, Vector const& vec)
 {
     const int result = hkTestMeleeSwingCollisionClient.fOriginal(ecx, vec);
     NotifyLocalMeleeCollisionHaptics(false, ecx, result, -1, -1);
     return result;
 }
 
-int Hooks::dTestMeleeSwingCollisionServer(void* ecx, void* edx, Vector const& vec)
+bool Hooks::dTestMeleeSwingCollisionServer(void* ecx, void* edx, Vector const& vec)
 {
     Server_WeaponCSBase* weapon = reinterpret_cast<Server_WeaponCSBase*>(ecx);
     const int entitiesHitBefore = weapon ? weapon->entitiesHitThisSwing : -1;
@@ -23153,6 +23153,8 @@ namespace
     {
         if (!player)
             return false;
+        if (TryGetServerMeleeSweepPose(player,origin,angles))
+        { reason = 10; return true; }
 
         if (g_ServerUseControllerAimOverride && player == g_ServerUseControllerAimPlayer)
         {

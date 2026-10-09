@@ -104,7 +104,11 @@ public:
     Offset ReadUserCmd =                 { "server.dll", 0x205100, "55 8B EC 53 8B 5D 10 56 57 8B 7D 0C 53" };
     Offset ProcessUsercmds =             { "server.dll", 0xEF710, "55 8B EC B8 ? ? ? ? E8 ? ? ? ? A1 ? ? ? ? 33 C5 89 45 FC 8B 45 0C 8B 55 08" };
     Offset CBaseEntity_entindex =        { "server.dll", 0x25390, "8B 41 28 85 C0 75 01 C3 8B 0D ? ? ? ? 2B 41 58 C1 F8 04 C3 CC CC CC CC CC CC CC CC CC CC CC 55"};
-    Offset TestMeleeSwingServer =        { "server.dll", 0x3E79E0, "24 FF D2 5B 5F 5E C3", 20};
+    Offset TestMeleeSwingServer = { "server.dll", 0x003EB2E0,
+        "53 8B DC 83 EC 08 83 E4 F0 83 C4 04 55 8B 6B 04 89 6C 24 04 8B EC 81 EC 48 02 00 00 A1 ? ? ? ? 33 C5 89 45 FC 56 8B 73 08 57 89 4D 98 E8 ? ? ? ? 8B F8", 0 };
+    // CTerrorPlayer::WeaponShootPosition: thiscall output Vector*, ret4.
+    Offset PhysicalMeleeShootPosition = { "server.dll", 0x002FC430,
+        "55 8B EC 56 8B F1 E8 ? ? ? ? 8B CE 85 C0 74 1C E8 ? ? ? ? 8B 10 8B 75 08 8B C8 8B 82 70 04 00 00 56 FF D0", 0, true };
     Offset DoMeleeSwingServer =          { "server.dll", 0x3E84C0, "55 8B EC 83 EC 3C 53 56 8B F1 E8 ? ? ? ? 8B D8 85" };
     Offset StartMeleeSwingServer =       { "server.dll", 0x3E8780, "55 8B EC 53 56 8B F1 8B 86 ? ? ? ? 50 B9 ? ? ? ? E8 ? ? ? ? 8B" };
     Offset PrimaryAttackServer =         { "server.dll", 0x3E8AB0, "56 57 8B F1 E8 ? ? ? ? 8B F8 85 FF 0F 84 ? ? ? ? 8B 87 ? ? ? ? 83 F8 FF" };
