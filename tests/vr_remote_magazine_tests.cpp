@@ -12,6 +12,15 @@ int main()
 {
     using namespace l4d2vr_remote_mag;
     const std::uint32_t handle = (3u << 12) | 27u;
+    {
+        ServerLedger nonReloadable; nonReloadable.Reset(10u);
+        const Snapshot m60{true,handle,200u,37,150,150,150,false};
+        const Request request{10u,1u,handle,200u,37,150,150,Action::Eject};
+        int attemptedWrites = 0;
+        const auto result = nonReloadable.Apply(request,m60,1000u,
+            [&](int,int) { ++attemptedWrites; return true; });
+        Check(result.status == Status::Weapon && attemptedWrites == 0);
+    }
     ServerLedger server; server.Reset(10u);
     Snapshot state{true, handle, 200u, 2, 23, 7, 50, false};
     Request eject{10u, 1u, handle, 200u, 2, 23, 7, Action::Eject};
@@ -53,11 +62,11 @@ int main()
     out = server.Apply(insert, state, 2400u, writer);
     Check(out.status == Status::Applied && state.clip == 15 && state.reserve == 0);
 
-    // Custom capacities, including M60-sized clips, use native limits.
-    server.Reset(12u); state = {true, handle, 200u, 37, 120, 149, 150, false};
-    eject = {12u, 1u, handle, 200u, 37, 120, 149, Action::Eject};
+    // A reloadable rifle with a custom script capacity uses its native limit.
+    server.Reset(12u); state = {true, handle, 200u, 5, 120, 149, 150, false};
+    eject = {12u, 1u, handle, 200u, 5, 120, 149, Action::Eject};
     Check(server.Apply(eject, state, 3000u, writer).status == Status::Applied);
-    insert = {12u, 2u, handle, 200u, 37, 1, 149, Action::Insert};
+    insert = {12u, 2u, handle, 200u, 5, 1, 149, Action::Insert};
     Check(server.Apply(insert, state, 3200u, writer).status == Status::Applied && state.clip == 150 && state.reserve == 0);
 
     // Native changes, stale commands, recycled handles and invalid owners

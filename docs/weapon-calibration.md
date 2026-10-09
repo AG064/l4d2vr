@@ -15,8 +15,8 @@ weapon-hand pitch calibration. All added settings default to zero. Position
 values use Source units; bullet position components are forward, right and up
 in the calibrated basis. Rotations use degrees. Start with small adjustments.
 
-Bullet calibration applies to unscoped VR firearms. Scoped shots retain their
-scope-camera ray. Mouse mode, mounted weapons, melee, throwable items, idle
+Bullet calibration applies to VR firearms, including the new physical optic mode.
+Legacy floating scopes retain their scope-camera ray. Mouse mode, mounted weapons, melee, throwable items, idle
 hand poses and object-pull commands retain their existing pose paths. The
 preserved dual-pistol experiment keeps its selected hand's shot pose; it does
 not yet apply these bullet offsets to its independent shot paths.

@@ -1184,6 +1184,8 @@ namespace
     {
         std::string lowerModel = modelName;
         std::transform(lowerModel.begin(), lowerModel.end(), lowerModel.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+        const int stockId = l4d2vr_weapon_models::StockWeaponId(lowerModel);
+        if (stockId > 0) return stockId;
         if (lowerModel.find("shotgun_chrome") != std::string::npos ||
             lowerModel.find("chrome_shotgun") != std::string::npos)
         {
@@ -2156,7 +2158,6 @@ namespace
         case C_WeaponCSBase::WeaponID::SG552:
         case C_WeaponCSBase::WeaponID::AWP:
         case C_WeaponCSBase::WeaponID::SCOUT:
-        case C_WeaponCSBase::WeaponID::M60:
             return true;
         default:
             return false;
@@ -5095,9 +5096,10 @@ bool VR::UpdateMagazineInteraction(
         return false;
     }
     bool bodyAmmoAvailable = false;
-    const bool nativeAmmoFallback = m_MagazineInteractionEnabled &&
-        MagazineInteractionWeaponUsesPhysicalReload(activeWeaponId) && !authoritativeMagazine &&
-        !authoritativePistol && !authoritativeShell;
+    const bool nativeAmmoFallback = l4d2vr_magazine::UseNativeReloadFallback(
+        m_MagazineInteractionEnabled, activeWeaponIdInt,
+        MagazineInteractionWeaponUsesPhysicalReload(activeWeaponId),
+        authoritativeMagazine || authoritativePistol || authoritativeShell);
     if (m_VrHandsDebugLog && MagazineInteractionWeaponUsesPhysicalReload(activeWeaponId))
     {
         static uint32_t lastHandle = 0u;
@@ -8643,8 +8645,15 @@ void VR::BeginVrHandsEyeRender(const CViewSetup& view, int eyeIndex)
         }
     }
 
-    if (!drawVrGloves && !m_NativeViewmodelHandsOnly && !drawMagazineDebugBoxes)
+    const bool drawScopeLens = IsPhysicalScopeMode() && m_ScopeEnabled && ScopeWeaponEligible();
+    if (!drawVrGloves && !m_NativeViewmodelHandsOnly && !drawMagazineDebugBoxes && !drawScopeLens)
         return;
+
+    if (eyeIndex >= 0 && eyeIndex < 2)
+    {
+        std::lock_guard<std::mutex> lock(m_PhysicalScopeLensMutex);
+        m_PhysicalScopeLenses[eyeIndex] = {};
+    }
 
     m_VrHandsActiveEyeView = &view;
     m_VrHandsActiveEyeIndex = eyeIndex;
@@ -8702,6 +8711,8 @@ void VR::FinishVrHandsEyeRender()
     }
 
     DrawVrHandsForEye(*view, eyeIndex, drawPass);
+    PhysicalScopeLensSnapshot lens{};
+    if (ReadPhysicalScopeLens(eyeIndex, lens)) DrawPhysicalScopeLensForEye(*view, eyeIndex, lens);
 }
 
 void VR::ReleaseVrHandsD3DResources()

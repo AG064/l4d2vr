@@ -14,6 +14,16 @@ static void Check(bool result, const char* message)
 
 int main()
 {
+    using l4d2vr_magazine::UseNativeReloadFallback;
+    l4d2vr_magazine::NativeFallbackPulse launcher;
+    const bool launcherFallback = UseNativeReloadFallback(true,21,false,false);
+    Check(launcher.Update(launcherFallback,true,1u,1000u), "A launcher release action must start native reload");
+    Check(launcher.Update(launcherFallback,false,1u,1200u), "The launcher reload pulse must survive button release");
+    Check(!launcher.Update(launcherFallback,false,1u,1350u), "The launcher native reload pulse must stop at its deadline");
+    Check(!launcher.Update(UseNativeReloadFallback(true,37,false,false),true,2u,1500u), "M60 must not acquire a synthetic reload path");
+    Check(!launcher.Update(UseNativeReloadFallback(true,14,false,false),true,3u,1600u), "A pipe bomb must not acquire a reload path");
+    Check(!launcher.Update(UseNativeReloadFallback(false,21,false,false),true,4u,1700u), "Disabled manual handling must not own a launcher pulse");
+    Check(!launcher.Update(UseNativeReloadFallback(true,5,true,true),true,5u,1800u), "Negotiated rifle magazines must retain their physical transaction path");
     using l4d2vr_magazine::ChamberRoundsAfterEject;
     using l4d2vr_magazine::ShouldEject;
     Check(!ShouldEject(true, false, true, 0, true), "Button mode must not automatically eject an empty magazine");

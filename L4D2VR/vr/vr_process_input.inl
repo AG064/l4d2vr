@@ -349,7 +349,7 @@ void VR::ProcessInput()
 
             const float nx = normalizeStick(scopeWalkData.x);
             const float ny = normalizeStick(scopeWalkData.y);
-            if (std::fabs(nx) > 0.0001f || std::fabs(ny) > 0.0001f)
+            if ((!IsPhysicalScopeMode() && std::fabs(nx) > 0.0001f) || std::fabs(ny) > 0.0001f)
             {
                 m_ScopeFovAdjustSuppressWalk = true;
                 scopeAnalogAdjustingNow = true;
@@ -370,7 +370,7 @@ void VR::ProcessInput()
                 scopeChanged = true;
             }
 
-            if (std::fabs(nx) > 0.0001f)
+            if (!IsPhysicalScopeMode() && std::fabs(nx) > 0.0001f)
             {
                 m_ScopeOverlayWidthMeters = std::clamp(
                     m_ScopeOverlayWidthMeters + nx * std::max(0.0f, m_ScopeSizeAdjustSpeed) * dtSeconds,
@@ -1689,7 +1689,7 @@ void VR::ProcessInput()
     bool viewmodelComboValid = getComboStates(m_ViewmodelAdjustCombo, viewmodelPrimaryData, viewmodelSecondaryData,
         viewmodelPrimaryDown, viewmodelSecondaryDown, viewmodelPrimaryJustPressed, viewmodelSecondaryJustPressed);
     const bool scopeAdjustActive = !suppressSecondaryAttack &&
-        m_ViewmodelAdjustEnabled && IsScopeActive() && m_ScopeWeaponIsFirearm &&
+        m_ViewmodelAdjustEnabled && !IsPhysicalScopeMode() && IsScopeActive() && m_ScopeWeaponIsFirearm &&
         viewmodelComboValid && viewmodelPrimaryDown && viewmodelSecondaryDown;
     const bool adjustViewmodelActive = !suppressSecondaryAttack &&
         !scopeAdjustActive && m_ViewmodelAdjustEnabled &&

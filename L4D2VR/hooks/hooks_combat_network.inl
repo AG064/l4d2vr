@@ -913,7 +913,7 @@ namespace
 
 	static inline bool TryBuildLocalAimLineBulletVisualRay(VR* vr, Vector& origin, QAngle& angles)
 	{
-		if (!vr || !vr->m_IsVREnabled || vr->m_MouseModeEnabled || vr->IsScopeActive())
+		if (!vr || !vr->m_IsVREnabled || vr->m_MouseModeEnabled || vr->ScopeChangesAim())
 			return false;
 
 		if (vr->m_HasAimLine && !vr->m_HasThrowArc)
@@ -934,7 +934,7 @@ namespace
 	{
 		if (!vr || !vr->m_IsVREnabled || (!vr->m_BulletVisualsUseMuzzleSmoke && !vr->m_BulletVisualsUseViewmodelPose))
 			return false;
-		if ((!vr->m_VrHandsRightUseViewmodelPose && !vr->IsVrHandsTwoHandedGripPoseActive()) || vr->IsScopeActive())
+		if ((!vr->m_VrHandsRightUseViewmodelPose && !vr->IsVrHandsTwoHandedGripPoseActive()) || vr->ScopeChangesAim())
 			return false;
 
 		const QAngle oldAngles = angles;
@@ -1364,7 +1364,7 @@ int Hooks::dServerFireTerrorBullets(int playerId, const Vector& vecOrigin, const
 	// Server host
 	if (m_VR->m_IsVREnabled && playerId == m_Game->m_EngineClient->GetLocalPlayer())
 	{
-		const bool scopeActive = m_VR->IsScopeActive();
+		const bool scopeActive = m_VR->ScopeChangesAim();
 		if (m_VR->m_MouseModeEnabled)
 		{
 			vecNewOrigin = GetMouseModeGunOriginAbs(m_VR);
@@ -1693,7 +1693,7 @@ int Hooks::dClientFireTerrorBullets(
 	if (m_VR->m_IsVREnabled && playerId == m_Game->m_EngineClient->GetLocalPlayer())
 	{
 		// If looking through scope: bullets originate from scope camera and go through its center
-		const bool scopeActive = m_VR->IsScopeActive();
+		const bool scopeActive = m_VR->ScopeChangesAim();
 		const int queueMode = (m_Game != nullptr) ? m_Game->GetMatQueueMode() : 0;
 		// In mat_queue_mode!=0, client-side bullet FX can lag behind the rendered gun/aim line if they
 		// read main-thread poses. Treat this hook as visual-only and allow it to consume the render-frame snapshot.
@@ -3140,7 +3140,7 @@ int Hooks::dWriteUsercmd(void* buf, CUserCmd* to, CUserCmd* from)
 	}
 	if (!meleePose && m_VR->CanCalibrateBulletAim() &&
 		l4d2vr_calibration::ShouldEncodeRay(primaryAttack, activeWeaponIsFirearm,
-			localUsingMountedWeapon, m_VR->m_MouseModeEnabled, m_VR->IsScopeActive(),
+			localUsingMountedWeapon, m_VR->m_MouseModeEnabled, m_VR->ScopeChangesAim(),
 			objectPullOverridePose, dualShotPose))
 	{
 		Vector bulletDirection{};

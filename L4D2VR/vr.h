@@ -12,6 +12,8 @@
 #endif
 #include "openvr.h"
 #include "vr_weapon_calibration.h"
+#include "vr_scope_optics.h"
+#include "vr_weapon_models.h"
 #include "vr_magazine_policy.h"
 #include "vr_remote_shells.h"
 #include "vr_pistol_effects.h"
@@ -79,6 +81,15 @@ struct ScopeAdjustment
 	float fov = 20.0f;
 	float widthMeters = 0.30f;
 	Vector overlayOffset = { 0.02f, 0.04f, -0.06f };
+};
+
+struct PhysicalScopeLensSnapshot
+{
+    Vector center{}, forward{}, right{}, up{}, sceneCenter{}, sceneForward{}, sceneUp{};
+    float radius = 0.0f, sceneRadius = 0.0f, magnification = 1.0f;
+    int weaponId = 0;
+    uint64_t publishedAt = 0u;
+    l4d2vr_optics::Pose trackingPose{};
 };
 
 
@@ -3704,7 +3715,16 @@ public:
 	// ----------------------------
 	// Gun-mounted scope (RTT overlay)
 	// ----------------------------
-	bool  m_ScopeEnabled = false;
+	bool  m_ScopeEnabled = true;
+	bool  m_ScopePhysicalLensEnabled = true;
+	float m_ScopeBaseMagnification = 2.0f;
+	float m_PhysicalScopeRenderFov = 10.0f;
+	std::atomic<int> m_PhysicalScopeWeaponId{ 0 };
+	std::atomic<float> m_PhysicalScopeMagnification{ 2.0f };
+	std::atomic<int> m_PhysicalScopeTextureWeaponId{ 0 };
+	std::atomic<uint64_t> m_PhysicalScopeTextureAt{ 0u };
+	std::mutex m_PhysicalScopeLensMutex;
+	PhysicalScopeLensSnapshot m_PhysicalScopeLenses[2]{};
 	int   m_ScopeRTTSize = 512;               // square RTT size in pixels
 	std::chrono::steady_clock::time_point m_LastScopeRTTRenderTime{};
 	float m_ScopeFov = 20.0f;                  // active per-weapon FOV; smaller = more zoom
@@ -3772,12 +3792,20 @@ public:
 	std::chrono::steady_clock::time_point m_ScopeStabilizationLastTime{};
 
 	Vector GetScopeCameraAbsPos() const { return m_ScopeCameraPosAbs; }
+	bool IsPhysicalScopeMode() const { return m_ScopePhysicalLensEnabled && !m_MouseModeEnabled && !m_IsThirdPersonCamera; }
+	bool ScopeWeaponEligible() const { return IsPhysicalScopeMode() ? l4d2vr_optics::HasOptic(m_PhysicalScopeWeaponId.load(std::memory_order_acquire)) : m_ScopeWeaponIsFirearm; }
+	bool ScopeChangesAim() const { return !IsPhysicalScopeMode() && IsScopeActive(); }
+	float GetScopeRenderFov() const { return IsPhysicalScopeMode() ? m_PhysicalScopeRenderFov : m_ScopeFov; }
+	void PublishPhysicalScopeLens(const PhysicalScopeLensSnapshot& lens);
+	bool ReadPhysicalScopeLens(int eye, PhysicalScopeLensSnapshot& lens);
+	void UpdatePhysicalScope();
+	bool DrawPhysicalScopeLensForEye(const CViewSetup& view, int eyeIndex, const PhysicalScopeLensSnapshot& lens);
 	QAngle GetScopeCameraAbsAngle() const { return m_ScopeCameraAngAbs; }
 	bool   IsMouseModeScopeActive() const { return m_MouseModeEnabled && m_ScopeEnabled && m_ScopeWeaponIsFirearm && m_MouseModeScopeToggleActive; }
-	bool   IsSteamVRScopeToggleActive() const { return m_ScopeEnabled && m_ScopeWeaponIsFirearm && m_ScopeToggleActive; }
+	bool   IsSteamVRScopeToggleActive() const { return !IsPhysicalScopeMode() && m_ScopeEnabled && m_ScopeWeaponIsFirearm && m_ScopeToggleActive; }
 	float  GetScopeAimSensitivityScale() const
 	{
-		if (!IsScopeActive())
+		if (IsPhysicalScopeMode() || !IsScopeActive())
 			return 1.0f;
 
 		const float maxFov = std::max(m_ScopeFovMin, m_ScopeFovMax);
@@ -3791,9 +3819,10 @@ public:
 	{
 		return IsMouseModeScopeActive() ? GetScopeAimSensitivityScale() : 1.0f;
 	}
-	bool   IsScopeActive() const { return m_ScopeEnabled && (m_ScopeActive || IsMouseModeScopeActive() || IsSteamVRScopeToggleActive()); }
+	bool   IsScopeActive() const { return m_ScopeEnabled && ScopeWeaponEligible() && (m_ScopeActive || IsMouseModeScopeActive() || IsSteamVRScopeToggleActive()); }
 	bool   ShouldRenderScope() const
 	{
+		if (IsPhysicalScopeMode()) return m_ScopeEnabled && ScopeWeaponEligible() && m_ScopeActive;
 		const bool forceScopeForThirdPersonFrontView = m_ThirdPersonFrontViewEnabled && m_IsThirdPersonCamera;
 		return m_ScopeEnabled
 			&& (m_ScopeWeaponIsFirearm || forceScopeForThirdPersonFrontView)

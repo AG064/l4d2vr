@@ -23867,6 +23867,39 @@ C_BaseEntity* Hooks::dClientFindUseEntity(void* ecx, void* edx, float radius, fl
     return hkClientFindUseEntity.fOriginal(ecx, radius, dotLimit, defaultDotLimit, traceResult, extra);
 }
 
+static void CapturePhysicalScopeLens(VR* vr, void* state, const std::string& modelName,
+    const vr_vm_stabilize::Mat3x4* bones)
+{
+    if (!vr || !vr->IsPhysicalScopeMode() || !vr->m_ScopeEnabled || !bones) return;
+    const uint8_t* hdr = nullptr;
+    uint32_t checksum = 0u;
+    int length = 0, count = 0, table = 0;
+    if (!vr_vm_stabilize::TryGetStudioHdrFromDrawState(state,hdr) ||
+        !vr_vm_stabilize::SafeRead(hdr + 8,checksum) ||
+        !vr_vm_stabilize::SafeRead(hdr + 76,length) ||
+        !vr_vm_stabilize::SafeRead(hdr + 156,count) ||
+        !vr_vm_stabilize::SafeRead(hdr + 160,table) ||
+        length < 408 || length > 32 * 1024 * 1024 || count <= 3 || count > 256 ||
+        table < 408 || table > length || count * 216 > length - table) return;
+    const auto* profile = l4d2vr_optics::FindModel(vr_vm_stabilize::ToLowerAscii(modelName),checksum);
+    if (!profile) return;
+    vr_vm_stabilize::Mat3x4 bind{}, world{};
+    if (!vr_vm_stabilize::SafeRead(reinterpret_cast<const vr_vm_stabilize::Mat3x4*>(hdr + table + 3 * 216 + 96),bind) ||
+        !vr_vm_stabilize::SafeRead(bones + 3,world)) return;
+    PhysicalScopeLensSnapshot lens{};
+    lens.weaponId = profile->weaponId;
+    lens.center = HooksTransformPoint(world,HooksTransformPoint(bind,profile->bindCenter));
+    lens.forward = HooksTransformVector(world,HooksTransformVector(bind,Vector(0,0,1)));
+    lens.right = HooksTransformVector(world,HooksTransformVector(bind,Vector(0,-1,0)));
+    lens.up = HooksTransformVector(world,HooksTransformVector(bind,Vector(1,0,0)));
+    const float scale = lens.right.Length();
+    if (!std::isfinite(scale) || scale < 0.1f || scale > 4.0f ||
+        !l4d2vr_optics::Normalize(lens.forward) || !l4d2vr_optics::Normalize(lens.right) ||
+        !l4d2vr_optics::Normalize(lens.up)) return;
+    lens.radius = profile->radius * scale;
+    vr->PublishPhysicalScopeLens(lens);
+}
+
 static void CaptureIndependentPistolMuzzles(VR* vr, void* state,
     const l4d2vr_pistol_fx::Key& key, const std::vector<int>& parents,
     const vr_vm_stabilize::Mat3x4* bones, int count, int primaryRoot, int otherRoot,
@@ -24114,6 +24147,14 @@ void Hooks::dDrawModelExecute(void* ecx, void* edx, void* state, const ModelRend
         !m_VR->m_IsThirdPersonCamera &&
         InterlockedCompareExchange(
             &g_FirstPersonBodyEyeSceneActive, 0, 0) != 0;
+
+    // The scope camera sits inside the owned optic. Its world image must not
+    // include the local gun's separate bonemerged world model.
+    if (m_VR && m_VR->m_ScopeRenderingPass && m_VR->IsPhysicalScopeMode() &&
+        firstPersonBodyState && firstPersonBodyState->activeWeaponRenderable &&
+        firstPersonBodyState->playerGeneration == g_FirstPersonBodyPlayerGeneration.load(std::memory_order_acquire) &&
+        info.pRenderable == firstPersonBodyState->activeWeaponRenderable &&
+        (info.flags & kStudioShadowDepthTexture) == 0) return;
 
     if (firstPersonBodyEyeActive &&
         m_VR &&
@@ -25057,6 +25098,8 @@ void Hooks::dDrawModelExecute(void* ecx, void* edx, void* state, const ModelRend
 
     // Capture the final matrices, including the independent pistol transform.
     MaybeCaptureViewmodelMuzzleSmokePose(m_VR, state, modelName, *pDrawInfo, pBonesToWorldFinal);
+    if (drawEntityIsViewmodelClass && !m_VR->m_ScopeRenderingPass && !m_VR->m_RearMirrorRenderingPass)
+        CapturePhysicalScopeLens(m_VR, state, modelName, reinterpret_cast<const vr_vm_stabilize::Mat3x4*>(pBonesToWorldFinal));
     MaybeCaptureVrHandsVmPose(
         m_VR,
         state,

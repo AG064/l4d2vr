@@ -760,6 +760,9 @@ void VR::UpdateTracking()
             m_MeleeTrackingSnapshot = {};
         }
         m_ScopeWeaponIsFirearm = false;
+        m_PhysicalScopeWeaponId.store(0,std::memory_order_release);
+        m_PhysicalScopeTextureWeaponId.store(0,std::memory_order_release);
+        m_PhysicalScopeTextureAt.store(0u,std::memory_order_release);
         // If we temporarily lose the local player (connect/disconnect/map change),
         // clear mounted-gun edge tracking so we don't trigger a bogus reset later.
         m_UsingMountedGunPrev = false;
@@ -996,10 +999,14 @@ void VR::UpdateTracking()
 
     // Scope weapon classification (non-firearm can still use scope when front-view 3P forces it).
     m_ScopeWeaponIsFirearm = false;
+    m_PhysicalScopeWeaponId.store(0, std::memory_order_release);
     if (C_BaseCombatWeapon* active = viewPlayer->GetActiveWeapon())
     {
         if (C_WeaponCSBase* weapon = (C_WeaponCSBase*)active)
+        {
             m_ScopeWeaponIsFirearm = IsFirearmWeaponId(weapon->GetWeaponID());
+            m_PhysicalScopeWeaponId.store(static_cast<int>(weapon->GetWeaponID()), std::memory_order_release);
+        }
     }
     m_BulletAimWeaponEligible.store(m_ScopeWeaponIsFirearm &&
         !IsUsingMountedGun(viewPlayer), std::memory_order_release);
@@ -1889,7 +1896,14 @@ void VR::UpdateTracking()
         && m_ThirdPersonFrontScopeFromEye
         && (localPlayer != nullptr);
     const bool steamVRScopeToggleActive = m_ScopeWeaponIsFirearm && m_ScopeToggleActive;
-    if (m_MouseModeEnabled && m_ScopeEnabled)
+    if (IsPhysicalScopeMode())
+    {
+        UpdatePhysicalScope();
+        m_ScopeAimSensitivityInit = false;
+        m_ScopeStabilizationInit = false;
+        m_ScopeStabilizationLastTime = {};
+    }
+    else if (m_MouseModeEnabled && m_ScopeEnabled)
     {
         // Mouse mode: scope activation is driven by a toggle (not look-through).
         m_ScopeActive = (m_ScopeWeaponIsFirearm && (m_MouseModeScopeToggleActive || m_ScopeToggleActive)) || forceScopeForThirdPersonFrontView;

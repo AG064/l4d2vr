@@ -9,6 +9,11 @@ namespace l4d2vr_magazine
     constexpr unsigned kAuthoritativeMagazineInputMode = 64u;
     constexpr unsigned kAuthoritativeShellInputMode = 128u;
     constexpr unsigned kAuthoritativePistolInputMode = 256u;
+    inline bool UseNativeReloadFallback(bool enabled, int weaponId, bool physicalReload, bool negotiated)
+    {
+        // The launcher reloads one round through its stock native mechanism.
+        return enabled && (physicalReload || weaponId == 21) && !negotiated;
+    }
     inline bool UseAuthoritativeMagazine(bool supported, bool detachable, bool nativeDual, bool leftHandPistol)
     {
         return supported && detachable && !nativeDual && !leftHandPistol;

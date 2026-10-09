@@ -1813,7 +1813,7 @@ bool VR::CanCalibrateBulletAim() const
 {
     return HasBulletAimCalibration() && l4d2vr_calibration::ShouldCalibrateRay(
         m_BulletAimWeaponEligible.load(std::memory_order_acquire),
-        m_MouseModeEnabled, IsScopeActive());
+        m_MouseModeEnabled, ScopeChangesAim());
 }
 
 QAngle VR::GetBulletAimAbsAngle()
@@ -2557,7 +2557,7 @@ bool VR::ApplyVrHandsRealBulletSpreadAimLine(C_WeaponCSBase* weapon, const Vecto
         return false;
     }
 
-    if (m_MouseModeEnabled || IsScopeActive())
+    if (m_MouseModeEnabled || ScopeChangesAim())
     {
         ClearVrHandsRealBulletSpreadAimLine();
         return false;
@@ -2654,7 +2654,7 @@ bool VR::NotifyVrHandsRealBulletSpreadClientShot(
     (void)origin;
 
     if (!m_IsVREnabled || !m_VrHandsRealBulletSpreadEnabled || !localPlayer ||
-        !IsVrHandsRealBulletSpreadWeapon(weapon) || m_MouseModeEnabled || IsScopeActive() ||
+        !IsVrHandsRealBulletSpreadWeapon(weapon) || m_MouseModeEnabled || ScopeChangesAim() ||
         (!m_VrHandsEnabled && !m_NativeViewmodelHandsOnly))
     {
         ClearVrHandsRealBulletSpreadAimLine();

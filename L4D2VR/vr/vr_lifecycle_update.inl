@@ -296,6 +296,7 @@ namespace
             m_EyeIndex(eyeIndex),
             m_DrawPass(drawPass)
         {
+            m_HaveScopeLens = vr && vr->ReadPhysicalScopeLens(eyeIndex, m_ScopeLens);
         }
 
         int AddRef() override
@@ -327,6 +328,7 @@ namespace
             }
 
             vr->DrawVrHandsForEyeImmediate(m_View, m_EyeIndex, m_DrawPass, true);
+            if (m_HaveScopeLens) vr->DrawPhysicalScopeLensForEye(m_View, m_EyeIndex, m_ScopeLens);
         }
 
     private:
@@ -336,6 +338,8 @@ namespace
         CViewSetup m_View{};
         int m_EyeIndex = -1;
         VrHandDrawPass m_DrawPass = VrHandDrawPass::WorldDepth;
+        PhysicalScopeLensSnapshot m_ScopeLens{};
+        bool m_HaveScopeLens = false;
     };
 
     inline bool IsSourceQueueReadableProtection(DWORD protect)
@@ -2633,8 +2637,9 @@ bool VR::QueueVrHandsDrawForEye(
         (m_MagazineBoxDebugEnabled || calibrationOverlayActive) &&
         drawPass != VrHandDrawPass::WorldVisibilityMask &&
         HasFreshMagazineInteractionDebugBoxWork();
+    const bool drawScopeLens = IsPhysicalScopeMode() && m_ScopeEnabled && ScopeWeaponEligible();
     if (!renderContext ||
-        (!drawGloves && !drawMagazineDebugBoxes) ||
+        (!drawGloves && !drawMagazineDebugBoxes && !drawScopeLens) ||
         !m_IsVREnabled ||
         !m_Game)
     {
@@ -4541,7 +4546,7 @@ void VR::SubmitVRTextures()
         vr::VROverlay()->HideOverlay(overlay);
 
     // Scope overlay independent of HUD cursor mode
-    if (m_ScopeTexture && m_ScopeEnabled)
+    if (m_ScopeTexture && m_ScopeEnabled && !IsPhysicalScopeMode())
     {
         const bool scopeOverlayTextureReady = applyScopeTexture(m_ScopeHandle);
         const float alpha = IsScopeActive() ? 1.0f : std::clamp(m_ScopeOverlayIdleAlpha, 0.0f, 1.0f);

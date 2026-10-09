@@ -5487,6 +5487,7 @@ void __fastcall Hooks::dRenderView(void* ecx, void* edx, CViewSetup& setup, CVie
 
 	const bool copyRightEyeFromLeft =
 		m_VR->m_RightEyeCopyFromLeft &&
+		!(m_VR->m_ScopeEnabled && m_VR->IsPhysicalScopeMode() && m_VR->ScopeWeaponEligible()) &&
 		queueMode == 0 &&
 		m_VR->m_IsVREnabled;
 	bool rightEyeCopiedFromLeft = false;
@@ -5607,7 +5608,7 @@ void __fastcall Hooks::dRenderView(void* ecx, void* edx, CViewSetup& setup, CVie
 			m_VR->m_ThirdPersonFrontViewEnabled && m_VR->m_IsThirdPersonCamera;
 		scopeView.fov = thirdPersonFrontViewScope
 			? m_VR->m_ThirdPersonFrontViewOverlayFov
-			: m_VR->m_ScopeFov;
+			: m_VR->GetScopeRenderFov();
 		scopeView.m_flAspectRatio = 1.0f;
 		scopeView.fovViewmodel = scopeView.fov;
 		scopeView.zNear = m_VR->m_ScopeZNear;
@@ -5629,6 +5630,11 @@ void __fastcall Hooks::dRenderView(void* ecx, void* edx, CViewSetup& setup, CVie
 			m_VR->m_ScopeRTTSize, m_VR->m_ScopeRTTSize,
 			scopeAngles, scopeView, hudScope, HooksNekoPostPass::Scope);
 		m_VR->m_ScopeRenderingPass = false;
+		if (m_VR->IsPhysicalScopeMode())
+		{
+			m_VR->m_PhysicalScopeTextureWeaponId.store(m_VR->m_PhysicalScopeWeaponId.load(std::memory_order_acquire), std::memory_order_release);
+			m_VR->m_PhysicalScopeTextureAt.store(GetTickCount64(),std::memory_order_release);
+		}
 		scopeLensPostProcessPending = true;
 	}
 

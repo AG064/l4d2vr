@@ -6,6 +6,7 @@
 #pragma warning(pop)
 #endif
 #include "../L4D2VR/vr_weapon_calibration.h"
+#include "../L4D2VR/vr_weapon_models.h"
 #include <cstdio>
 #include <cstdlib>
 #include <limits>
@@ -26,6 +27,14 @@ static bool Near(const Vector& value, const Vector& expected)
 
 int main()
 {
+    Check(l4d2vr_weapon_models::StockWeaponId("models/v_models/v_rifle_ak47.mdl") == 26,
+        "AK contacts must not be accepted for a different stock gun");
+    Check(l4d2vr_weapon_models::StockWeaponId("models/v_models/v_desert_eagle.mdl") == 32,
+        "Magnum contacts must retain their inventory identity");
+    Check(l4d2vr_weapon_models::StockWeaponId("models/v_models/v_dual_pistola.mdl") == 1,
+        "A dual viewmodel must retain the pistol inventory type");
+    Check(l4d2vr_weapon_models::StockWeaponId("models/v_models/custom.mdl") == 0,
+        "Unknown models must not borrow a stock gun identity");
     using namespace l4d2vr_calibration;
     const Vector zero(0.0f, 0.0f, 0.0f);
     const Vector up(0.0f, 0.0f, 1.0f);

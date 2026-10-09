@@ -18,7 +18,7 @@ namespace l4d2vr_remote_mag
         switch (id)
         {
         case 1: case 2: case 5: case 6: case 7: case 9: case 10:
-        case 26: case 32: case 33: case 34: case 35: case 36: case 37: return true;
+        case 26: case 32: case 33: case 34: case 35: case 36: return true;
         default: return false;
         }
     }

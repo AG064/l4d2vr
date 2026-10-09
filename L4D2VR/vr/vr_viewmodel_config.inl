@@ -3409,6 +3409,8 @@ void VR::ParseConfigFile()
 
     // Gun-mounted scope
     m_ScopeEnabled = getBool("ScopeEnabled", m_ScopeEnabled);
+    m_ScopePhysicalLensEnabled = getBool("ScopePhysicalLensEnabled", m_ScopePhysicalLensEnabled);
+    m_ScopeBaseMagnification = std::clamp(getFloat("ScopeBaseMagnification", m_ScopeBaseMagnification), 1.0f, 16.0f);
     m_ScopeRTTSize = std::clamp(getInt("ScopeRTTSize", m_ScopeRTTSize), 128, 4096);
     m_DefaultScopeAdjust.fov = std::clamp(getFloat("ScopeDefaultFov", m_DefaultScopeAdjust.fov), 1.0f, 179.0f);
     {

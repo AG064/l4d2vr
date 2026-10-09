@@ -1,0 +1,91 @@
+# Stock weapon coverage and physical optics
+
+This implementation covers the 19 stock firearm inventory types and the separate
+dual-pistol viewmodel. A local asset audit checks all 20 MDL/VVD/VTX sets, their
+checksums, LOD0 triangle indices, finite vertices and UVs, skin weights, bone
+hierarchies, material references and texture headers. The current installation
+passes those checks, including 46 referenced texture assets. Neither inspected
+addon archive overrides weapon model geometry.
+
+Every stock gun model now has an explicit inventory identity. A recently published
+magazine/socket region from another stock weapon is rejected during a switch.
+Unknown replacement paths retain the existing owner and freshness checks; they
+are not assigned a guessed stock identity.
+
+| Weapons | Aiming and model path | Reload/cycle path |
+| --- | --- | --- |
+| Pistol | Tracked gun, native stock mesh | Host pistol magazine/chamber transactions |
+| Dual pistols | Independent tracked hands and native two-gun mesh | Shared native reload fallback; independent gestures remain unfinished |
+| Magnum | Tracked gun, native stock mesh | Host detachable-magazine transactions |
+| Uzi, silenced SMG, MP5 | Tracked gun and support grip | Host detachable-magazine transactions |
+| M16, AK47, Desert rifle | Tracked gun and support grip | Host detachable-magazine transactions; native firing cadence/burst behavior |
+| SG552 | Tracked gun, support grip, mounted physical optic | Host detachable-magazine transactions |
+| Hunting rifle, military sniper | Tracked gun, support grip, mounted physical optic | Host detachable-magazine transactions |
+| AWP, Scout | Tracked gun, support grip, mounted physical optic | Host detachable-magazine transactions; per-shot bolt animation remains native |
+| Pump and chrome shotguns | Tracked gun, retained support/pump grip | Host individual-shell insertion and manual pump |
+| Auto shotgun, SPAS | Tracked gun and support grip | Host individual-shell insertion; native semiautomatic action |
+| Grenade launcher | Tracked gun and support grip | Explicit native single-round reload fallback; no synthetic detachable magazine |
+| M60 | Tracked gun and support grip | Native stock ammo behavior; physical magazine requests reject this type |
+
+Unsupported hosts retain conventional reload. Native clip capacity, reserve,
+owner/weapon identity and authoritative replication govern negotiated reloads.
+The existing gesture, request, prediction and ammo-conservation suites cover those
+generic paths. They do not establish that every contact volume feels correct in VR.
+The grenade launcher explicitly enters the native reload fallback even when
+magazine-grip mode is enabled, so its release/reload action is not swallowed.
+
+## Physical scopes
+
+`ScopeEnabled=true` and `ScopePhysicalLensEnabled=true` select the new first-person
+optic path. Stock hunting, military, SG552, AWP and Scout lenses are measured from
+the native mesh and matched by model path and checksum. The final animated gun
+bones place a circular lens in each eye render. It uses normal depth testing and
+Source's render queue, so the optic is part of the gun's render rather than a
+SteamVR overlay above the scene. The local gun's separate world model is excluded
+from the scope camera image; native gun shadows are preserved.
+
+Each eye is evaluated separately against the optic axis, pupil and 3.5 to 25 cm
+eye-relief interval. Off-axis or backwards viewing darkens the aperture. Looking
+at a physical scoped gun uses two eye passes even if mono-eye copying is enabled,
+so the other eye cannot borrow the aligned eye's magnified image. Looking
+through the aligned optic requests a separate world render. The render FOV follows
+`2 * atan(aperture radius / (eye relief * magnification))`, preserving the intended
+angular magnification as the eye moves. `ScopeBaseMagnification` defaults to 2x;
+the existing per-weapon FOV control and Use plus vertical left-stick adjustment
+increase it, bounded to 16x. Horizontal size adjustment and manual floating-lens
+placement do not resize or detach a physical optic.
+
+The cached native mount is rebased onto the current controller pose for camera
+updates; each queued eye draw keeps its own captured lens pose. Lens and image
+samples expire after 100 ms. Tracking loss, empty hands, incapacitation and model
+checksum mismatches disable the applicable path. No physical-scope activation
+changes controller sensitivity, weapon aim, bullet origin or bullet calibration.
+Mouse and third-person modes retain their existing scope behavior.
+
+The optics tests cover magnification ratios, eye relief, pupil rejection, pose
+translation/rotation, model identity, non-finite input and stale samples. Native
+depth, UV orientation, aperture placement, occlusion, reticle alignment and timing
+still need headset tests on all five guns. Replacement models with different
+checksums require measured optic profiles; this code does not place a guessed
+floating lens on them.
+
+## Materials and mesh limits
+
+From the repository root, prepare all stock weapon material variants with:
+
+```powershell
+python tools/prepare_vr_materials.py --game "A:\SteamLibrary\steamapps\common\Left 4 Dead 2" --all-weapons --output "$env:TEMP\l4d2vr-material-review"
+```
+
+The helper resolves base, DLC and update assets, prepares 32 two-sided material
+variants, and preserves their existing textures and shader parameters. Arms are
+excluded. Existing output is never replaced. Preparation does not install assets,
+launch the game or bundle Valve model/texture files in the source contribution.
+Review/install the derived material files through the local addon workflow.
+
+Two-sided materials expose existing reverse faces. They do not create absent
+polygons. The topology report records open edges per material mesh; seams between
+materials, moving parts, magazine wells and barrel openings can all produce such
+edges. This is not a watertightness or visual-completeness certificate. Missing
+exterior faces require inspecting and rebuilding the relevant mesh; those repairs
+and full replacement models have not been implemented by this audit.
