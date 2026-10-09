@@ -791,6 +791,8 @@ void VR::ProcessInput()
         supportHandDown,
         supportHandJustPressed,
         allowGameplayInputOnTwoHandedGripRelease);
+    if (MagazineInteractionOwnsGrip(true))
+        m_PistolUseLeft.store(false, std::memory_order_release);
     const bool nativeAmmoReloadPulse = m_NativeAmmoReloadFallbackPulse.Update(
         m_NativeAmmoReloadFallbackActive.load(std::memory_order_acquire) &&
         m_FirstPersonControlReady.load(std::memory_order_acquire) && !m_MouseModeEnabled &&

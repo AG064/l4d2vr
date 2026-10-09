@@ -71,6 +71,7 @@ namespace l4d2vr_pistol
             }
         }
         void PickupRequested(Hand hand) { m_Pickup = hand; }
+        void CancelPickup(Hand hand) { if (m_Pickup == hand) m_Pickup = Hand::None; }
         void AdoptPickup(Hand hand)
         {
             if (!m_Weapon || hand == Hand::None) return;

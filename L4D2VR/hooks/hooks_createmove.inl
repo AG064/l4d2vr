@@ -30,6 +30,8 @@ bool __fastcall Hooks::dCreateMove(void* ecx, void* edx, float flInputSampleTime
     static l4d2vr_dual::TriggerRouter s_dualPistolTriggers;
     static l4d2vr_pistol::Ownership s_pistolOwnership;
     static l4d2vr_physical::PickupIntent s_leftPistolPickup;
+    static l4d2vr_physical::ReservedGrip s_rightGripReservation;
+    static l4d2vr_physical::ReservedGrip s_leftGripReservation;
     static uint32_t s_gripExtraSamples = 0u;
     l4d2vr_dual::Hand pistolInteractionHand = l4d2vr_dual::Hand::None;
 	static int s_nonvrMeleeHoldTicks = 0;
@@ -122,6 +124,7 @@ bool __fastcall Hooks::dCreateMove(void* ecx, void* edx, float flInputSampleTime
         {
             if (m_VR) m_VR->CancelMeleeMotion();
             s_gripPickup.Reset(); s_leftPistolPickup.Reset();
+            s_rightGripReservation.Reset(); s_leftGripReservation.Reset();
             s_pendingGripAdoption = 0u;
             s_pistolOwnership.CancelInteractions();
         }
@@ -1772,9 +1775,21 @@ bool __fastcall Hooks::dCreateMove(void* ecx, void* edx, float flInputSampleTime
             const bool nativeDual = pistolInventorySession && m_Game->IsDualPistolWeapon(activeWeapon);
             s_pistolOwnership.Observe(pistolInventorySession, activeWeaponTag, nativeDual, gripNowMs);
             const uint32_t leftGrip = m_VR->m_PistolOffhandGripState.load(std::memory_order_acquire);
-            const bool useLeft = m_VR->m_PistolUseLeft.load(std::memory_order_acquire);
+            const bool leftReserved = m_VR->MagazineInteractionOwnsGrip(true);
+            const bool rightReserved = m_VR->MagazineInteractionOwnsGrip(false);
+            const bool leftPickupAllowed = s_leftGripReservation.AllowPickup(gripPickupEligible,
+                (leftGrip & 1u) != 0u, (leftGrip & 2u) != 0u, leftReserved);
+            const bool rightPickupAllowed = s_rightGripReservation.AllowPickup(gripPickupEligible,
+                weaponGripActionActive, weaponGripDown, rightReserved);
+            if (leftReserved) s_pistolOwnership.CancelPickup(l4d2vr_dual::Hand::Left);
+            if (rightReserved)
+            {
+                s_pistolOwnership.CancelPickup(l4d2vr_dual::Hand::Right);
+                s_pendingGripAdoption = 0u;
+            }
+            const bool useLeft = !leftReserved && m_VR->m_PistolUseLeft.load(std::memory_order_acquire);
             const unsigned leftPickup = s_leftPistolPickup.Update(
-                gripPickupEligible && m_VR->m_DualPistolsIndependentHandsEnabled &&
+                leftPickupAllowed && m_VR->m_DualPistolsIndependentHandsEnabled &&
                 (pistolGripMode || emptyHandsPlaceholderActive) && useLeft,
                 (leftGrip & 1u) != 0u, (leftGrip & 2u) != 0u,
                 leftPickupOffer != 0u && gripNowMs - leftPickupOffer <= 100u, gripNowMs, activeWeaponTag);
@@ -1791,10 +1806,10 @@ bool __fastcall Hooks::dCreateMove(void* ecx, void* edx, float flInputSampleTime
             if (bodySelection != s_bodyGripSelectionSerial)
             {
                 s_bodyGripSelectionSerial = bodySelection;
-                if (gripPickupEligible && weaponGripActionActive && weaponGripDown)
+                if (rightPickupAllowed && weaponGripActionActive && weaponGripDown)
                     s_gripPickup.Begin(gripNowMs, s_previousGripWeapon);
             }
-            const unsigned pickupResult = s_gripPickup.Update(gripPickupEligible && !useLeft,
+            const unsigned pickupResult = s_gripPickup.Update(rightPickupAllowed && !useLeft,
                 weaponGripActionActive, weaponGripDown,
                 pickupOffer != 0u && gripNowMs - pickupOffer <= 100u,
                 gripNowMs, activeWeaponTag);

@@ -139,6 +139,21 @@ namespace l4d2vr_physical
         bool m_Consumed = false;
     };
 
+    class ReservedGrip
+    {
+    public:
+        bool AllowPickup(bool eligible, bool active, bool down, bool reserved)
+        {
+            if (!eligible || !active || reserved)
+            { m_RequireRelease = true; return false; }
+            if (!down) { m_RequireRelease = false; return false; }
+            return !m_RequireRelease;
+        }
+        void Reset() { m_RequireRelease = true; }
+    private:
+        bool m_RequireRelease = false;
+    };
+
     class PickupIntent
     {
     public:

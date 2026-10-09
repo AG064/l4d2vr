@@ -126,6 +126,14 @@ hand into the viewmodel projection layer. The existing left-handed layout keeps
 its default physical-side mapping. Retained-left manual reload remains on the
 native fallback until grip pickup/drop and reload input ownership are coordinated.
 
+Grip pickup now respects the active reload-support hand. A reserved hand cannot
+issue contact pickup or inherit a late pickup's held grip, and remains gated
+until it releases before a new pickup. Menu, unavailable-action and eligibility
+boundaries also require release. Native pistol ownership still follows actual
+inventory changes; the gun hand's release/drop behavior is preserved. Reload
+gesture controller coordinates and per-hand transaction selection still need
+mirroring before retained-left manual reload is enabled.
+
 Client native reload prediction is now guarded by separately validated pistol
 reload and reload-completion bindings. Fresh matching physical ownership blocks
 refill attempts and clears reload flags without changing clip/reserve counters

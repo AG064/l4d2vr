@@ -3965,6 +3965,7 @@ public:
 	bool IsMagazineInteractionReloadCommandActive() const;
 	bool ShouldSuppressMagazineInteractionEmptyClipAutoReload(C_BasePlayer* localPlayer) const;
 	bool IsMagazineInteractionLeftHandActive() const;
+    bool MagazineInteractionOwnsGrip(bool gameplayLeft) const;
 	bool IsMagazineInteractionManualActive() const;
 	bool IsMagazineInteractionNativeReloadSuppressActive() const;
 	bool IsMagazineInteractionViewmodelOverrideActive() const;

@@ -91,6 +91,31 @@ int main()
     Check(contact.Update(true, true, true));
 
     PickupIntent pickup;
+    ReservedGrip reservedGrip;
+    PickupIntent reservedPickup;
+    Check(reservedGrip.AllowPickup(true, true, true, false));
+    Check(!reservedGrip.AllowPickup(true, true, true, true));
+    Check(reservedPickup.Update(reservedGrip.AllowPickup(true, true, true, true),
+        true, true, true, 100u, 10u) == 0u);
+    Check(reservedPickup.Update(reservedGrip.AllowPickup(true, true, true, false),
+        true, true, true, 110u, 10u) == 0u); // finishing reload does not reuse a held grip
+    Check(!reservedGrip.AllowPickup(true, true, false, false));
+    Check(reservedPickup.Update(reservedGrip.AllowPickup(true, true, true, false),
+        true, true, true, 120u, 10u) == PickupIntent::RequestUse);
+    Check(reservedPickup.Update(reservedGrip.AllowPickup(true, true, true, true),
+        true, true, false, 130u, 20u) == 0u); // cancel before late native adoption
+    Check(reservedPickup.Update(reservedGrip.AllowPickup(true, true, true, false),
+        true, true, false, 140u, 20u) == 0u);
+    Check(!reservedGrip.AllowPickup(false, true, true, false));
+    Check(!reservedGrip.AllowPickup(true, true, true, false));
+    Check(!reservedGrip.AllowPickup(true, true, false, false));
+    Check(reservedGrip.AllowPickup(true, true, true, false));
+    Check(!reservedGrip.AllowPickup(true, false, true, false));
+    Check(!reservedGrip.AllowPickup(true, true, true, false));
+    reservedGrip.Reset();
+    Check(!reservedGrip.AllowPickup(true, true, true, false));
+    Check(!reservedGrip.AllowPickup(true, true, false, false));
+    Check(reservedGrip.AllowPickup(true, true, true, false));
     Check(pickup.Update(true, true, true, true, 100u, 10u) == PickupIntent::RequestUse);
     Check(pickup.Update(true, true, true, true, 110u, 10u) == 0u);
     Check(pickup.Update(true, true, true, false, 150u, 20u) == PickupIntent::AdoptWeapon);

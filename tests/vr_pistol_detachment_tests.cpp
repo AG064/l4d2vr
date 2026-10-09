@@ -6,6 +6,16 @@
 int main()
 {
     using namespace l4d2vr_pistol;
+    Ownership cancelledPickup;
+    cancelledPickup.Observe(true, 99u, false, 100u);
+    cancelledPickup.PickupRequested(Hand::Left);
+    cancelledPickup.CancelPickup(Hand::Left);
+    cancelledPickup.Observe(true, 99u, true, 110u);
+    CHECK(cancelledPickup.Mask() == 3u);
+    CHECK(cancelledPickup.Release(true, false, true, true, 120u) == Hand::None);
+    CHECK(cancelledPickup.Release(true, false, true, false, 130u) == Hand::None);
+    CHECK(cancelledPickup.Release(true, false, true, true, 140u) == Hand::None);
+    CHECK(cancelledPickup.Release(true, false, true, false, 150u) == Hand::Left);
     CHECK(DecodeDrop(60u, false) == Hand::Right);
     CHECK(DecodeDrop(61u, false) == Hand::Left);
     CHECK(DecodeDrop(61u, true) == Hand::None);

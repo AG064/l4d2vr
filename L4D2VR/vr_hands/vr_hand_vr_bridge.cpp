@@ -4081,6 +4081,11 @@ bool VR::IsMagazineInteractionManualActive() const
     return m_MagazineInteractionState != MagazineInteractionManualState::Idle;
 }
 
+bool VR::MagazineInteractionOwnsGrip(bool gameplayLeft) const
+{
+    return gameplayLeft == MagazineReloadSupportIsLeft() && IsMagazineInteractionLeftHandActive();
+}
+
 bool VR::IsMagazineInteractionNativeReloadSuppressActive() const
 {
     return m_MagazineInteractionNativeReloadSuppressUntil.time_since_epoch().count() != 0 &&
