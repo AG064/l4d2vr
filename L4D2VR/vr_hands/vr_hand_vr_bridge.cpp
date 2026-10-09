@@ -3573,6 +3573,18 @@ namespace
 #endif
     }
 }
+namespace
+{
+    void SendPistolMagazineRequest(Game* game, const l4d2vr_pistol_reload::Request& request)
+    {
+        if (!game) return;
+        char command[192]{};
+        std::snprintf(command, sizeof(command), "l4d2vr_pistol_mag_v1 %u %u %u %u %d %d %u %u\n",
+            request.token, request.sequence, request.handle, request.command, request.clip, request.reserve,
+            static_cast<unsigned>(request.hand), static_cast<unsigned>(request.action));
+        game->ServerCmd(command, true);
+    }
+}
 void VR::UpdatePistolAmmoSnapshot(C_BasePlayer* player, C_WeaponCSBase* weapon)
 {
     int right = -1, left = -1, clip = -1;
@@ -3588,16 +3600,21 @@ void VR::UpdatePistolAmmoSnapshot(C_BasePlayer* player, C_WeaponCSBase* weapon)
     // Serialize publication with disconnect and renegotiation, so an older input
     // sample cannot restore counts after those paths cleared the session.
     uint32_t revokeToken = 0u;
+    l4d2vr_pistol_reload::Request retry{};
+    bool resend = false;
     {
     std::lock_guard<std::mutex> lock(m_PistolAmmoClientMutex);
+    const uint64_t now = GetTickCount64();
     const auto owner = handle ? reinterpret_cast<uintptr_t>(player) : 0u;
-    if (!m_PistolAmmoClient.ReadBaseline(owner, handle, dual, GetTickCount64(), state))
+    if (!m_PistolAmmoClient.ReadBaseline(owner, handle, dual, now, state))
         m_PistolAmmoPrediction.Reset();
     else if (m_PistolAmmoPrediction.Refresh(owner, state))
         m_PistolAmmoPrediction.Counts(clip, 0u, 0u, right, left);
     const uint64_t packed = l4d2vr_pistol_prediction::Pack(right, left, state.physical, state.chambered);
     l4d2vr_pistol_reload::Reply reloadReply{};
-    const auto reloadPoll = m_PistolMagazineRequest.Update(owner, handle, GetTickCount64(), state,
+    const bool reloadAvailable = m_MagazineInteractionEnabled &&
+        Hooks::hkClientPistolReload.isEnabled && Hooks::hkClientPistolFinishReload.isEnabled;
+    const auto reloadPoll = m_PistolMagazineRequest.Update(reloadAvailable ? owner : 0u, handle, dual, now, state,
         packed != 0xffffffffffffffffull, reloadReply);
     if (reloadPoll == l4d2vr_pistol_reload::Client::Poll::Result || reloadPoll == l4d2vr_pistol_reload::Client::Poll::Timeout)
     { m_PistolMagazineReply = reloadReply; m_PistolMagazineReplyReady = true; }
@@ -3608,6 +3625,19 @@ void VR::UpdatePistolAmmoSnapshot(C_BasePlayer* player, C_WeaponCSBase* weapon)
         m_PistolAmmoCounts.store(0xffffffffffffffffull, std::memory_order_release);
     }
     else m_PistolAmmoCounts.store(packed, std::memory_order_release);
+    if (reloadPoll == l4d2vr_pistol_reload::Client::Poll::Waiting &&
+        !m_MouseModeEnabled && !m_SuppressPlayerInput &&
+        m_Game && m_Game->m_EngineClient &&
+        !m_Game->m_EngineClient->IsPaused() &&
+        !(m_Game->m_VguiSurface && m_Game->m_VguiSurface->IsCursorVisible()))
+        resend = m_PistolMagazineRequest.NextRetry(now, retry);
+    }
+    // A native command can synchronously deliver its reply through this mutex.
+    if (resend)
+    {
+        SendPistolMagazineRequest(m_Game, retry);
+        Game::logMsg("[VR][PistolMagazine][client] retry seq=%u hand=%u action=%u",
+            retry.sequence, static_cast<unsigned>(retry.hand), static_cast<unsigned>(retry.action));
     }
     if (revokeToken && m_Game)
     {
@@ -3740,15 +3770,11 @@ bool VR::BeginPistolMagazineRequest(int commandNumber, l4d2vr_pistol::Hand hand,
         l4d2vr_pistol_sync::State state{};
         if (!m_PistolAmmoClient.ReadBaseline(reinterpret_cast<uintptr_t>(player), handle, dual, GetTickCount64(), state) ||
             !m_PistolMagazineRequest.Begin(handle, clip, reserve, hand, action,
-                static_cast<uint32_t>(commandNumber), reinterpret_cast<uintptr_t>(player), GetTickCount64(), request))
+                static_cast<uint32_t>(commandNumber), reinterpret_cast<uintptr_t>(player), dual, GetTickCount64(), request))
             return false;
         m_PistolMagazineReplyReady = false;
     }
-    char command[192]{};
-    std::snprintf(command, sizeof(command), "l4d2vr_pistol_mag_v1 %u %u %u %u %d %d %u %u\n",
-        request.token, request.sequence, request.handle, request.command, request.clip, request.reserve,
-        static_cast<unsigned>(hand), static_cast<unsigned>(action));
-    m_Game->ServerCmd(command, true);
+    SendPistolMagazineRequest(m_Game, request);
     Game::logMsg("[VR][PistolMagazine][client] requested seq=%u hand=%u action=%u clip=%d reserve=%d",
         request.sequence, static_cast<unsigned>(hand), static_cast<unsigned>(action), clip, reserve);
     return true;

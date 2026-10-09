@@ -350,3 +350,22 @@ acknowledgement and replication. Timeout or ambiguous backend failures do not
 restore a possibly consumed round. Unit checks cover lost replies, single native
 consumption, retry limits, cancellation and contact rearming. Native multiplayer
 delivery, shell geometry and the reported automatic reload still need testing.
+
+## Recovering pistol magazine request delivery
+
+Pending pistol ejection, insertion, reinsertion and slide-cycle transactions can
+resend the identical request up to three times, at least 500 ms apart, within the
+existing 2500 ms timeout. The host's duplicate-result cache returns the settled
+transaction without changing ammo again. A valid reply stops retries while the
+client waits for the matching native ammo state. Sending occurs outside the
+request mutex, allowing synchronous replies.
+
+Owner, weapon handle and single/dual-mode changes cancel pending requests. Paused
+or suppressed input does not resend, and disabling physical reload cancels it.
+Tests drop replies after host application for both hands, single and dual ammo
+states, empty and tactical reloads, and every magazine action. They verify one
+host mutation, unchanged opposite-hand ammo, replication waits, retry limits,
+timeout, invalid replies and cancellation. The wire version is unchanged.
+This strengthens the existing single-pistol gesture path and the dual-capable
+transaction backend. Independent dual reload gestures remain unfinished; native
+headset and matching-build multiplayer acceptance remain pending.

@@ -120,16 +120,26 @@ namespace l4d2vr_pistol_reload
         void Disconnect() { *this = {}; }
         bool Pending() const { return m_Pending; }
         bool Blocked(std::uint32_t token) const { return token != 0u && token == m_BlockedToken; }
+        void Cancel() { m_Pending = m_Ready = false; m_Retries = 0u; }
         bool Begin(std::uint32_t handle, int clip, int reserve, Hand hand, Action action,
-            std::uint32_t command, std::uintptr_t owner, std::uint64_t now, Request& request)
+            std::uint32_t command, std::uintptr_t owner, bool dual, std::uint64_t now, Request& request)
         {
             if (!m_Token || m_Pending || !owner || !command || command > 0x7fffffffu ||
                 !l4d2vr_shell::ValidHandle(handle) || clip < 0 || clip > 30 || reserve < 0 || reserve > 5000 ||
                 (hand != Hand::Right && hand != Hand::Left) || static_cast<unsigned>(action) > 3u || m_Sequence == 0xffffffffu)
                 return false;
             m_Request = {m_Token, ++m_Sequence, handle, command, clip, reserve, hand, action};
-            m_Owner = owner; m_Started = now; m_Pending = true; m_Ready = false;
+            m_Owner = owner; m_Dual = dual; m_Started = m_LastRetry = now;
+            m_Pending = true; m_Ready = false; m_Retries = 0u;
             request = m_Request; return true;
+        }
+        bool NextRetry(std::uint64_t now, Request& request)
+        {
+            if (!m_Pending || m_Ready || m_Retries >= 3u || now < m_Started ||
+                now - m_Started >= 2500u || now < m_LastRetry || now - m_LastRetry < 500u)
+                return false;
+            ++m_Retries; m_LastRetry = now; request = m_Request;
+            return true;
         }
         void Receive(const Reply& reply)
         {
@@ -162,23 +172,25 @@ namespace l4d2vr_pistol_reload
             }
             m_Reply = reply; m_Ready = true;
         }
-        Poll Update(std::uintptr_t owner, std::uint32_t handle, std::uint64_t now,
+        Poll Update(std::uintptr_t owner, std::uint32_t handle, bool dual, std::uint64_t now,
             const l4d2vr_pistol_sync::State& state, bool nativeMatches, Reply& reply)
         {
             if (!m_Pending) return Poll::None;
-            if (!owner || owner != m_Owner || handle != m_Request.handle) { m_Pending = false; return Poll::None; }
+            if (!owner || owner != m_Owner || handle != m_Request.handle || dual != m_Dual)
+            { Cancel(); return Poll::None; }
             if (now < m_Started || now - m_Started >= 2500u)
-            { reply = {m_Request, Status::Backend, {}}; m_BlockedToken = m_Token; m_Token = 0u; m_Pending = false; return Poll::Timeout; }
+            { reply = {m_Request, Status::Backend, {}}; m_BlockedToken = m_Token; m_Token = 0u; Cancel(); return Poll::Timeout; }
             if (!m_Ready || (m_Reply.status == Status::Applied && (!nativeMatches || !state.known ||
                 state.token != m_Request.token || state.handle != handle || state.reloadSequence < m_Request.sequence)))
                 return Poll::Waiting;
-            reply = m_Reply; m_Pending = false; return Poll::Result;
+            reply = m_Reply; Cancel(); return Poll::Result;
         }
     private:
         std::uint32_t m_Token = 0u, m_Sequence = 0u, m_BlockedToken = 0u;
         std::uintptr_t m_Owner = 0u;
-        std::uint64_t m_Started = 0u;
-        bool m_Pending = false, m_Ready = false;
+        std::uint64_t m_Started = 0u, m_LastRetry = 0u;
+        unsigned m_Retries = 0u;
+        bool m_Pending = false, m_Ready = false, m_Dual = false;
         Request m_Request{};
         Reply m_Reply{};
     };
