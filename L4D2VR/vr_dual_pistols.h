@@ -77,6 +77,7 @@ namespace l4d2vr_dual
         std::array<float, 3> angles{};
         std::uintptr_t owner = 0u, weapon = 0u;
         std::uint64_t capturedAtMs = 0u;
+        std::uint32_t weaponHandle = 0u;
     };
 
     inline bool LiveShotMatches(const Shot& shot, std::uintptr_t owner, std::uintptr_t weapon, std::uint64_t now)
@@ -103,6 +104,15 @@ namespace l4d2vr_dual
             if (shot.command != command || shot.hand == Hand::None) return false;
             for (unsigned axis = 0; axis < 3; ++axis)
                 if (!std::isfinite(shot.position[axis]) || !std::isfinite(shot.angles[axis])) return false;
+            result = shot;
+            return true;
+        }
+        bool GetForExecution(int command, std::uintptr_t owner, std::uintptr_t weapon,
+            std::uint32_t handle, std::uint64_t now, Shot& result) const
+        {
+            Shot shot{};
+            if (!handle || !Get(command, shot) || shot.weaponHandle != handle ||
+                !LiveShotMatches(shot, owner, weapon, now)) return false;
             result = shot;
             return true;
         }

@@ -178,6 +178,10 @@ public:
     // Pistol ownership/layout checks restrict accounting to supported CPistol.
     Offset PistolGunFire = { "server.dll", 0x003E9370,
         "55 8B EC 83 EC 34 53 56 8B F1 E8 ? ? ? ? 8B D8 85 DB 0F 84 ? ? ? ? 80 BE 2A 15 00 00 00", 0, true };
+    // CPrediction::RunCommand: thiscall (player, command, move helper), ret 12.
+    // Capture the command being simulated instead of the latest CreateMove pose.
+    Offset ClientPistolRunCommand = { "client.dll", 0x0017B460,
+        "55 8B EC 83 EC 18 53 56 8B 75 08 57 8B 7D 0C 57 8B D9 89 BE 28 14 00 00 E8 ? ? ? ?", 0, true };
     Offset PhysicalShellEdictAccessor = { "server.dll", 0x000ED4B0,
         "51 8B 0D ? ? ? ? 8B 11 8B 82 84 01 00 00 FF D0 C3", 0, true };
     Offset PhysicalShellReloadLayout = { "server.dll", 0x003C30C4,

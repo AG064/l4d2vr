@@ -104,6 +104,9 @@ still requires model work; this tool does not reconstruct it.
 - Pistol-ammo feed: matching capability/session, loaded/empty and unequal clips,
   snapshot-before/after-native-replication delivery, weapon/player changes,
   menu/paused recovery, heartbeat/timeout and an older unsupported host.
+- Client pistol prediction: replay an older left shot after a newer right shot;
+  check ray, haptic hand and hit-feedback command, owner/weapon replacement,
+  capture expiry, non-prediction events and the optional-hook fallback.
 - Native pistol execution: command-to-hand association across delayed commands,
   backup packets, weapon changes, two players and the optional-hook fallback.
 - Executed reload policy: packet batching, grip/pull commands, ordinary reload

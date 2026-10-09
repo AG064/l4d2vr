@@ -175,6 +175,16 @@ owner changes, mismatched replication and snapshots older than one second expose
 no independent counts. Both hand counts are published atomically for subsequent
 hand interactions. This feed does not yet replace native reloads, implement
 magazine/chamber transactions or enforce empty-hand firing.
+
+An optional client prediction-command hook scopes local pistol bullet effects,
+hand haptics and predicted hit feedback to the command Source is simulating.
+An older left-hand command cannot borrow the latest right-hand ray. Cached
+commands also require the current player/weapon, native weapon handle serial
+and a bounded capture age. With
+the hook active, missing or replaced poses preserve the native bullet ray and
+omit additional haptics and predicted hit attribution. An unsupported hook retains the earlier latest-pose
+fallback. Native prediction replay and first-shot weapon changes need gameplay
+acceptance; independent ammo prediction and reloads remain unfinished.
 First-person bone retargeting does not yet separate remote world-model
 pistols. Body inventory follows tracked head position and yaw; full body IK
 and character-specific avatar fitting remain separate work.

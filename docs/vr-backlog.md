@@ -74,6 +74,14 @@ processing. This is the authoritative baseline for per-hand prediction/reload;
 the prediction journal, independent chamber/magazine operations and firing gates
 remain unfinished. Actual delivery and replication timing need matching builds.
 
+The optional client prediction-command hook now selects the command-specific
+hand ray for native local bullet effects and hit-feedback attribution, with
+owner/weapon/handle/age guards and exception-safe scope restoration. Missing scoped
+poses retain the native ray rather than adopting a newer hand's shot; haptics
+and extra hit attribution are omitted when the hand is unknown. This provides the client execution context
+needed by the pending per-hand ammo prediction journal. Native timing, replay,
+first-shot weapon selection and feedback still need headset acceptance.
+
 The server now has an optional native execution hook and per-command hand/pose
 history, so firing uses the simulated command rather than the latest decoded
 packet. Owner/edict serial, age, duplicates and ring rollover are covered offline.

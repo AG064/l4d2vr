@@ -58,6 +58,18 @@ int main()
     CHECK(!LiveShotMatches(feedback,200u,10u,1001u)); // player replacement cannot reuse the old ray
     CHECK(!LiveShotMatches(feedback,100u,20u,1001u)); // switching away cannot aim the new weapon from this pistol
     CHECK(!LiveShotMatches(feedback,0u,10u,1001u));
+    feedback.weaponHandle=0x3005u;
+    cache.Store(feedback);
+    cache.Store({105,Hand::Right,{5,2,3},{0,-90,0},100u,10u,1001u,0x3005u});
+    CHECK(cache.GetForExecution(104,100u,10u,0x3005u,1002u,copy) && copy.hand==Hand::Left);
+    CHECK(cache.GetForExecution(105,100u,10u,0x3005u,1002u,copy) && copy.hand==Hand::Right);
+    CHECK(cache.GetForExecution(104,100u,10u,0x3005u,1003u,copy) && copy.position[0]==-5); // older command replay
+    CHECK(!cache.GetForExecution(104,200u,10u,0x3005u,1002u,copy));
+    CHECK(!cache.GetForExecution(104,100u,20u,0x3005u,1002u,copy));
+    CHECK(!cache.GetForExecution(104,100u,10u,0x4005u,1002u,copy)); // same address, new native handle serial
+    CHECK(!cache.GetForExecution(104,100u,10u,0u,1002u,copy));
+    CHECK(!cache.GetForExecution(104,100u,10u,0x3005u,1351u,copy));
+    CHECK(!cache.GetForExecution(106,100u,10u,0x3005u,1002u,copy));
     feedback.hand=Hand::None;
     CHECK(!LiveShotMatches(feedback,100u,10u,1001u));
     feedback.hand=Hand::Right;
@@ -67,6 +79,8 @@ int main()
     CHECK(!cache.Get(101,copy));
     cache.Store({103,Hand::Left,{std::numeric_limits<float>::infinity(),0,0},{}});
     CHECK(!cache.Get(103,copy));
+    cache.Store({254,Hand::Right,{5,2,3},{0,-90,0},100u,10u,1100u});
+    CHECK(!cache.GetForExecution(104,100u,10u,0x3005u,1101u,copy)); // ring eviction cannot reuse the new command
 
     Matrix rightHand=Pose(10,0), leftHand=Pose(-10,0), rightGun=Pose(11,0), oldLeft=Pose(12,5), delta{};
     const Matrix frame=ControllerFrame<Matrix>({0,0,0},{1,0,0},{0,-1,0},{0,0,1});

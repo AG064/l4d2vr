@@ -105,6 +105,7 @@ typedef void(__thiscall* tItemPostFrame)(void* thisptr);
 typedef bool(__thiscall* tPhysicalReload)(void* thisptr);
 typedef void(__thiscall* tPistolPlayerRunCommand)(void*, CUserCmd*, void*);
 typedef void(__thiscall* tPistolGunFire)(void*);
+typedef void(__thiscall* tClientPistolRunCommand)(void*, void*, CUserCmd*, void*);
 typedef void* (__cdecl* tThrowableProjectileCreate)(const Vector& position, const QAngle& angles, const Vector& velocity, const Vector& angularVelocity, void* owner);
 typedef void* (__cdecl* tManualCarryCreateEntityByName)(const char* className, int forcedEdictIndex, bool runScriptHook);
 typedef void* (__thiscall* tManualCarryCreatePhysicsProp)(void* thisptr);
@@ -182,6 +183,7 @@ public:
     static inline Hook<tPhysicalReload> hkPhysicalGunReload;
     static inline Hook<tPistolPlayerRunCommand> hkPistolPlayerRunCommand;
     static inline Hook<tPistolGunFire> hkPistolGunFire;
+    static inline Hook<tClientPistolRunCommand> hkClientPistolRunCommand;
     static inline Hook<tPhysicalReload> hkPhysicalShotgunReload;
 	static inline Hook<tManualCarryCreatePhysicsProp> hkManualCarryCreatePhysicsProp;
 	static inline Hook<tCBaseEntityVPhysicsCollision> hkCBaseEntityVPhysicsCollision;
@@ -273,6 +275,7 @@ public:
 	static void __fastcall dItemPostFrameServer(void* ecx, void* edx);
     static void __fastcall dPistolPlayerRunCommand(void* ecx, void* edx, CUserCmd* command, void* moveHelper);
     static void __fastcall dPistolGunFire(void* weapon, void* edx);
+    static void __fastcall dClientPistolRunCommand(void* prediction, void* edx, void* player, CUserCmd* command, void* moveHelper);
 	static void* __cdecl dMolotovProjectileCreate(const Vector& position, const QAngle& angles, const Vector& velocity, const Vector& angularVelocity, void* owner);
 	static void* __cdecl dPipeBombProjectileCreate(const Vector& position, const QAngle& angles, const Vector& velocity, const Vector& angularVelocity, void* owner);
 	static void* __cdecl dVomitJarProjectileCreate(const Vector& position, const QAngle& angles, const Vector& velocity, const Vector& angularVelocity, void* owner);

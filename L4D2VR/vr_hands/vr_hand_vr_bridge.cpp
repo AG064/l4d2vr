@@ -3176,6 +3176,8 @@ void VR::RecordDualPistolCommand(int command, l4d2vr_dual::Hand hand, bool firin
     shot.hand = hand;
     shot.owner = owner; shot.weapon = weapon;
     shot.capturedAtMs = GetTickCount64();
+    shot.weaponHandle = MagazineInteractionActiveWeaponHandle(m_Game,
+        reinterpret_cast<C_BasePlayer*>(owner), reinterpret_cast<C_WeaponCSBase*>(weapon));
     if (hand != l4d2vr_dual::Hand::None)
     {
         const bool left = hand == l4d2vr_dual::Hand::Left;
@@ -3209,6 +3211,20 @@ bool VR::GetLatestDualPistolShotPose(uintptr_t owner, uintptr_t weapon, Vector& 
     std::lock_guard<std::mutex> lock(m_DualPistolShotMutex);
     const auto& shot = m_LatestDualPistolShot;
     if (!l4d2vr_dual::LiveShotMatches(shot, owner, weapon, GetTickCount64())) return false;
+    position = Vector(shot.position[0], shot.position[1], shot.position[2]);
+    angles = QAngle(shot.angles[0], shot.angles[1], shot.angles[2]);
+    hand = shot.hand;
+    return true;
+}
+
+bool VR::GetExecutingDualPistolShotPose(int command, uintptr_t owner, uintptr_t weapon,
+    Vector& position, QAngle& angles, l4d2vr_dual::Hand& hand) const
+{
+    const auto handle = MagazineInteractionActiveWeaponHandle(m_Game,
+        reinterpret_cast<C_BasePlayer*>(owner), reinterpret_cast<C_WeaponCSBase*>(weapon));
+    std::lock_guard<std::mutex> lock(m_DualPistolShotMutex);
+    l4d2vr_dual::Shot shot{};
+    if (!m_DualPistolCommandShots.GetForExecution(command, owner, weapon, handle, GetTickCount64(), shot)) return false;
     position = Vector(shot.position[0], shot.position[1], shot.position[2]);
     angles = QAngle(shot.angles[0], shot.angles[1], shot.angles[2]);
     hand = shot.hand;

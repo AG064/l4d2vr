@@ -1419,6 +1419,44 @@ int Hooks::dServerFireTerrorBullets(int playerId, const Vector& vecOrigin, const
 	return hkServerFireTerrorBullets.fOriginal(playerId, vecNewOrigin, vecNewAngles, a4, a5, a6, a7);
 }
 
+namespace
+{
+    struct ClientPistolExecution
+    {
+        uintptr_t owner = 0u;
+        int command = 0;
+    };
+    thread_local const ClientPistolExecution* g_ClientPistolExecution = nullptr;
+
+    bool ReadClientPistolExecution(void* player, CUserCmd* command, ClientPistolExecution& result)
+    {
+        if (!player || !command || !Hooks::m_VR || !Hooks::m_Game ||
+            !Hooks::m_VR->m_DualPistolsIndependentHandsEnabled || !Hooks::m_VR->m_EncodeVRUsercmd ||
+            Hooks::m_VR->m_ForceNonVRServerMovement) return false;
+#ifdef _MSC_VER
+        __try
+        {
+#endif
+            const auto session = ReadGripGameplaySession(Hooks::m_VR, Hooks::m_Game);
+            if (!session.gameplay || session.owner != reinterpret_cast<uintptr_t>(player) ||
+                command->command_number <= 0 || (command->buttons & 1u) == 0u) return false;
+            result = {session.owner, command->command_number};
+            return true;
+#ifdef _MSC_VER
+        }
+        __except (EXCEPTION_EXECUTE_HANDLER) { return false; }
+#endif
+    }
+}
+
+void __fastcall Hooks::dClientPistolRunCommand(void* prediction, void*, void* player, CUserCmd* command, void* moveHelper)
+{
+    ClientPistolExecution context{};
+    ReadClientPistolExecution(player, command, context);
+    l4d2vr_native_scope::Run<const ClientPistolExecution>(g_ClientPistolExecution, &context,
+        [&]() { hkClientPistolRunCommand.fOriginal(prediction, player, command, moveHelper); });
+}
+
 int Hooks::dClientFireTerrorBullets(
 	int playerId,
 	const Vector& vecOrigin,
@@ -1437,8 +1475,22 @@ int Hooks::dClientFireTerrorBullets(
         (m_VR->m_DualPistolsActive.load(std::memory_order_acquire) ||
             m_VR->m_LeftHandPistolActive.load(std::memory_order_acquire));
     const auto shotSession = dualCandidate ? ReadGripGameplaySession(m_VR, m_Game) : GripGameplaySession{};
-    const bool dualShotPose = dualCandidate && shotSession.gameplay &&
-        m_VR->GetLatestDualPistolShotPose(shotSession.owner, shotSession.weapon, vecNewOrigin, vecNewAngles, dualShotHand);
+    const bool scopedDualShot = dualCandidate && hkClientPistolRunCommand.isEnabled &&
+        m_VR->m_DualPistolsIndependentHandsEnabled && m_VR->m_EncodeVRUsercmd && !m_VR->m_ForceNonVRServerMovement;
+    bool dualShotPose = false;
+    if (dualCandidate && shotSession.gameplay)
+    {
+        if (scopedDualShot)
+        {
+            if (g_ClientPistolExecution && g_ClientPistolExecution->owner == shotSession.owner)
+                dualShotPose = m_VR->GetExecutingDualPistolShotPose(g_ClientPistolExecution->command,
+                    shotSession.owner, shotSession.weapon, vecNewOrigin, vecNewAngles, dualShotHand);
+        }
+        else
+            dualShotPose = m_VR->GetLatestDualPistolShotPose(shotSession.owner, shotSession.weapon,
+                vecNewOrigin, vecNewAngles, dualShotHand);
+    }
+    const bool preserveNativeDualRay = scopedDualShot && !dualShotPose;
 
 	// 只改本地玩家的“本地预测/表现”
 	if (m_VR->m_IsVREnabled && playerId == m_Game->m_EngineClient->GetLocalPlayer())
@@ -1466,9 +1518,9 @@ int Hooks::dClientFireTerrorBullets(
 				if (enabled)
 					VR::t_UseRenderFrameSnapshot = prev;
 			}
-		} tlsGuard(!dualShotPose && queueMode == 2);
+		} tlsGuard(!dualShotPose && !preserveNativeDualRay && queueMode == 2);
 
-        if (!dualShotPose)
+        if (!dualShotPose && !preserveNativeDualRay)
         {
 
 
@@ -1703,19 +1755,22 @@ int Hooks::dClientFireTerrorBullets(
 				if (activeWeapon)
 					weaponId = (int)activeWeapon->GetWeaponID();
 			}
-			m_VR->TriggerWeaponFireHaptics(weaponId, dualShotPose && dualShotHand == l4d2vr_dual::Hand::Left);
+            if (!preserveNativeDualRay)
+			    m_VR->TriggerWeaponFireHaptics(weaponId, dualShotPose && dualShotHand == l4d2vr_dual::Hand::Left);
 		}
 
 		// RightAmmoHUD: hit-based target HP bar has been removed.
-	// The ammo HUD now shows HP%% for the *aimed* special infected (and Witch) and hides instantly on leave.
+		// The ammo HUD now shows HP%% for the *aimed* special infected (and Witch) and hides instantly on leave.
 		if (m_VR->m_IsVREnabled && m_Game && m_Game->m_EngineClient
-			&& playerId == m_Game->m_EngineClient->GetLocalPlayer())
+			&& playerId == m_Game->m_EngineClient->GetLocalPlayer() && !preserveNativeDualRay)
 		{
 			// Start a fresh shot window once per FireTerrorBullets call.
 			// RegisterPotentialKillSoundHit keeps a VR-corrected impact candidate for
 			// later hurt/death events and also serves as the fallback path for
 			// common-infected hit feedback when local hurt events are unavailable.
-			m_VR->BeginPredictedHitFeedbackShot(m_VR->m_CurrentPredictedHitFeedbackCmdNumber);
+            const int feedbackCommand = scopedDualShot && g_ClientPistolExecution && dualShotPose
+                ? g_ClientPistolExecution->command : m_VR->m_CurrentPredictedHitFeedbackCmdNumber;
+			m_VR->BeginPredictedHitFeedbackShot(feedbackCommand);
 			// Use the final VR-corrected shot ray for predicted hit feedback so the
 			// hit sound / hit indicator matches the actual VR muzzle origin and aim.
 			m_VR->RegisterPotentialKillSoundHit(predictedHitOrigin, predictedHitAngles);
