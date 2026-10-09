@@ -820,7 +820,7 @@ namespace
     Vector MagazineInteractionFreshMagazinePickupOffsetMeters(const VR* vr)
     {
         Vector offset = vr ? vr->m_MagazineInteractionFreshMagazinePickupOffsetMeters : Vector(0.0f, 0.0f, 0.0f);
-        if (vr && vr->m_LeftHanded)
+        if (vr && !vr->IsGameplayHandLeftPhysical(vr->MagazineReloadSupportIsLeft()))
             offset.y = -offset.y;
         return offset;
     }
@@ -916,12 +916,13 @@ namespace
         if (!vr)
             return VrHandMath::Identity();
 
+        const bool supportLeft = vr->MagazineReloadSupportIsLeft();
         const VrHandMatrix4 controllerWorld = MagazineInteractionBuildViewmodelReprojectedControllerWorld(
             vr,
-            vr->m_LeftControllerPosAbs,
-            vr->m_LeftControllerForward,
-            vr->m_LeftControllerRight,
-            vr->m_LeftControllerUp);
+            supportLeft ? vr->m_LeftControllerPosAbs : vr->m_RightControllerPosAbs,
+            supportLeft ? vr->m_LeftControllerForward : vr->m_RightControllerForward,
+            supportLeft ? vr->m_LeftControllerRight : vr->m_RightControllerRight,
+            supportLeft ? vr->m_LeftControllerUp : vr->m_RightControllerUp);
         const VrHandMatrix4 local = MagazineInteractionBuildLocalTransform(
             vr->m_VRScale,
             vr->m_MagazineInteractionMagazineHandOffsetMeters,
@@ -936,20 +937,22 @@ namespace
         if (!vr)
             return controllerWorld;
 
+        const bool left = vr->MagazineReloadSupportIsLeft();
+
         if (vr->m_VrHandsEnabled)
         {
             // Use the glove renderer's GLB Euler convention, not Source's
             // pitch/yaw/roll convention. Remove model scale from the anchor.
             return VrHandMath::BuildControllerWorld(MagazineInteractionMatrixOrigin(controllerWorld),
-                const_cast<VR*>(vr)->GetLeftControllerAbsAngle(), vr->m_VRScale,
-                1.0f / std::max(0.001f, vr->m_VRScale), vr->m_VrHandsLeftPoseOffsetMeters,
-                vr->m_VrHandsLeftPoseRotationOffsetDeg);
+                left ? const_cast<VR*>(vr)->GetLeftControllerAbsAngle() : const_cast<VR*>(vr)->GetRightControllerAbsAngle(), vr->m_VRScale,
+                1.0f / std::max(0.001f, vr->m_VRScale), left ? vr->m_VrHandsLeftPoseOffsetMeters : vr->m_VrHandsRightPoseOffsetMeters,
+                left ? vr->m_VrHandsLeftPoseRotationOffsetDeg : vr->m_VrHandsRightPoseRotationOffsetDeg);
         }
 
         const VrHandMatrix4 handLocal = MagazineInteractionBuildLocalTransform(
             vr->m_VRScale,
-            vr->m_VrHandsEnabled ? vr->m_VrHandsLeftPoseOffsetMeters : vr->m_NativeViewmodelLeftHandPoseOffsetMeters,
-            vr->m_VrHandsEnabled ? vr->m_VrHandsLeftPoseRotationOffsetDeg : vr->m_NativeViewmodelLeftHandPoseRotationOffsetDeg);
+            left ? vr->m_NativeViewmodelLeftHandPoseOffsetMeters : vr->m_NativeViewmodelRightHandPoseOffsetMeters,
+            left ? vr->m_NativeViewmodelLeftHandPoseRotationOffsetDeg : vr->m_NativeViewmodelRightHandPoseRotationOffsetDeg);
         VrHandMatrix4 handWorld = VrHandMath::Multiply(controllerWorld, handLocal);
 
         const VrHandMatrix4 magazineOffsetLocal = MagazineInteractionBuildLocalTransform(
@@ -1010,7 +1013,7 @@ namespace
         }
 
         VrHandMatrix4 wristWorld{};
-        if (vr->GetMagazineInteractionNativeLeftWristAnchor(wristWorld))
+        if (vr->MagazineReloadSupportIsLeft() && vr->GetMagazineInteractionNativeLeftWristAnchor(wristWorld))
         {
             outAnchorWorld =
                 MagazineInteractionFreshMagazineWristAnchorOffsetWorld(vr, wristWorld);
@@ -1955,8 +1958,9 @@ namespace
             return VrHandMath::Identity();
 
         VR* mutableVr = const_cast<VR*>(vr);
-        const Vector leftControllerPos = mutableVr->GetLeftControllerAbsPos();
-        const QAngle leftControllerAng = mutableVr->GetLeftControllerAbsAngle();
+        const bool supportLeft = vr->MagazineReloadSupportIsLeft();
+        const Vector leftControllerPos = supportLeft ? mutableVr->GetLeftControllerAbsPos() : mutableVr->GetRightControllerAbsPos();
+        const QAngle leftControllerAng = supportLeft ? mutableVr->GetLeftControllerAbsAngle() : mutableVr->GetRightControllerAbsAngle();
         Vector leftForward{};
         Vector leftRight{};
         Vector leftUp{};
@@ -2903,6 +2907,18 @@ l4d2vr_dual::Hand VR::GetPrimaryPistolHand() const
     return l4d2vr_dual::PrimaryHand(m_IsVREnabled && m_DualPistolsIndependentHandsEnabled && !m_MouseModeEnabled &&
         m_LeftHandPistolActive.load(std::memory_order_acquire),
         m_DualPistolsActive.load(std::memory_order_acquire), m_PistolOwnershipMask.load(std::memory_order_acquire));
+}
+
+bool VR::MagazineReloadSupportIsLeft() const
+{
+    return l4d2vr_dual::ReloadSupportIsLeft(GetPrimaryPistolHand());
+}
+
+unsigned VR::MagazineGripPhysicalMask() const
+{
+    return l4d2vr_dual::ReloadGripPhysicalMask(
+        m_MagazineInteractionLeftHandPoseActive.load(std::memory_order_acquire) != 0u,
+        GetPrimaryPistolHand(), m_LeftHanded);
 }
 
 bool VR::BuildPistolControllerWorld(bool left, VrHandMatrix4& outWorld) const
@@ -4633,7 +4649,7 @@ bool VR::ReadMagazineInteractionFingerCurls(std::array<float, 5>& outCurls)
     if (!m_Input)
         return false;
 
-    const bool physicalLeftHand = IsGameplayHandLeftPhysical(true);
+    const bool physicalLeftHand = IsGameplayHandLeftPhysical(MagazineReloadSupportIsLeft());
     vr::VRActionHandle_t& action = physicalLeftHand
         ? m_NativeViewmodelLeftHandOpenVRAction
         : m_NativeViewmodelRightHandOpenVRAction;
@@ -4907,7 +4923,7 @@ bool VR::UpdateMagazineInteraction(
         ~BodyAmmoPublication() { destination.store(value, std::memory_order_release); }
     } bodyAmmoPublication{ m_BodyAmmoAvailable, bodyAmmoAvailable };
     const auto now = std::chrono::steady_clock::now();
-    const bool magazineInteractionPhysicalLeftHand = IsGameplayHandLeftPhysical(true);
+    const bool magazineInteractionPhysicalLeftHand = IsGameplayHandLeftPhysical(MagazineReloadSupportIsLeft());
     if (m_MagazineInteractionSuppressLeftInputUntilRelease && !leftGripDown)
     {
         m_MagazineInteractionSuppressLeftInputUntilRelease = false;
@@ -4976,7 +4992,7 @@ bool VR::UpdateMagazineInteraction(
     auto triggerMagazineInteractionWeaponHandHaptic = [&](float durationSeconds, float frequency, float amplitude, int priority = 2)
     {
         triggerMagazineInteractionHapticForHand(
-            IsGameplayHandLeftPhysical(false),
+            IsGameplayHandLeftPhysical(!MagazineReloadSupportIsLeft()),
             durationSeconds,
             frequency,
             amplitude,
@@ -8221,7 +8237,7 @@ bool VR::DrawVrHandsForEyeImmediate(
             leftHandTargetBoxMins,
             leftHandTargetBoxMaxs,
             leftHandTargetBoxUseViewmodelLayer,
-            m_MagazineInteractionLeftHandPoseActive.load(std::memory_order_relaxed) != 0,
+            MagazineGripPhysicalMask(),
             m_VrHandsGloveFingerMaxCurl,
             drawPass);
     }

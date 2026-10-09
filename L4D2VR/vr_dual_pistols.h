@@ -15,6 +15,12 @@ namespace l4d2vr_dual
     { return published != Hand::None && published == current; }
     inline bool ControllerFrameAvailable(bool hmd, bool hand, std::uint64_t captured, std::uint64_t now)
     { return hmd && hand && captured != 0u && now >= captured && now - captured <= 350u; }
+    inline bool ReloadSupportIsLeft(Hand primary) { return primary != Hand::Left; }
+    inline unsigned ReloadGripPhysicalMask(bool active, Hand primary, bool leftHanded)
+    {
+        const bool physicalLeft = ReloadSupportIsLeft(primary) != leftHanded;
+        return active ? (physicalLeft ? 1u : 2u) : 0u;
+    }
     inline bool RetainedWeaponPart(std::string_view name)
     {
         // Some models keep mechanical parts outside the weapon-root subtree.

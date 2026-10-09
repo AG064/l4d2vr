@@ -69,7 +69,7 @@ public:
         const Vector& leftHandTargetBoxMins,
         const Vector& leftHandTargetBoxMaxs,
         bool leftHandTargetBoxUseViewmodelLayer,
-        bool leftHandMagazineGripPose,
+        unsigned magazineGripPhysicalMask,
         const std::array<float, 5>& gloveFingerMaxCurl,
         VrHandDrawPass drawPass);
 
@@ -169,7 +169,7 @@ private:
         bool rightUseViewmodelPose,
         bool twoHandedViewmodelPose,
         bool leftHanded,
-        bool leftHandMagazineGripPose,
+        unsigned magazineGripPhysicalMask,
         const std::array<float, 5>& gloveFingerMaxCurl,
         bool debugLog);
     bool DrawControllerlessTestPose(
@@ -221,7 +221,7 @@ private:
     bool m_Initialized = false;
     bool m_DebugInitializationLogged = false;
     bool m_DebugTestPoseLogged = false;
-    bool m_LeftHandMagazineGripPoseWasEnabled = false;
+    unsigned m_MagazineGripPhysicalMaskWasEnabled = 0u;
     VrHandMeshAsset m_StandaloneMagazineBoxAsset;
     std::vector<VrHandMatrixRows3x4> m_StandaloneMagazineBoxPalette;
     std::string m_StandaloneMagazineBoxKey;

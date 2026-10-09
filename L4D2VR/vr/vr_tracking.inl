@@ -488,7 +488,7 @@ bool VR::ReadWorldPoseTrackingSnapshot(VRWorldPoseTrackingSnapshot& outSnapshot)
         m_MagazineInteractionLeftHandPoseActive.load(
             std::memory_order_relaxed) != 0;
     const bool magazinePoseUsesPhysicalLeft =
-        IsGameplayHandLeftPhysical(true);
+        IsGameplayHandLeftPhysical(MagazineReloadSupportIsLeft());
 
     auto finalizeAnatomicalCurls = [&](
         std::array<float, 5>& curls,

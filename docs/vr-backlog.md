@@ -118,6 +118,14 @@ The right-hand reload gesture roles still need mirroring before retained-left
 manual reload is enabled. Headset, replacement-model and queued-render alignment
 remain unverified.
 
+The reload-support role now also selects finger-curl input, anatomical network
+grip curls, glove/native curl overrides, calibrated held-ammo anchoring, waist
+side and interaction/weapon haptics. Glove grip state is a physical-hand mask,
+so switching the support hand invalidates cached palettes and moves the correct
+hand into the viewmodel projection layer. The existing left-handed layout keeps
+its default physical-side mapping. Retained-left manual reload remains on the
+native fallback until grip pickup/drop and reload input ownership are coordinated.
+
 Client native reload prediction is now guarded by separately validated pistol
 reload and reload-completion bindings. Fresh matching physical ownership blocks
 refill attempts and clears reload flags without changing clip/reserve counters

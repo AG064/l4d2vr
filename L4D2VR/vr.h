@@ -3984,6 +3984,8 @@ public:
 	bool ShouldDrawMagazineInteractionDetachedMagazine() const;
 	bool GetMagazineInteractionDetachedMagazineWorld(VrHandMatrix4& outWorld) const;
     l4d2vr_dual::Hand GetPrimaryPistolHand() const;
+    bool MagazineReloadSupportIsLeft() const;
+    unsigned MagazineGripPhysicalMask() const;
     bool BuildPistolControllerWorld(bool left, VrHandMatrix4& outWorld) const;
 	bool ShouldMoveMagazineInteractionBolt() const;
 	bool GetMagazineInteractionBoltWorld(VrHandMatrix4& outWorld) const;

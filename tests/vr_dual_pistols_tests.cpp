@@ -103,6 +103,13 @@ int main()
     CHECK(!ContactHandMatches(Hand::Right, Hand::Left));
     CHECK(!ContactHandMatches(Hand::Left, Hand::Right));
     CHECK(!ContactHandMatches(Hand::None, Hand::None));
+    CHECK(ReloadSupportIsLeft(Hand::Right));
+    CHECK(!ReloadSupportIsLeft(Hand::Left));
+    CHECK(ReloadGripPhysicalMask(false, Hand::Left, false) == 0u);
+    CHECK(ReloadGripPhysicalMask(true, Hand::Right, false) == 1u);
+    CHECK(ReloadGripPhysicalMask(true, Hand::Right, true) == 2u);
+    CHECK(ReloadGripPhysicalMask(true, Hand::Left, false) == 2u);
+    CHECK(ReloadGripPhysicalMask(true, Hand::Left, true) == 1u);
     CHECK(ControllerFrameAvailable(true, true, 1000u, 1350u));
     CHECK(!ControllerFrameAvailable(true, true, 1000u, 1351u));
     CHECK(!ControllerFrameAvailable(true, true, 1000u, 999u));

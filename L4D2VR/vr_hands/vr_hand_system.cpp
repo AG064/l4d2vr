@@ -1213,7 +1213,7 @@ void VrHandSystem::UpdatePoses(
     bool rightUseViewmodelPose,
     bool twoHandedViewmodelPose,
     bool leftHanded,
-    bool leftHandMagazineGripPose,
+    unsigned magazineGripPhysicalMask,
     const std::array<float, 5>& gloveFingerMaxCurl,
     bool debugLog)
 {
@@ -1242,14 +1242,13 @@ void VrHandSystem::UpdatePoses(
         : vr::VRSkeletalMotionRange_WithController;
 
     VrHandFingerCurlOverride magazineGripOverride{};
-    if (leftHandMagazineGripPose)
+    if (magazineGripPhysicalMask)
     {
         magazineGripOverride.enabled = true;
         magazineGripOverride.minCurl = { 0.34f, 0.60f, 0.66f, 0.68f, 0.68f };
         magazineGripOverride.maxCurl = { 0.58f, 0.82f, 0.88f, 0.90f, 0.90f };
     }
 
-    const size_t magazineGripPhysicalHandIndex = leftHanded ? 1u : 0u;
     for (size_t handIndex = 0; handIndex < m_Hands.size(); ++handIndex)
     {
         HandState& hand = m_Hands[handIndex];
@@ -1263,7 +1262,7 @@ void VrHandSystem::UpdatePoses(
             continue;
         }
         const VrHandFingerCurlOverride* fingerCurlOverride =
-            (handIndex == magazineGripPhysicalHandIndex && leftHandMagazineGripPose) ? &magazineGripOverride : nullptr;
+            ((magazineGripPhysicalMask & (1u << handIndex)) != 0u) ? &magazineGripOverride : nullptr;
         if (!hand.skeleton.BuildSkinningPalette(hand.asset, hand.palette, error, fingerCurlOverride, &gloveFingerMaxCurl))
         {
             m_DependencyUnavailable = true;
@@ -1384,7 +1383,7 @@ bool VrHandSystem::DrawForEye(
     const Vector& leftHandTargetBoxMins,
     const Vector& leftHandTargetBoxMaxs,
     bool leftHandTargetBoxUseViewmodelLayer,
-    bool leftHandMagazineGripPose,
+    unsigned magazineGripPhysicalMask,
     const std::array<float, 5>& gloveFingerMaxCurl,
     VrHandDrawPass drawPass)
 {
@@ -1488,9 +1487,9 @@ bool VrHandSystem::DrawForEye(
         return drewAny;
     }
 
-    if (m_LeftHandMagazineGripPoseWasEnabled != leftHandMagazineGripPose)
+    if (m_MagazineGripPhysicalMaskWasEnabled != magazineGripPhysicalMask)
     {
-        m_LeftHandMagazineGripPoseWasEnabled = leftHandMagazineGripPose;
+        m_MagazineGripPhysicalMaskWasEnabled = magazineGripPhysicalMask;
         m_Hands[0].paletteValid = false;
         m_Hands[1].paletteValid = false;
     }
@@ -1537,15 +1536,15 @@ bool VrHandSystem::DrawForEye(
             rightUseViewmodelPose,
             twoHandedViewmodelPose,
             leftHanded,
-            leftHandMagazineGripPose,
+            magazineGripPhysicalMask,
             gloveFingerMaxCurl,
             debugLog);
 
     const VrHandMatrix4 sceneProjection = BuildVrHandsProjection(view, false);
-    const bool leftHandUsesMagazineViewmodelLayer =
-        leftHandMagazineGripPose && standaloneMagazineBoxUseViewmodelLayer;
+    const bool magazineUsesViewmodelLayer =
+        magazineGripPhysicalMask && standaloneMagazineBoxUseViewmodelLayer;
     const VrHandMatrix4 viewmodelProjection =
-        (rightUseViewmodelPose || twoHandedViewmodelPose || leftHandUsesMagazineViewmodelLayer)
+        (rightUseViewmodelPose || twoHandedViewmodelPose || magazineUsesViewmodelLayer)
         ? BuildVrHandsProjection(view, true)
         : sceneProjection;
     const VrHandMatrix4 camera = VrHandMath::BuildSourceView(view.origin, view.angles);
@@ -1554,11 +1553,17 @@ bool VrHandSystem::DrawForEye(
 
     bool drewAny = false;
     Vector positions[2] = { leftControllerPosition, rightControllerPosition };
-    if (leftHandUsesMagazineViewmodelLayer)
+    if (magazineUsesViewmodelLayer)
     {
-        Vector reprojectedLeft{};
-        if (ReprojectScenePointToViewmodelLayer(view, positions[0], reprojectedLeft))
-            positions[0] = reprojectedLeft;
+        for (int gameplayHand = 0; gameplayHand < 2; ++gameplayHand)
+        {
+            const int physicalHand = physicalHandIndexForGameplay(gameplayHand);
+            if (physicalHand < 0 || physicalHand > 1 ||
+                (magazineGripPhysicalMask & (1u << physicalHand)) == 0u) continue;
+            Vector reprojected{};
+            if (ReprojectScenePointToViewmodelLayer(view, positions[gameplayHand], reprojected))
+                positions[gameplayHand] = reprojected;
+        }
     }
     const QAngle angles[2] = { leftControllerAngles, rightControllerAngles };
     const Vector positionOffsets[2] = { leftHandPoseOffsetMeters, rightHandPoseOffsetMeters };
@@ -1610,10 +1615,10 @@ bool VrHandSystem::DrawForEye(
                 rotationOffsets[handIndex]);
         }
 
-        const bool useViewmodelLayer =
-            useViewmodelPose ||
-            (handIndex == 0 && leftHandUsesMagazineViewmodelLayer);
-        if (handIndex == 0 && leftHandUsesMagazineViewmodelLayer &&
+        const bool magazineHandUsesViewmodelLayer = magazineUsesViewmodelLayer &&
+            (magazineGripPhysicalMask & (1u << physicalHandIndex)) != 0u;
+        const bool useViewmodelLayer = useViewmodelPose || magazineHandUsesViewmodelLayer;
+        if (magazineHandUsesViewmodelLayer &&
             drawPass == VrHandDrawPass::WorldVisibilityMask)
         {
             continue;
@@ -1622,7 +1627,7 @@ bool VrHandSystem::DrawForEye(
         const VrHandMatrix4& projection = useViewmodelLayer ? viewmodelProjection : sceneProjection;
         const VrHandMatrix4 wvp = VrHandMath::Multiply(projection, VrHandMath::Multiply(camera, world));
         const VrHandDrawPass handDrawPass =
-            (handIndex == 0 && leftHandUsesMagazineViewmodelLayer)
+            (magazineHandUsesViewmodelLayer)
             ? VrHandDrawPass::ViewmodelStandalone
             : drawPass;
         std::string error;

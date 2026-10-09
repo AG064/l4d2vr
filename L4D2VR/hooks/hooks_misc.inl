@@ -13546,7 +13546,7 @@ namespace
             outCurls[static_cast<size_t>(finger)] = std::clamp(baseCurl + initialCurl, minCurl, maxCurl);
         }
 
-        if (vr->m_MagazineInteractionLeftHandPoseActive.load(std::memory_order_relaxed) != 0)
+        if ((vr->MagazineGripPhysicalMask() & 1u) != 0u)
         {
             static const float kMagazineGripMinCurl[5] =
             {
@@ -13601,6 +13601,13 @@ namespace
             const float maxCurl = (finger == 0) ? kOpenVRThumbMaxCurl : kOpenVRFingerMaxCurl;
             outCurls[static_cast<size_t>(finger)] =
                 std::clamp(baseCurl + initialCurl, 0.0f, maxCurl);
+        }
+        if ((vr->MagazineGripPhysicalMask() & 2u) != 0u)
+        {
+            constexpr float minimum[5] = { 0.0f, 0.60f, 0.66f, 0.68f, 0.68f };
+            for (size_t finger = 0; finger < outCurls.size(); ++finger)
+                outCurls[finger] = std::clamp(outCurls[finger], minimum[finger],
+                    finger == 0u ? kOpenVRThumbMaxCurl : kOpenVRFingerMaxCurl);
         }
         return true;
     }
