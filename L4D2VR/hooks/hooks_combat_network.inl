@@ -2092,6 +2092,20 @@ float __fastcall Hooks::dProcessUsercmds(void* ecx, void* edx, edict_t* player,
             meleePlayer.hasPrevControllerPose = false;
             meleePlayer.isNewSwing = true;
         }
+        if (m_VR && m_VR->m_VrHandsDebugLog && activeWeaponAfterUsercmd &&
+            activeWeaponAfterUsercmd->GetWeaponID() == C_WeaponCSBase::WeaponID::MELEE)
+        {
+            static uint64_t lastMeleeLogAt = 0u;
+            static bool lastSwinging = false, lastEligible = false;
+            const uint64_t logAt = GetTickCount64();
+            if (sample.swinging != lastSwinging || meleePoseEligible != lastEligible || logAt - lastMeleeLogAt >= 1000u)
+            {
+                lastMeleeLogAt = logAt; lastSwinging = sample.swinging; lastEligible = meleePoseEligible;
+                Game::logMsg("[VR][PhysicalMelee][server] player=%d command=%d valid=%d vr=%d swinging=%d eligible=%d history=%d",
+                    index, sample.command, sample.valid ? 1 : 0, meleePlayer.isUsingVR ? 1 : 0,
+                    sample.swinging ? 1 : 0, meleePoseEligible ? 1 : 0, static_cast<int>(meleeFrame));
+            }
+        }
     }
 
 	if (meleePoseEligible && meleeFrame == l4d2vr_physical::MeleeSweepHistory::Sweep &&

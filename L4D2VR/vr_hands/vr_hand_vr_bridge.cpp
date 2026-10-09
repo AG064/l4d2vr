@@ -3796,6 +3796,20 @@ void VR::RecordMeleeCommand(int command, bool eligible, uintptr_t owner, uintptr
     sample.swinging = m_MeleeMotion.Update(sample.valid, owner, weapon,
         tracking.relativeVelocity.Length(), tracking.angularVelocity.Length());
     m_MeleeCommands.Store(sample);
+    if (m_VrHandsDebugLog && eligible)
+    {
+        static uint32_t lastLogAt = 0u;
+        static bool lastValid = false, lastSwinging = false;
+        const uint32_t logAt = static_cast<uint32_t>(GetTickCount64());
+        if (sample.valid != lastValid || sample.swinging != lastSwinging || logAt - lastLogAt >= 1000u)
+        {
+            lastLogAt = logAt; lastValid = sample.valid; lastSwinging = sample.swinging;
+            Game::logMsg("[VR][PhysicalMelee][client] command=%d valid=%d swinging=%d ageMs=%u linear=%.3f angularDeg=%.1f tracked=%d",
+                command, sample.valid ? 1 : 0, sample.swinging ? 1 : 0,
+                logAt - tracking.sampledAtMs, tracking.relativeVelocity.Length(),
+                tracking.angularVelocity.Length(), tracking.valid ? 1 : 0);
+        }
+    }
 }
 
 bool VR::GetMeleeCommand(int command, l4d2vr_physical::MeleeCommand& sample) const
