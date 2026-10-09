@@ -331,3 +331,22 @@ short fragment before it. The native hit counter remains at verified offset 17F0
 Existing native damage, hit limits, gore and duplicate-command guards remain in
 use. Binding and scope checks are software evidence; actual melee contact, damage,
 gore, reach, weapon variants and friend-hosted acceptance remain unverified.
+
+## Recovering shell request delivery
+
+A pending shell insertion can resend its identical request up to three times,
+at least500ms apart, before the existing2500ms timeout. The token, sequence,
+weapon handle, command and ammo baseline remain unchanged. The server's existing
+duplicate-result cache answers an applied retry without spending another round.
+An acknowledged transaction waits for native replication without resending.
+Owner/weapon/generation changes cancel retries, and command sending occurs outside
+the request mutex to allow synchronous replies.
+
+While the grip remains held, the pending shell stays visible and follows the hand.
+Definitive stale-baseline, rate-limit and no-space/ammo rejections retain that
+held shell. The player withdraws from the port and returns before retrying, avoiding
+automatic request spam. Applied transactions consume the visual shell after
+acknowledgement and replication. Timeout or ambiguous backend failures do not
+restore a possibly consumed round. Unit checks cover lost replies, single native
+consumption, retry limits, cancellation and contact rearming. Native multiplayer
+delivery, shell geometry and the reported automatic reload still need testing.

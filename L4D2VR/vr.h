@@ -2183,6 +2183,8 @@ public:
     l4d2vr_remote_mag::ClientRequest::Poll PollRemoteMagazineReply(uint32_t handle, int weaponId,
         uintptr_t owner, uint32_t generation, int clip, int reserve, l4d2vr_remote_mag::Reply& reply);
     l4d2vr_shell::ClientRequest m_RemoteShellRequest;
+    l4d2vr_shell::RetryContact m_ShellRetryContact;
+    void SendRemoteShellRequest(const l4d2vr_shell::Request& request, bool retry);
     void OfferRemoteShellProtocol(unsigned version, uint32_t token);
     void ReceiveRemoteShellReply(const l4d2vr_shell::Reply& reply);
     void DisconnectRemoteShellProtocol();

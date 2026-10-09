@@ -3450,19 +3450,39 @@ bool VR::BeginRemoteShellRequest(uint32_t handle, int id, int clip, int reserve,
             static_cast<uint32_t>(m_CurrentPredictedHitFeedbackCmdNumber), owner, generation, GetTickCount64(), request))
             return false;
     }
+    SendRemoteShellRequest(request,false);
+    return true;
+}
+
+void VR::SendRemoteShellRequest(const l4d2vr_shell::Request& request, bool retry)
+{
+    if (!m_Game) return;
     char command[192]{};
     std::snprintf(command, sizeof(command), "l4d2vr_shell_insert_v1 %u %u %u %u %d %d %d\n",
-        request.token, request.sequence, request.handle, request.command, id, clip, reserve);
+        request.token, request.sequence, request.handle, request.command, request.weaponId, request.clip, request.reserve);
     m_Game->ServerCmd(command, true);
-    Game::logMsg("[VR][RemoteShell][client] requested seq=%u weaponId=%d clip=%d reserve=%d",
-        request.sequence, id, clip, reserve);
-    return true;
+    Game::logMsg("[VR][RemoteShell][client] %s seq=%u weaponId=%d clip=%d reserve=%d",
+        retry ? "retry" : "requested", request.sequence, request.weaponId, request.clip, request.reserve);
 }
 l4d2vr_shell::ClientRequest::Poll VR::PollRemoteShellReply(uint32_t handle, int id,
     uintptr_t owner, uint32_t generation, int clip, int reserve, l4d2vr_shell::Reply& reply)
 {
-    std::lock_guard<std::mutex> lock(m_RemoteShellMutex);
-    return m_RemoteShellRequest.Update(handle, id, owner, generation, GetTickCount64(), reply, clip, reserve);
+    l4d2vr_shell::Request retry{};
+    bool sendRetry = false;
+    l4d2vr_shell::ClientRequest::Poll result{};
+    {
+        std::lock_guard<std::mutex> lock(m_RemoteShellMutex);
+        const auto now = GetTickCount64();
+        result = m_RemoteShellRequest.Update(handle,id,owner,generation,now,reply,clip,reserve);
+        if (result == l4d2vr_shell::ClientRequest::Poll::Waiting && m_Game && m_Game->m_EngineClient &&
+            !m_Game->m_EngineClient->IsPaused() && !m_MouseModeEnabled && !m_SuppressPlayerInput &&
+            m_FirstPersonControlReady.load(std::memory_order_acquire) &&
+            !m_RenderPlayerIncap.load(std::memory_order_acquire) && !m_RenderPlayerControlledBySI.load(std::memory_order_acquire))
+            sendRetry = m_RemoteShellRequest.NextRetry(now,retry);
+    }
+    // Replies may be dispatched synchronously. Never send while owning the request mutex.
+    if (sendRetry) SendRemoteShellRequest(retry,true);
+    return result;
 }
 
 void VR::OfferRemoteMagazineProtocol(unsigned version, uint32_t token)
@@ -4598,7 +4618,8 @@ bool VR::ShouldDrawMagazineInteractionDetachedMagazine() const
 {
     return m_MagazineInteractionState == MagazineInteractionManualState::HoldingOldMagazine ||
         m_MagazineInteractionState == MagazineInteractionManualState::WaitingForFreshMagazine ||
-        m_MagazineInteractionState == MagazineInteractionManualState::HoldingFreshMagazine;
+        m_MagazineInteractionState == MagazineInteractionManualState::HoldingFreshMagazine ||
+        (m_MagazineInteractionState == MagazineInteractionManualState::WaitingForServerShell && m_MagazineInteractionLeftHandHolding);
 }
 
 bool VR::GetMagazineInteractionDetachedMagazineWorld(VrHandMatrix4& outWorld) const
@@ -4705,6 +4726,7 @@ void VR::ResetMagazineInteractionSession()
 
 void VR::CancelMagazineInteractionManual()
 {
+    m_ShellRetryContact.Reset();
     m_ManualPumpBlockingFire.store(false, std::memory_order_release);
     const bool wasActive = IsMagazineInteractionManualActive() || m_MagazineInteractionLeftHandHolding;
     m_MagazineInteractionState = MagazineInteractionManualState::Idle;
@@ -6990,6 +7012,9 @@ bool VR::UpdateMagazineInteraction(
     if (m_MagazineInteractionState == MagazineInteractionManualState::WaitingForServerShell)
     {
         ApplyMagazineInteractionShotgunClientReloadAbort(activeWeapon, activeWeaponIdInt, "remote-shell-pending");
+        m_MagazineInteractionLeftHandHolding = leftGripDown;
+        m_MagazineInteractionLeftHandPoseActive.store(leftGripDown ? 1u : 0u,std::memory_order_relaxed);
+        if (leftGripDown) updateFreshDetachedMagazineFromLeftHand();
         l4d2vr_shell::Reply reply{};
         int ammoType = -1, replicatedReserve = -1;
         if (MagazineInteractionTryReadValue(activeWeapon, kPrimaryAmmoTypeOffset, ammoType) && ammoType >= 0 && ammoType < 32)
@@ -7000,14 +7025,24 @@ bool VR::UpdateMagazineInteraction(
         if (poll == l4d2vr_shell::ClientRequest::Poll::Waiting) return false;
         m_MagazineInteractionLeftHandHolding = false;
         m_MagazineInteractionLeftHandPoseActive.store(0, std::memory_order_relaxed);
-        m_MagazineInteractionFreshPickupBasisValid = false;
         m_MagazineInteractionState = MagazineInteractionManualState::WaitingForFreshMagazine;
         if (poll != l4d2vr_shell::ClientRequest::Poll::Result || reply.status != l4d2vr_shell::Status::Applied)
         {
+            if (leftGripDown && poll == l4d2vr_shell::ClientRequest::Poll::Result && l4d2vr_shell::RetainRejectedShell(reply.status))
+            {
+                m_ShellRetryContact.Reject(reply.status);
+                m_MagazineInteractionState = MagazineInteractionManualState::HoldingFreshMagazine;
+                m_MagazineInteractionLeftHandHolding = true;
+                m_MagazineInteractionLeftHandPoseActive.store(1u,std::memory_order_relaxed);
+                updateFreshDetachedMagazineFromLeftHand();
+            }
+            else m_MagazineInteractionFreshPickupBasisValid = false;
             Game::logMsg("[VR][RemoteShell][client] insertion ended poll=%u status=%u",
                 static_cast<unsigned>(poll), static_cast<unsigned>(reply.status));
             return false;
         }
+        m_ShellRetryContact.Reset();
+        m_MagazineInteractionFreshPickupBasisValid = false;
         // Both the acknowledgement and Source's replicated ammo must arrive.
         // Remote shell loading never writes predicted client ammunition.
         ++m_MagazineInteractionShotgunShellsLoadedThisSession;
@@ -7760,6 +7795,7 @@ bool VR::UpdateMagazineInteraction(
         m_MagazineInteractionLeftHandPoseActive.store(1, std::memory_order_relaxed);
         updateFreshDetachedMagazineFromLeftHand();
         const bool fitsSocket = detachedMagazineFitsSocket();
+        if (m_MagazineInteractionShotgunShellMode && !m_ShellRetryContact.Allows(fitsSocket)) return false;
         if (m_MagazineInteractionRetainedMagazineHeld)
         {
             // Catching while the hand is still under the well must not insert
@@ -7781,8 +7817,8 @@ bool VR::UpdateMagazineInteraction(
                     m_MagazineInteractionSessionGeneration.load(std::memory_order_acquire)))
                 {
                     m_MagazineInteractionState = MagazineInteractionManualState::WaitingForServerShell;
-                    m_MagazineInteractionLeftHandHolding = false;
-                    m_MagazineInteractionLeftHandPoseActive.store(0, std::memory_order_relaxed);
+                    m_MagazineInteractionLeftHandHolding = leftGripDown;
+                    m_MagazineInteractionLeftHandPoseActive.store(leftGripDown ? 1u : 0u, std::memory_order_relaxed);
                 }
                 else if (m_VrHandsDebugLog)
                 {

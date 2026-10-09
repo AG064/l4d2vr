@@ -81,6 +81,46 @@ int main()
     Check(ledger.Apply(next, state, 3200u, writer).status == Status::Applied && clip == 4 && reserve == 1);
     Check(ledger.Apply(next, state, 3400u, writer).status == Status::Applied && writes == beforeShot + 1);
 
+    // A lost reply may be retried without spending the same physical shell twice.
+    ServerLedger retryHost; retryHost.Reset(90u);
+    ClientRequest retryClient; retryClient.Offer(kVersion,90u);
+    Request retryOriginal{},resend{};
+    Check(retryClient.Begin(handle,3,3,20,200u,100u,1u,1000u,retryOriginal));
+    int retryWrites = 0, retryClip = 3, retryReserve = 20;
+    auto retryWriter = [&](int c,int r) { ++retryWrites; retryClip=c; retryReserve=r; return true; };
+    Snapshot retryState{true,handle,200u,3,3,20,8};
+    const auto lostReply = retryHost.Apply(retryOriginal,retryState,1000u,retryWriter);
+    Check(lostReply.status == Status::Applied && retryWrites == 1);
+    Reply retryResult{};
+    Check(retryClient.Update(handle,3,100u,1u,1400u,retryResult,4,19) == ClientRequest::Poll::Waiting);
+    Check(!retryClient.NextRetry(1499u,resend) && retryClient.NextRetry(1500u,resend) && resend == retryOriginal);
+    retryState.clip=retryClip; retryState.reserve=retryReserve;
+    const auto recovered = retryHost.Apply(resend,retryState,1500u,retryWriter);
+    Check(recovered.status == Status::Applied && retryWrites == 1 && retryClip == 4 && retryReserve == 19);
+    retryClient.Receive(recovered);
+    Check(!retryClient.NextRetry(2000u,resend)); // acknowledgement waits only for replication
+    Check(retryClient.Update(handle,3,100u,1u,2000u,retryResult,3,20) == ClientRequest::Poll::Waiting);
+    Check(retryClient.Update(handle,3,100u,1u,2100u,retryResult,4,19) == ClientRequest::Poll::Result);
+    Check(!retryClient.NextRetry(2200u,resend));
+    retryClient.Disconnect(); retryClient.Offer(kVersion,91u);
+    Check(retryClient.Begin(handle,3,3,20,200u,100u,1u,1000u,retryOriginal));
+    Check(retryClient.NextRetry(1500u,resend) && retryClient.NextRetry(2000u,resend) && retryClient.NextRetry(2500u,resend));
+    Check(!retryClient.NextRetry(3000u,resend) && !retryClient.NextRetry(999u,resend));
+    Check(retryClient.Update(handle,3,100u,1u,3500u,retryResult) == ClientRequest::Poll::Timeout && !retryClient.Supported());
+    retryClient.Disconnect(); retryClient.Offer(kVersion,92u);
+    Check(retryClient.Begin(handle,3,3,20,200u,100u,1u,1000u,retryOriginal));
+    Check(retryClient.Update(handle,3,100u,2u,1200u,retryResult) == ClientRequest::Poll::None);
+    Check(!retryClient.NextRetry(1500u,resend)); // inventory generation changed
+    RetryContact contact;
+    for (const auto status : {Status::Stale,Status::RateLimited,Status::NoSpaceOrAmmo})
+    {
+        Check(RetainRejectedShell(status)); contact.Reject(status);
+        Check(!contact.Allows(true) && !contact.Allows(true));
+        Check(!contact.Allows(false) && contact.Allows(true)); // withdraw and return
+    }
+    Check(!RetainRejectedShell(Status::Applied) && !RetainRejectedShell(Status::Backend) && !RetainRejectedShell(Status::Unsupported));
+    contact.Reject(Status::Stale); contact.Reset(); Check(contact.Allows(true));
+
     ClientRequest client;
     client.Offer(2u, 10u); Check(!client.Supported());
     client.Offer(kVersion, 10u); Check(client.Supported());
