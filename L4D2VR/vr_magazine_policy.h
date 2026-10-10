@@ -113,6 +113,12 @@ namespace l4d2vr_magazine
     {
         return chamberEmpty || shellHeld || cycling || backendReload || ammoSettlement;
     }
+    inline bool PumpShouldStartAfterShot(bool needsCycle, int clip, int shellsLoaded)
+    {
+        // Empty tubes must accept shells first. A shell-loading session lets
+        // the user choose when to finish loading and grab the pump.
+        return needsCycle && clip > 0 && shellsLoaded == 0;
+    }
 
     class NativeReloadLedger
     {

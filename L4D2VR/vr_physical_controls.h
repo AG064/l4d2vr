@@ -252,11 +252,17 @@ namespace l4d2vr_physical
                     entry.needsCycle = true;
         }
 
-        void Complete(std::uintptr_t weapon, std::uint32_t handle = 0u)
+        bool Complete(std::uintptr_t weapon, std::uint32_t handle = 0u)
         {
             for (auto& entry : m_Entries)
                 if (entry.weapon == weapon && entry.handle == handle)
+                {
+                    // Closing an empty action does not put a shell in the chamber.
+                    if (entry.clip <= 0) return false;
                     entry.needsCycle = false;
+                    return true;
+                }
+            return false;
         }
 
         void Reset() { m_Entries = {}; m_Next = 0u; m_Owner = 0u; }

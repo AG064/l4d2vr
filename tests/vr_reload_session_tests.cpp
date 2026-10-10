@@ -13,9 +13,56 @@ static void Check(bool result, const char* message)
     }
 }
 
+static void CheckEmptyPumpReload(int weaponId)
+{
+    using namespace l4d2vr_magazine;
+    using namespace l4d2vr_shell;
+    const std::uintptr_t owner = 501u, gun = 601u;
+    const std::uint32_t handle = 0x3005u;
+    l4d2vr_physical::PumpCycles pump;
+    pump.ObserveOwner(true, owner);
+    pump.NotifyShot(gun, weaponId, 0, handle);
+    ChamberHistory chamber; chamber.ObserveOwner(true, owner);
+    Check(chamber.Observe(gun, handle, weaponId, 0), "The last shot leaves an empty pump chamber");
+    Check(pump.Observe(gun, weaponId, 0, handle), "The spent action still needs a cycle");
+    Check(!pump.Complete(gun, handle), "A dry stroke cannot complete chambering");
+    Check(!PumpShouldStartAfterShot(true, 0, 0), "An empty tube must accept shells before entering the pump stage");
+
+    ServerLedger host; host.Reset(9u);
+    ClientRequest client; client.Offer(kVersion, 9u);
+    int clip = 0, reserve = 3, writes = 0;
+    for (int loaded = 1; loaded <= 2; ++loaded)
+    {
+        const std::uint64_t now = 1000u + loaded * 300u;
+        const std::uint32_t command = 200u + loaded;
+        Request request{}; Reply reply{};
+        Check(client.Begin(handle, weaponId, clip, reserve, command, owner, 1u, now, request), "A shell gesture submits its real counters");
+        const Snapshot state{true, handle, command, weaponId, clip, reserve, 8};
+        const auto applied = host.Apply(request, state, now, [&](int nextClip, int nextReserve) {
+            clip = nextClip; reserve = nextReserve; ++writes; return true;
+        });
+        Check(applied.status == Status::Applied, "The host inserts one shell");
+        client.Receive(applied);
+        Check(client.Update(handle, weaponId, owner, 1u, now + 1u, reply, clip, reserve) == ClientRequest::Poll::Result,
+            "The shell settles after acknowledgement and native replication");
+        const bool needsCycle = pump.Observe(gun, weaponId, clip, handle);
+        Check(needsCycle && !PumpShouldStartAfterShot(needsCycle, clip, loaded), "Loading shells must not force an early pump stage");
+        Check(chamber.Observe(gun, handle, weaponId, clip), "Loading does not chamber a shell");
+        Check(ShotgunBlocksFire(true, false, false, false, false), "The empty chamber blocks firing during tube loading");
+        Check(clip + reserve == 3 && writes == loaded, "Each gesture transfers exactly one existing shell");
+    }
+    Check(l4d2vr_physical::PumpCycles::StrokeComplete(true, 0.01f, 0.02f), "A full forward return completes the mechanical stroke");
+    Check(pump.Complete(gun, handle), "The loaded tube can now feed its chamber");
+    chamber.Complete(gun);
+    Check(!pump.Observe(gun, weaponId, clip, handle) && !chamber.Observe(gun, handle, weaponId, clip), "The completed reload permits firing");
+    Check(PumpShouldStartAfterShot(true, clip - 1, 0), "A normal shot with remaining shells still enters the pump stage");
+}
+
 int main()
 {
     using namespace l4d2vr_magazine;
+    CheckEmptyPumpReload(3);
+    CheckEmptyPumpReload(8);
     SessionTracker serialSession;
     Check(serialSession.Observe(true, 100u, 200u, 3, 3u, 0x3005u), "A native gun starts its own reload session");
     Check(!serialSession.Observe(true, 100u, 200u, 3, 3u, 0x3005u), "The same serial keeps the current gesture");

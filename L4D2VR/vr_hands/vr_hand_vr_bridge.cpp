@@ -5851,21 +5851,37 @@ bool VR::UpdateMagazineInteraction(
             }
             return;
         }
-        m_PhysicalReloadChambers.Complete(reinterpret_cast<uintptr_t>(m_MagazineInteractionWeapon));
-        m_PhysicalReloadObservedEmpty = false;
-        m_MagazineInteractionChamberEmpty = false;
         const bool manualPump = m_ManualPumpEnabled &&
             MagazineInteractionWeaponUsesSinglePumpSound(static_cast<C_WeaponCSBase::WeaponID>(m_MagazineInteractionWeaponId));
         if (manualPump)
         {
+            bool chamberReady = false;
             {
                 std::lock_guard<std::mutex> lock(m_ManualPumpMutex);
-                m_ManualPumpCycles.Complete(reinterpret_cast<uintptr_t>(m_MagazineInteractionWeapon), activeWeaponHandle);
+                chamberReady = m_ManualPumpCycles.Complete(reinterpret_cast<uintptr_t>(m_MagazineInteractionWeapon), activeWeaponHandle);
+            }
+            if (!chamberReady)
+            {
+                setBoltPullDistance(0.0f);
+                m_MagazineInteractionBoltReachedRear = false;
+                m_MagazineInteractionState = MagazineInteractionManualState::WaitingForFreshMagazine;
+                m_MagazineInteractionChamberEmpty = true;
+                m_MagazineInteractionOneInChamber = false;
+                m_MagazineInteractionLeftHandHolding = false;
+                m_MagazineInteractionBoltContactActive = false;
+                m_MagazineInteractionLeftHandPoseActive.store(0, std::memory_order_relaxed);
+                MagazineInteractionPlayBoltSound(this, true);
+                Game::logMsg("[VR][ManualPump] empty stroke completed; load shells before chambering weaponId=%d clip=%d",
+                    activeWeaponIdInt, activeClip);
+                return;
             }
             m_ManualPumpBlockingFire.store(false, std::memory_order_release);
             suppressLeftInputUntilRelease = false;
             m_MagazineInteractionSuppressLeftInputUntilRelease = false;
         }
+        m_PhysicalReloadChambers.Complete(reinterpret_cast<uintptr_t>(m_MagazineInteractionWeapon));
+        m_PhysicalReloadObservedEmpty = false;
+        m_MagazineInteractionChamberEmpty = false;
         setBoltPullDistance(0.0f);
         MagazineInteractionPlayBoltSound(this, true);
         triggerMagazineInteractionWeaponHandHaptic(0.030f, 95.0f, 0.45f, 2);
@@ -7190,7 +7206,9 @@ bool VR::UpdateMagazineInteraction(
         {
             m_MagazineInteractionChamberEmpty = true;
             m_MagazineInteractionOneInChamber = false;
-            if (beginBoltStage(activeWeaponId, "spent-shell-needs-manual-pump"))
+            if (l4d2vr_magazine::PumpShouldStartAfterShot(activePumpNeedsCycle, activeClip,
+                    m_MagazineInteractionShotgunShellsLoadedThisSession) &&
+                beginBoltStage(activeWeaponId, "spent-shell-needs-manual-pump"))
             {
                 m_MagazineInteractionBoltGrabRequiresGripRelease = false;
                 if (m_VrHandsTwoHandedGripActive && leftGripDown)

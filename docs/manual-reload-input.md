@@ -36,7 +36,10 @@ For an empty single pistol, Magnum or SMG, press Magazine Release, grab a fresh
 magazine from the body ammo position with the off-hand grip, guide it into the
 well, then grip and pull the slide or charging handle before releasing it.
 Shotguns accept individual shells at their loading port; pump shotguns also need
-the pump cycle. A transaction advances only after host acknowledgement and native
+the pump cycle. An empty pump or chrome shotgun accepts multiple shells before
+you choose to grab the pump and chamber one. A dry pump stroke keeps its chamber
+empty. A normal shot with shells remaining still requires the usual pump stroke.
+A transaction advances only after host acknowledgement and native
 ammo replication. Lost replies retry the same request up to three times, without
 applying its ammo transfer twice. Timeout or a changed weapon cancels the pending
 gesture.
