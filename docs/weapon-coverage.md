@@ -7,6 +7,12 @@ hierarchies, material references and texture headers. The current installation
 passes those checks, including 46 referenced texture assets. Neither inspected
 addon archive overrides weapon model geometry.
 
+A second local audit checks the corresponding 20 world-model sets and compiles
+the native magazine/bolt selectors against all 20 held rigs. Every selected held
+bolt or pump has visible vertices weighted to it. Pump and chrome shotguns select
+their fore-end slide; the auto shotgun and SPAS select their actual bolt rather
+than a pump helper. Saved bone overrides still take precedence.
+
 Every stock gun model now has an explicit inventory identity. A recently published
 magazine/socket region from another stock weapon is rejected during a switch.
 Unknown replacement paths retain the existing owner and freshness checks; they
@@ -29,6 +35,11 @@ are not assigned a guessed stock identity.
 
 Unsupported hosts retain conventional reload. Native clip capacity, reserve,
 owner/weapon identity and authoritative replication govern negotiated reloads.
+The negotiated physical backend also owns ordinary reload input. The client
+blocks native single-pistol reload prediction before the first ejection when a
+fresh host baseline matches the held hand. Magazine requests retry the same
+identity at most three times while waiting for a reply; acknowledgements stop
+retries even if ammo replication is still pending.
 The existing gesture, request, prediction and ammo-conservation suites cover those
 generic paths. They do not establish that every contact volume feels correct in VR.
 The grenade launcher explicitly enters the native reload fallback even when
@@ -89,3 +100,9 @@ materials, moving parts, magazine wells and barrel openings can all produce such
 edges. This is not a watertightness or visual-completeness certificate. Missing
 exterior faces require inspecting and rebuilding the relevant mesh; those repairs
 and full replacement models have not been implemented by this audit.
+
+The current stock pistol and Magnum world models contain magazine and bolt
+bones. They can supply articulated geometry, but their authored dimensions differ
+from the held models even after muzzle alignment. A full overlap would duplicate
+surfaces and moving parts. No combined replacement model is installed; any hybrid
+needs measured alignment, selective surface replacement and preserved skinning.

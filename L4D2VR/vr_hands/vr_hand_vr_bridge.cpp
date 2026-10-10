@@ -3810,7 +3810,9 @@ bool VR::BlockPistolNativeReload(C_WeaponCSBase* candidate)
         std::lock_guard<std::mutex> lock(m_PistolAmmoClientMutex);
         l4d2vr_pistol_sync::State state{};
         blocked = m_PistolAmmoClient.ReadBaseline(reinterpret_cast<uintptr_t>(player), handle, dual, GetTickCount64(), state) &&
-            l4d2vr_pistol_reload::BlocksNativeReload(true, state.physical);
+            l4d2vr_pistol_reload::BlocksNativeReload(true, state.physical,
+                !dual && m_PhysicalReloadOwnsStockInput.load(std::memory_order_acquire) &&
+                l4d2vr_pistol_reload::MatchesSingleHand(state,GetPrimaryPistolHand()));
     }
     if (!blocked) return false;
     // Clear only reload ownership. Shared firing cadence and native ammo stay
@@ -3865,19 +3867,40 @@ bool VR::BeginRemoteMagazineRequest(uint32_t handle, int id, int clip, int reser
             action, static_cast<uint32_t>(m_CurrentPredictedHitFeedbackCmdNumber), owner, generation, GetTickCount64(), request))
             return false;
     }
+    SendRemoteMagazineRequest(request,false);
+    return true;
+}
+void VR::SendRemoteMagazineRequest(const l4d2vr_remote_mag::Request& request, bool retry)
+{
+    if (!m_Game) return;
     char command[192]{};
     std::snprintf(command, sizeof(command), "l4d2vr_mag_action_v2 %u %u %u %u %d %d %d %u\n",
-        request.token, request.sequence, request.handle, request.command, id, clip, reserve, static_cast<unsigned>(action));
-    m_Game->ServerCmd(command, true);
-    Game::logMsg("[VR][RemoteMagazine][client] requested seq=%u action=%u weaponId=%d clip=%d reserve=%d",
-        request.sequence, static_cast<unsigned>(action), id, clip, reserve);
-    return true;
+        request.token, request.sequence, request.handle, request.command, request.weaponId,
+        request.clip, request.reserve, static_cast<unsigned>(request.action));
+    m_Game->ServerCmd(command,true);
+    Game::logMsg("[VR][RemoteMagazine][client] %s seq=%u action=%u weaponId=%d clip=%d reserve=%d",
+        retry ? "retry" : "requested",request.sequence,static_cast<unsigned>(request.action),
+        request.weaponId,request.clip,request.reserve);
 }
 l4d2vr_remote_mag::ClientRequest::Poll VR::PollRemoteMagazineReply(uint32_t handle, int id,
     uintptr_t owner, uint32_t generation, int clip, int reserve, l4d2vr_remote_mag::Reply& reply)
 {
-    std::lock_guard<std::mutex> lock(m_RemoteMagazineMutex);
-    return m_RemoteMagazineRequest.Update(handle, id, owner, generation, GetTickCount64(), reply, clip, reserve);
+    l4d2vr_remote_mag::Request retry{};
+    bool resend = false;
+    l4d2vr_remote_mag::ClientRequest::Poll result{};
+    {
+        std::lock_guard<std::mutex> lock(m_RemoteMagazineMutex);
+        const uint64_t now = GetTickCount64();
+        result = m_RemoteMagazineRequest.Update(handle,id,owner,generation,now,reply,clip,reserve);
+        if (result == l4d2vr_remote_mag::ClientRequest::Poll::Waiting && m_Game && m_Game->m_EngineClient &&
+            !m_Game->m_EngineClient->IsPaused() && !m_MouseModeEnabled && !m_SuppressPlayerInput &&
+            m_FirstPersonControlReady.load(std::memory_order_acquire) &&
+            !m_RenderPlayerIncap.load(std::memory_order_acquire) && !m_RenderPlayerControlledBySI.load(std::memory_order_acquire) &&
+            !(m_Game->m_VguiSurface && m_Game->m_VguiSurface->IsCursorVisible()))
+            resend = m_RemoteMagazineRequest.NextRetry(now,retry);
+    }
+    if (resend) SendRemoteMagazineRequest(retry,true);
+    return result;
 }
 
 void VR::RecordMeleeCommand(int command, bool eligible, uintptr_t owner, uintptr_t weapon)
@@ -5004,6 +5027,7 @@ bool VR::UpdateMagazineInteraction(
     bool allowGameplayInputOnTwoHandedGripRelease)
 {
     m_NativeAmmoReloadFallbackActive.store(false, std::memory_order_release);
+    m_PhysicalReloadOwnsStockInput.store(false, std::memory_order_release);
     C_WeaponCSBase* activeWeapon = nullptr;
     C_WeaponCSBase::WeaponID activeWeaponId = C_WeaponCSBase::WeaponID::NONE;
     int activeClip = -1;
@@ -5060,6 +5084,10 @@ bool VR::UpdateMagazineInteraction(
             m_LeftHandPistolActive.load(std::memory_order_acquire));
     const bool authoritativeShell = vrHandsInteractionAvailable &&
         MagazineInteractionWeaponUsesShotgunShells(activeWeaponId) && RemoteShellProtocolSupported();
+    m_PhysicalReloadOwnsStockInput.store(m_MagazineInteractionEnabled &&
+        m_FirstPersonControlReady.load(std::memory_order_acquire) && !m_MouseModeEnabled &&
+        !m_SuppressPlayerInput && (authoritativePistol || authoritativeMagazine || authoritativeShell),
+        std::memory_order_release);
     const unsigned int interactionInputMode = (m_MagazineInteractionEnabled ? 1u : 0u) |
         (m_VrHandsEnabled ? 2u : 0u) | (m_NativeViewmodelHandsOnly ? 4u : 0u) |
         (m_DualPistolsNativeReloadFallbackEnabled ? 8u : 0u) |

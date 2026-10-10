@@ -8,9 +8,67 @@ static void CheckImpl(bool okay, int line)
 }
 #define Check(value) CheckImpl((value), __LINE__)
 
+static void CheckLostMagazineReplies(int weaponId, int initialClip, int capacity)
+{
+    using namespace l4d2vr_remote_mag;
+    const std::uint32_t handle = 0x3005u;
+    ServerLedger server; server.Reset(91u);
+    ClientRequest client; client.Offer(kVersion,91u);
+    Snapshot native{true,handle,200u,weaponId,initialClip,100,capacity,false};
+    std::uint64_t now = 1000u;
+    auto act = [&](Action action)
+    {
+        now += 1000u; ++native.latestCommand;
+        Request request{},retry{}; Reply selected{};
+        Check(client.Begin(handle,weaponId,native.clip,native.reserve,action,native.latestCommand,10u,1u,now,request));
+        int writes = 0, nextClip = native.clip, nextReserve = native.reserve;
+        auto writer = [&](int c,int r) { ++writes; nextClip=c; nextReserve=r; return true; };
+        const auto applied = server.Apply(request,native,now,writer);
+        Check(applied.status == Status::Applied && writes == 1);
+        native.clip=nextClip; native.reserve=nextReserve; native.latestCommand+=100u;
+        Check(client.Update(handle,weaponId,10u,1u,now+499u,selected,-1,-1) == ClientRequest::Poll::Waiting);
+        Check(!client.NextRetry(now+499u,retry));
+        Check(client.NextRetry(now+500u,retry) && retry == request);
+        const auto memo = server.Apply(retry,native,now+500u,writer);
+        Check(memo.status == Status::Applied && writes == 1 && memo.clip == applied.clip && memo.reserve == applied.reserve);
+        client.Receive(memo);
+        Check(!client.NextRetry(now+1000u,retry));
+        Check(client.Update(handle,weaponId,10u,1u,now+501u,selected,-1,-1) == ClientRequest::Poll::Waiting);
+        Check(client.Update(handle,weaponId,10u,1u,now+502u,selected,native.clip,native.reserve) == ClientRequest::Poll::Result);
+        Check(!client.NextRetry(now+1000u,retry));
+    };
+    act(Action::Eject); act(Action::Reinsert); act(Action::Eject); act(Action::Insert);
+}
+
 int main()
 {
     using namespace l4d2vr_remote_mag;
+    CheckLostMagazineReplies(32,8,8);
+    CheckLostMagazineReplies(2,23,50);
+    CheckLostMagazineReplies(7,0,50);
+    // Bounded retries retain exact identity and stop at lifecycle boundaries.
+    {
+        ClientRequest retryClient; Request original{}, resend{}; Reply result{};
+        retryClient.Offer(kVersion,92u);
+        Check(retryClient.Begin(0x3005u,2,0,100,Action::Eject,200u,10u,1u,1000u,original));
+        Check(!retryClient.NextRetry(999u,resend) && !retryClient.NextRetry(1499u,resend));
+        Check(retryClient.NextRetry(1500u,resend) && resend == original);
+        Check(!retryClient.NextRetry(1500u,resend) && !retryClient.NextRetry(1499u,resend));
+        Check(retryClient.NextRetry(2000u,resend) && retryClient.NextRetry(2500u,resend));
+        Check(!retryClient.NextRetry(3000u,resend));
+        Check(retryClient.Update(0x3005u,2,10u,1u,3500u,result,0,100) == ClientRequest::Poll::Timeout);
+        Check(!retryClient.NextRetry(3500u,resend) && !retryClient.Supported());
+        retryClient.Offer(kVersion,93u);
+        Check(retryClient.Begin(0x3005u,2,0,100,Action::Eject,201u,10u,1u,4000u,original));
+        Check(retryClient.Update(0x3005u,2,10u,2u,4100u,result,0,100) == ClientRequest::Poll::None);
+        Check(!retryClient.NextRetry(4500u,resend));
+        Check(retryClient.Begin(0x3005u,2,0,100,Action::Eject,202u,10u,2u,5000u,original));
+        Check(!retryClient.NextRetry(5499u,resend) && retryClient.NextRetry(5500u,resend));
+        retryClient.Cancel(); Check(!retryClient.NextRetry(6000u,resend));
+        Check(retryClient.Begin(0x3005u,2,0,100,Action::Eject,203u,10u,2u,7000u,original));
+        Check(retryClient.Update(0x3006u,2,10u,2u,7100u,result,0,100) == ClientRequest::Poll::None);
+        Check(!retryClient.NextRetry(7500u,resend));
+    }
     const std::uint32_t handle = (3u << 12) | 27u;
     {
         ServerLedger nonReloadable; nonReloadable.Reset(10u);

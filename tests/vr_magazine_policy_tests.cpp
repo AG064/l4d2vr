@@ -15,6 +15,11 @@ static void Check(bool result, const char* message)
 int main()
 {
     using l4d2vr_magazine::UseNativeReloadFallback;
+    using l4d2vr_magazine::WantsNativeReload;
+    Check(!WantsNativeReload(true,true,false), "A reload gesture must not start stock animation while physical magazines own it");
+    Check(WantsNativeReload(false,true,true), "An explicit backend completion must still reach native reload when needed");
+    Check(WantsNativeReload(true,false,false), "Unsupported physical hosts must retain normal reload input");
+    Check(!WantsNativeReload(false,false,false), "No input or backend pulse must not invent a native reload");
     l4d2vr_magazine::NativeFallbackPulse launcher;
     const bool launcherFallback = UseNativeReloadFallback(true,21,false,false);
     Check(launcher.Update(launcherFallback,true,1u,1000u), "A launcher release action must start native reload");

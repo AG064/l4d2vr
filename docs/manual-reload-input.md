@@ -26,6 +26,21 @@ the loose magazine and the existing slide interaction. A loaded magazine change
 retains one existing chambered round; an empty pistol does not gain a round from
 its infinite reserve.
 
+On a host with a negotiated physical reload backend, ordinary Reload button or
+gesture input cannot start a stock reload. This applies to the single pistol,
+Magnum, SMGs, rifles and shotguns, including before the first magazine ejection.
+Unsupported hosts keep conventional reload; dual pistols and the grenade
+launcher retain their explicit native fallback.
+
+For an empty single pistol, Magnum or SMG, press Magazine Release, grab a fresh
+magazine from the body ammo position with the off-hand grip, guide it into the
+well, then grip and pull the slide or charging handle before releasing it.
+Shotguns accept individual shells at their loading port; pump shotguns also need
+the pump cycle. A transaction advances only after host acknowledgement and native
+ammo replication. Lost replies retry the same request up to three times, without
+applying its ammo transfer twice. Timeout or a changed weapon cancels the pending
+gesture.
+
 This input change does not implement separate physical magazines or chambers for
 dual pistols. Dual-pistol physical reload, native hand tracking without gloves,
 and recovery after incapacitation still need in-game verification. The existing

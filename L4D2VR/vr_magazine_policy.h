@@ -18,6 +18,10 @@ namespace l4d2vr_magazine
     {
         return supported && detachable && !nativeDual && !leftHandPistol;
     }
+    inline bool WantsNativeReload(bool buttonOrGesture, bool manualBackend, bool explicitBackendReload)
+    {
+        return explicitBackendReload || (buttonOrGesture && !manualBackend);
+    }
     class NativeFallbackPulse
     {
     public:

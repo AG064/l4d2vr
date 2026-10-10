@@ -143,7 +143,7 @@ namespace l4d2vr_remote_mag
         bool Supported() const { return m_Token != 0; }
         bool Pending() const { return m_Pending; }
         void Disconnect() { *this = {}; }
-        void Cancel() { m_Pending = m_Ready = false; }
+        void Cancel() { m_Pending = m_Ready = false; m_Retries = 0u; }
         bool Begin(std::uint32_t handle, int id, int clip, int reserve, Action action, std::uint32_t command,
             std::uintptr_t owner, std::uint32_t generation, std::uint64_t now, Request& out)
         {
@@ -153,7 +153,14 @@ namespace l4d2vr_remote_mag
                 m_Next == (std::numeric_limits<std::uint32_t>::max)()) return false;
             m_Request = {m_Token, ++m_Next, handle, command, id, clip, reserve, action};
             m_Owner = owner; m_Generation = generation; m_Started = now;
-            m_Pending = true; m_Ready = false; out = m_Request; return true;
+            m_Pending = true; m_Ready = false; m_Retries = 0u; m_LastRetry = now; out = m_Request; return true;
+        }
+        bool NextRetry(std::uint64_t now, Request& request)
+        {
+            if (!m_Pending || m_Ready || m_Retries >= 3u || now < m_Started ||
+                now - m_Started >= l4d2vr_shell::kReplyTimeoutMs || now < m_LastRetry ||
+                now - m_LastRetry < 500u) return false;
+            ++m_Retries; m_LastRetry = now; request = m_Request; return true;
         }
         void Receive(const Reply& reply)
         {
@@ -196,7 +203,8 @@ namespace l4d2vr_remote_mag
     private:
         std::uint32_t m_Token = 0, m_BlockedToken = 0, m_Next = 0, m_Generation = 0;
         std::uintptr_t m_Owner = 0;
-        std::uint64_t m_Started = 0;
+        std::uint64_t m_Started = 0, m_LastRetry = 0;
+        unsigned m_Retries = 0u;
         bool m_Pending = false, m_Ready = false;
         Request m_Request{};
         Reply m_Reply{};

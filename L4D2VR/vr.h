@@ -2182,6 +2182,8 @@ public:
     bool BlockPistolNativeReload(C_WeaponCSBase* weapon);
     l4d2vr_remote_mag::ClientRequest m_RemoteMagazineRequest;
     std::atomic<bool> m_NativeAmmoReloadFallbackActive{false};
+    std::atomic<bool> m_PhysicalReloadOwnsStockInput{false};
+    void SendRemoteMagazineRequest(const l4d2vr_remote_mag::Request& request, bool retry);
     l4d2vr_magazine::NativeFallbackPulse m_NativeAmmoReloadFallbackPulse;
     void OfferRemoteMagazineProtocol(unsigned version, uint32_t token);
     void ReceiveRemoteMagazineReply(const l4d2vr_remote_mag::Reply& reply);

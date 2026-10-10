@@ -1793,9 +1793,12 @@ void VR::ProcessInput()
         (secondaryAttackActive || gestureSecondaryAttackActive) &&
         !suppressSecondaryAttack;
 
-    const bool wantReload =
-        nativeDualReloadPulse || nativeAmmoReloadPulse || magazineInteractionReloadPulse ||
-        (!crouchButtonDown && reloadButtonDown && !adjustViewmodelActive && !scopeAdjustActive);
+    const bool manualReloadOwnsInput = !nativeDualReload &&
+        m_PhysicalReloadOwnsStockInput.load(std::memory_order_acquire);
+    const bool explicitBackendReload = nativeDualReloadPulse || nativeAmmoReloadPulse || magazineInteractionReloadPulse;
+    const bool wantReload = l4d2vr_magazine::WantsNativeReload(
+        !crouchButtonDown && reloadButtonDown && !adjustViewmodelActive && !scopeAdjustActive,
+        manualReloadOwnsInput, explicitBackendReload);
     if (wantReload && !m_ReloadCmdOwned &&
         (nativeDualReload || nativeAmmoReloadPulse || !m_MagazineInteractionUseButtonDisbleReloadCommand || !m_MagazineInteractionUseButtonGripInput || !m_MagazineInteractionEnabled || !magazineGripDown))
     {

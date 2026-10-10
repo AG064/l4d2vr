@@ -2449,7 +2449,10 @@ namespace
         if (name.empty())
             return 0;
 
-        if (MagazineInteractionWeaponIdIsShotgun(weaponId) &&
+        // Only pump actions use the moving fore-end. Semiautomatic shotguns
+        // retain this helper too, but their charging handle is weapon_bolt.
+        if ((weaponId == static_cast<int>(C_WeaponCSBase::WeaponID::PUMPSHOTGUN) ||
+                weaponId == static_cast<int>(C_WeaponCSBase::WeaponID::SHOTGUN_CHROME)) &&
             (name == "weapon_charger_slide" ||
                 name == "valvebiped.weapon_charger_slide"))
         {

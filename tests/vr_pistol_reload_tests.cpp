@@ -211,6 +211,9 @@ int main()
     CHECK(BlocksNativeReload(true, 3u));
     CHECK(!BlocksNativeReload(false, 3u));
     CHECK(!BlocksNativeReload(true, 0u));
+    CHECK(BlocksNativeReload(true, 0u, true));
+    CHECK(!BlocksNativeReload(false, 0u, true));
+    CHECK(!BlocksNativeReload(true, 4u, true));
     CHECK(!BlocksNativeReload(true, 4u));
     Server server; server.Reset(42u);
     l4d2vr_pistol::AmmoLedger ammo;

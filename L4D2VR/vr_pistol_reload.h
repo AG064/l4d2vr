@@ -8,8 +8,8 @@ namespace l4d2vr_pistol_reload
     using Hand = l4d2vr_pistol::Hand;
     using Action = l4d2vr_pistol::MagazineAction;
     using Status = l4d2vr_shell::Status;
-    inline bool BlocksNativeReload(bool eligible, unsigned physical)
-    { return eligible && physical != 0u && physical <= 3u; }
+    inline bool BlocksNativeReload(bool eligible, unsigned physical, bool manualSingle = false)
+    { return eligible && physical <= 3u && (manualSingle || physical != 0u); }
     inline bool MatchesSingleHand(const l4d2vr_pistol_sync::State& state, Hand hand)
     {
         if (!state.known || state.dual || !state.ValidContents()) return false;
