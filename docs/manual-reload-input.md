@@ -41,6 +41,13 @@ ammo replication. Lost replies retry the same request up to three times, without
 applying its ammo transfer twice. Timeout or a changed weapon cancels the pending
 gesture.
 
+Physical reload gestures require fresh, finite headset and controller poses.
+Tracking loss pauses new contact and movement; already submitted ammo operations
+can still settle from the host reply and native replication. If tracking drops
+while holding a slide or pump, release the grip and grab it again after tracking
+returns so a changed controller pose cannot count as a stroke. Native weapon
+handles also fence reload state when a replacement gun reuses an entity address.
+
 Dual pistols intentionally use a button reload because both hands hold a gun.
 With this Quest profile, right A reloads both pistols together using the native
 animation. `DualPistolsNativeReloadFallbackEnabled=true` is the default. Manual

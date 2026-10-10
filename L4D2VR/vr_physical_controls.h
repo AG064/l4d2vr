@@ -217,13 +217,16 @@ namespace l4d2vr_physical
             if (!active || !owner) { Reset(); return; }
             if (owner != m_Owner) { Reset(); m_Owner = owner; }
         }
-        bool Observe(std::uintptr_t weapon, int weaponId, int clip)
+        bool Observe(std::uintptr_t weapon, int weaponId, int clip, std::uint32_t handle = 0u)
         {
             if (!weapon || clip < 0)
                 return false;
             Entry* entry = nullptr;
             for (auto& candidate : m_Entries)
             {
+                // A recycled entity address must not inherit a spent gun's cycle.
+                if (candidate.weapon == weapon &&
+                    (candidate.weaponId != weaponId || candidate.handle != handle)) candidate = {};
                 if (candidate.weapon == weapon && candidate.weaponId == weaponId)
                 {
                     entry = &candidate;
@@ -233,26 +236,26 @@ namespace l4d2vr_physical
             if (!entry)
             {
                 entry = &m_Entries[m_Next++ % m_Entries.size()];
-                *entry = { weapon, weaponId, clip, false };
+                *entry = { weapon, weaponId, clip, false, handle };
             }
             entry->clip = clip;
             return entry->needsCycle;
         }
 
-        void NotifyShot(std::uintptr_t weapon, int weaponId, int clip)
+        void NotifyShot(std::uintptr_t weapon, int weaponId, int clip, std::uint32_t handle = 0u)
         {
             if (!weapon || (weaponId != 3 && weaponId != 8) || clip < 0)
                 return;
-            Observe(weapon, weaponId, clip);
+            Observe(weapon, weaponId, clip, handle);
             for (auto& entry : m_Entries)
-                if (entry.weapon == weapon && entry.weaponId == weaponId)
+                if (entry.weapon == weapon && entry.weaponId == weaponId && entry.handle == handle)
                     entry.needsCycle = true;
         }
 
-        void Complete(std::uintptr_t weapon)
+        void Complete(std::uintptr_t weapon, std::uint32_t handle = 0u)
         {
             for (auto& entry : m_Entries)
-                if (entry.weapon == weapon)
+                if (entry.weapon == weapon && entry.handle == handle)
                     entry.needsCycle = false;
         }
 
@@ -271,6 +274,7 @@ namespace l4d2vr_physical
             int weaponId = 0;
             int clip = -1;
             bool needsCycle = false;
+            std::uint32_t handle = 0u;
         };
         std::array<Entry, 16> m_Entries{};
         std::uintptr_t m_Owner = 0u;

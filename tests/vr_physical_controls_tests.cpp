@@ -169,4 +169,16 @@ int main()
     pumps.NotifyShot(10u, 8, 5);
     pumps.Complete(10u);
     Check(!pumps.Observe(10u, 8, 5));
+    // Native handles distinguish a replacement gun at a recycled address.
+    pumps.Reset(); pumps.ObserveOwner(true, 100u);
+    pumps.NotifyShot(10u, 3, 7, 0x3005u);
+    Check(pumps.Observe(10u, 3, 8, 0x3005u));
+    Check(!pumps.Observe(20u, 8, 8, 0x3006u));
+    Check(pumps.Observe(10u, 3, 8, 0x3005u));
+    Check(!pumps.Observe(10u, 3, 8, 0x4005u));
+    pumps.NotifyShot(10u, 3, 7, 0x4005u);
+    pumps.Complete(10u, 0x3005u);
+    Check(pumps.Observe(10u, 3, 7, 0x4005u));
+    pumps.Complete(10u, 0x4005u);
+    Check(!pumps.Observe(10u, 3, 7, 0x4005u));
 }

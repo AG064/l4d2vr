@@ -3432,6 +3432,20 @@ bool VR::RemoteShellRequestPending() const
     std::lock_guard<std::mutex> lock(m_RemoteShellMutex);
     return m_RemoteShellRequest.Pending();
 }
+bool VR::HasFreshMagazineInteractionTracking() const
+{
+    VRWorldPoseTrackingSnapshot pose{};
+    if (!ReadWorldPoseTrackingSnapshot(pose) ||
+        !l4d2vr_magazine::TrackingAllowsGesture(pose.hmdValid, pose.leftHandValid, pose.rightHandValid,
+            pose.capturedAtMs, GetTickCount64())) return false;
+    const auto finiteAngles = [](const QAngle& value) {
+        return std::isfinite(value.x) && std::isfinite(value.y) && std::isfinite(value.z);
+    };
+    return l4d2vr_interaction::Finite(pose.hmdPosition) && finiteAngles(pose.hmdAngles) &&
+        l4d2vr_interaction::Finite(pose.leftHandPosition) && finiteAngles(pose.leftHandAngles) &&
+        l4d2vr_interaction::Finite(pose.rightHandPosition) && finiteAngles(pose.rightHandAngles);
+}
+
 bool VR::BeginRemoteShellRequest(uint32_t handle, int id, int clip, int reserve,
     uintptr_t owner, uint32_t generation)
 {
@@ -3441,9 +3455,7 @@ bool VR::BeginRemoteShellRequest(uint32_t handle, int id, int clip, int reserve,
         m_RenderPlayerIncap.load(std::memory_order_acquire) ||
         m_RenderPlayerControlledBySI.load(std::memory_order_acquire) ||
         (m_Game->m_VguiSurface && m_Game->m_VguiSurface->IsCursorVisible())) return false;
-    VRWorldPoseTrackingSnapshot pose{};
-    if (!ReadWorldPoseTrackingSnapshot(pose) || !pose.hmdValid || !pose.leftHandValid || !pose.rightHandValid)
-        return false;
+    if (!HasFreshMagazineInteractionTracking()) return false;
     l4d2vr_shell::Request request{};
     {
         std::lock_guard<std::mutex> lock(m_RemoteShellMutex);
@@ -3762,9 +3774,7 @@ bool VR::BeginPistolMagazineRequest(int commandNumber, l4d2vr_pistol::Hand hand,
     uint32_t handle = 0u; int clip = -1, reserve = -1; bool dual = false;
     if (!ReadClientPistolMagazineContext(m_Game, player, weapon, handle, clip, reserve, dual)) return false;
     l4d2vr_pistol_sync::State available{};
-    VRWorldPoseTrackingSnapshot pose{};
-    if (!ReadPistolMagazineState(player, weapon, available) || !ReadWorldPoseTrackingSnapshot(pose) ||
-        !pose.hmdValid || !pose.leftHandValid || !pose.rightHandValid) return false;
+    if (!ReadPistolMagazineState(player, weapon, available) || !HasFreshMagazineInteractionTracking()) return false;
     l4d2vr_pistol_reload::Request request{};
     {
         std::lock_guard<std::mutex> lock(m_PistolAmmoClientMutex);
@@ -3857,9 +3867,7 @@ bool VR::BeginRemoteMagazineRequest(uint32_t handle, int id, int clip, int reser
         m_RenderPlayerIncap.load(std::memory_order_acquire) ||
         m_RenderPlayerControlledBySI.load(std::memory_order_acquire) ||
         (m_Game->m_VguiSurface && m_Game->m_VguiSurface->IsCursorVisible())) return false;
-    VRWorldPoseTrackingSnapshot pose{};
-    if (!ReadWorldPoseTrackingSnapshot(pose) || !pose.hmdValid || !pose.leftHandValid || !pose.rightHandValid)
-        return false;
+    if (!HasFreshMagazineInteractionTracking()) return false;
     l4d2vr_remote_mag::Request request{};
     {
         std::lock_guard<std::mutex> lock(m_RemoteMagazineMutex);
@@ -3969,9 +3977,10 @@ void VR::RecordManualPumpShot()
     if (!MagazineInteractionReadActiveWeapon(player, weapon, id, clip) || !MagazineInteractionWeaponUsesSinglePumpSound(id))
         return;
     if (!IsMagazineInteractionShotgunServerHookActive(static_cast<int>(id))) return;
+    const uint32_t handle = MagazineInteractionActiveWeaponHandle(m_Game, player, weapon);
     std::lock_guard<std::mutex> lock(m_ManualPumpMutex);
     m_ManualPumpCycles.ObserveOwner(true, reinterpret_cast<uintptr_t>(player));
-    m_ManualPumpCycles.NotifyShot(reinterpret_cast<uintptr_t>(weapon), static_cast<int>(id), clip);
+    m_ManualPumpCycles.NotifyShot(reinterpret_cast<uintptr_t>(weapon), static_cast<int>(id), clip, handle);
     Game::logMsg("[VR][ManualPump] shot observed weaponId=%d clip=%d", static_cast<int>(id), clip);
 }
 
@@ -5098,7 +5107,7 @@ bool VR::UpdateMagazineInteraction(
         (authoritativePistol ? l4d2vr_magazine::kAuthoritativePistolInputMode : 0u);
     if (m_MagazineInteractionSession.Observe(vrHandsInteractionAvailable,
             reinterpret_cast<uintptr_t>(localPlayer), reinterpret_cast<uintptr_t>(activeWeapon),
-            activeWeaponIdInt, interactionInputMode))
+            activeWeaponIdInt, interactionInputMode, activeWeaponHandle))
     {
         if (m_VrHandsDebugLog && vrHandsInteractionAvailable)
             Game::logMsg("[VR][ReloadChamber] weapon=%p handle=0x%X weaponId=%d empty=%d retainedAcrossDraws=%d",
@@ -5837,7 +5846,7 @@ bool VR::UpdateMagazineInteraction(
         {
             {
                 std::lock_guard<std::mutex> lock(m_ManualPumpMutex);
-                m_ManualPumpCycles.Complete(reinterpret_cast<uintptr_t>(m_MagazineInteractionWeapon));
+                m_ManualPumpCycles.Complete(reinterpret_cast<uintptr_t>(m_MagazineInteractionWeapon), activeWeaponHandle);
             }
             m_ManualPumpBlockingFire.store(false, std::memory_order_release);
             suppressLeftInputUntilRelease = false;
@@ -6113,7 +6122,7 @@ bool VR::UpdateMagazineInteraction(
         if (!m_ManualPumpEnabled)
             m_ManualPumpCycles.Reset();
         else if (hasActiveWeapon && MagazineInteractionWeaponUsesSinglePumpSound(activeWeaponId))
-            activePumpNeedsCycle = m_ManualPumpCycles.Observe(reinterpret_cast<uintptr_t>(activeWeapon), static_cast<int>(activeWeaponId), activeClip);
+            activePumpNeedsCycle = m_ManualPumpCycles.Observe(reinterpret_cast<uintptr_t>(activeWeapon), static_cast<int>(activeWeaponId), activeClip, activeWeaponHandle);
     }
     if (m_ManualPumpEnabled && MagazineInteractionWeaponUsesSinglePumpSound(activeWeaponId) &&
         !activePumpNeedsCycle && activeClip > 0 &&
@@ -6883,9 +6892,7 @@ bool VR::UpdateMagazineInteraction(
         if (!leftGripDown || m_MagazineInteractionShotgunShellMode || m_MouseModeEnabled || m_SuppressPlayerInput ||
             !m_FirstPersonControlReady.load(std::memory_order_acquire) || m_Game->m_EngineClient->IsPaused() ||
             (m_Game->m_VguiSurface && m_Game->m_VguiSurface->IsCursorVisible())) return false;
-        VRWorldPoseTrackingSnapshot tracking{};
-        const bool tracked = ReadWorldPoseTrackingSnapshot(tracking) &&
-            tracking.hmdValid && tracking.leftHandValid && tracking.rightHandValid;
+        const bool tracked = HasFreshMagazineInteractionTracking();
         refreshSocketFromPublishedViewmodelBox();
         rebuildInputSocketFromSessionBox();
         const auto controller = MagazineInteractionBuildViewmodelReprojectedControllerWorld(this,
@@ -7112,6 +7119,24 @@ bool VR::UpdateMagazineInteraction(
         const int maxClip = MagazineInteractionDefaultMaxClip(activeWeaponId, m_MagazineInteractionMagazineModelName);
         if (maxClip > 0 && activeClip >= maxClip && !beginBoltStage(activeWeaponId, "remote-shell-full"))
             CancelMagazineInteractionManual();
+        return false;
+    }
+
+    // Poll submitted transactions above even during tracking loss. New physical
+    // movement below must never use retained controller poses as live input.
+    if (!nativeAmmoFallback && m_MagazineInteractionEnabled && activeWeaponUsesPhysicalReload &&
+        !HasFreshMagazineInteractionTracking())
+    {
+        if (m_MagazineInteractionState == MagazineInteractionManualState::HoldingBolt)
+        {
+            // Reacquisition can jump the controller pose. Require a new grip
+            // origin instead of counting that jump as a mechanical stroke.
+            m_MagazineInteractionState = MagazineInteractionManualState::WaitingForBoltGrab;
+            m_MagazineInteractionLeftHandHolding = false;
+            m_MagazineInteractionBoltGrabRequiresGripRelease = true;
+            m_MagazineInteractionBoltContactActive = false;
+            m_MagazineInteractionLeftHandPoseActive.store(0, std::memory_order_relaxed);
+        }
         return false;
     }
 
@@ -7725,9 +7750,7 @@ bool VR::UpdateMagazineInteraction(
             (leftGripDown && freshGrabDistance <= freshGrabRange);
         if (freshGrabRequested)
         {
-            VRWorldPoseTrackingSnapshot tracking{};
-            if (!ReadWorldPoseTrackingSnapshot(tracking) || !tracking.hmdValid ||
-                !tracking.leftHandValid || !tracking.rightHandValid) return false;
+            if (!HasFreshMagazineInteractionTracking()) return false;
             if (!hasPickupBox)
             {
                 return reloadCommandPending();

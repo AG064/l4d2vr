@@ -2202,6 +2202,7 @@ public:
     void ReceiveRemoteShellReply(const l4d2vr_shell::Reply& reply);
     void DisconnectRemoteShellProtocol();
     void CancelRemoteShellRequest();
+    bool HasFreshMagazineInteractionTracking() const;
     bool RemoteShellProtocolSupported() const;
     bool RemoteShellRequestPending() const;
     bool BeginRemoteShellRequest(uint32_t handle, int weaponId, int clip, int reserve,

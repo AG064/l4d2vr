@@ -9,6 +9,11 @@ namespace l4d2vr_magazine
     constexpr unsigned kAuthoritativeMagazineInputMode = 64u;
     constexpr unsigned kAuthoritativeShellInputMode = 128u;
     constexpr unsigned kAuthoritativePistolInputMode = 256u;
+    inline bool TrackingAllowsGesture(bool hmd, bool left, bool right,
+        std::uint64_t captured, std::uint64_t now)
+    {
+        return hmd && left && right && captured != 0u && now >= captured && now - captured <= 150u;
+    }
     inline bool UseNativeReloadFallback(bool enabled, int weaponId, bool physicalReload, bool negotiated)
     {
         // The launcher reloads one round through its stock native mechanism.
@@ -154,7 +159,7 @@ namespace l4d2vr_magazine
         // Compare opaque identities without dereferencing objects that may
         // already have been deleted. Completion of a reload is not a boundary.
         bool Observe(bool ready, std::uintptr_t player, std::uintptr_t weapon,
-            int weaponId, unsigned int inputMode)
+            int weaponId, unsigned int inputMode, std::uint32_t handle = 0u)
         {
             ready = ready && player != 0u && weapon != 0u && weaponId > 0;
             if (!ready)
@@ -164,15 +169,17 @@ namespace l4d2vr_magazine
                 m_Player = m_Weapon = 0u;
                 m_WeaponId = 0;
                 m_InputMode = 0u;
+                m_Handle = 0u;
                 return changed;
             }
             const bool changed = !m_Ready || player != m_Player || weapon != m_Weapon ||
-                weaponId != m_WeaponId || inputMode != m_InputMode;
+                weaponId != m_WeaponId || inputMode != m_InputMode || handle != m_Handle;
             m_Ready = true;
             m_Player = player;
             m_Weapon = weapon;
             m_WeaponId = weaponId;
             m_InputMode = inputMode;
+            m_Handle = handle;
             return changed;
         }
 
@@ -182,6 +189,7 @@ namespace l4d2vr_magazine
         std::uintptr_t m_Weapon = 0u;
         int m_WeaponId = 0;
         unsigned int m_InputMode = 0u;
+        std::uint32_t m_Handle = 0u;
     };
 
     inline bool ShouldEject(bool buttonRequired, bool buttonPressed,

@@ -1,5 +1,6 @@
 #include "../L4D2VR/vr_magazine_policy.h"
 #include "../L4D2VR/vr_physical_controls.h"
+#include "../L4D2VR/vr_remote_magazines.h"
 #include <cstdio>
 #include <cstdlib>
 
@@ -15,6 +16,30 @@ static void Check(bool result, const char* message)
 int main()
 {
     using namespace l4d2vr_magazine;
+    SessionTracker serialSession;
+    Check(serialSession.Observe(true, 100u, 200u, 3, 3u, 0x3005u), "A native gun starts its own reload session");
+    Check(!serialSession.Observe(true, 100u, 200u, 3, 3u, 0x3005u), "The same serial keeps the current gesture");
+    Check(serialSession.Observe(true, 100u, 200u, 3, 3u, 0x4005u), "A recycled gun address must fence the previous gesture and replies");
+    Check(!serialSession.Observe(true, 100u, 200u, 3, 3u, 0x4005u), "The replacement has stable independent ownership");
+    Check(serialSession.Observe(true, 100u, 200u, 3, 3u, 0u), "Losing serial identity invalidates retained contact state");
+
+    // Controller loss pauses gestures, while a submitted ammo operation can
+    // still settle against its host reply and native replication.
+    l4d2vr_remote_mag::ClientRequest pending;
+    pending.Offer(l4d2vr_remote_mag::kVersion, 9u);
+    l4d2vr_remote_mag::Request request{};
+    Check(TrackingAllowsGesture(true, true, true, 1000u, 1000u), "Fresh hands can start a reload");
+    Check(pending.Begin(0x3005u, 2, 10, 50, l4d2vr_remote_mag::Action::Eject, 100u, 100u, 1u, 1000u, request),
+        "A fresh gesture submits its authoritative ejection");
+    Check(!TrackingAllowsGesture(true, true, true, 1000u, 1151u), "Old valid flags cannot advance a slide or magazine");
+    Check(!TrackingAllowsGesture(true, false, true, 1200u, 1200u), "An untracked support hand cannot complete a stroke");
+    pending.Receive({request, l4d2vr_remote_mag::Status::Applied, 1, 50});
+    l4d2vr_remote_mag::Reply reply{};
+    Check(pending.Update(0x3005u, 2, 100u, 1u, 1200u, reply, 1, 50) == l4d2vr_remote_mag::ClientRequest::Poll::Result,
+        "Tracking loss must not discard an already applied ammo transaction");
+    Check(TrackingAllowsGesture(true, true, true, 1300u, 1300u), "Fresh tracking permits the next physical stage");
+    Check(!TrackingAllowsGesture(true, true, true, 0u, 1300u), "An unstamped pose is not live input");
+    Check(!TrackingAllowsGesture(true, true, true, 1400u, 1300u), "A future pose cannot bypass freshness");
     SessionTracker pumpSession;
     l4d2vr_physical::PumpCycles pump;
     pumpSession.Observe(true, 501u, 601u, 3, 3u);
