@@ -5588,10 +5588,11 @@ void __fastcall Hooks::dRenderView(void* ecx, void* edx, CViewSetup& setup, CVie
 				hkViewport.fOriginal(rc, oldX, oldY, oldW, oldH);
 
 			m_VR->m_SuppressHudCapture = prevSuppress;
-			if (physicalScope)
+            if (physicalScope || nekoPostPass == HooksNekoPostPass::Scope)
 			{
-				if (queueMode == 0) m_VR->PublishPhysicalScopeImage(*physicalScope, scopeImageEpoch);
-				else m_VR->QueuePhysicalScopeImage(rc, *physicalScope, scopeImageEpoch);
+				const PhysicalScopeRenderSnapshot stamp = physicalScope ? *physicalScope : PhysicalScopeRenderSnapshot{};
+				if (queueMode == 0) m_VR->PublishPhysicalScopeImage(stamp, scopeImageEpoch);
+				else m_VR->QueuePhysicalScopeImage(rc, stamp, scopeImageEpoch);
 			}
 		};
 

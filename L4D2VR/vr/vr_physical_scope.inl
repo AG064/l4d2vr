@@ -99,7 +99,14 @@ void VR::PublishPhysicalScopeImage(const PhysicalScopeRenderSnapshot& snapshot, 
     if (m_SourceRenderQueueMarkerEpoch.load(std::memory_order_acquire) != renderEpoch) return;
     std::lock_guard<std::mutex> lock(m_PhysicalScopeLensMutex);
     const uint64_t now = GetTickCount64();
-    if (!snapshot.weapon.Valid() || !(snapshot.weapon == m_PhysicalScopeWeapons.Current()) ||
+    if (!snapshot.weapon.Valid())
+    {
+        // Legacy scopes render into the same surface. Their completion must
+        // invalidate physical stamps rather than leave the previous label live.
+        m_PhysicalScopeImage = {}; m_PhysicalScopeProcessedImage = {};
+        return;
+    }
+    if (!(snapshot.weapon == m_PhysicalScopeWeapons.Current()) ||
         !l4d2vr_optics::Fresh(now, snapshot.publishedAt)) return;
     m_PhysicalScopeImage = {snapshot.weapon, snapshot.magnification, now, renderEpoch};
 }
