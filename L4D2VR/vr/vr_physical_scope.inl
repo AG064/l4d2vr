@@ -29,7 +29,7 @@ void VR::PublishPhysicalScopeLens(const PhysicalScopeLensSnapshot& sample)
 {
     const int eye = m_VrHandsActiveEyeIndex;
     const CViewSetup* view = m_VrHandsActiveEyeView;
-    if (!IsPhysicalScopeMode() || !m_ScopeEnabled || !view || eye < 0 || eye > 1 ||
+    if (!IsPhysicalScopeMode() || !m_ScopeEnabled || !HasFreshPhysicalScopeTracking() || !view || eye < 0 || eye > 1 ||
         !m_FirstPersonControlReady.load(std::memory_order_acquire) ||
         m_RenderPlayerIncap.load(std::memory_order_acquire) || m_RenderTpObserver.load(std::memory_order_acquire) ||
         m_RenderPlayerControlledBySI.load(std::memory_order_acquire) ||
@@ -55,6 +55,8 @@ void VR::PublishPhysicalScopeLens(const PhysicalScopeLensSnapshot& sample)
     if (!l4d2vr_optics::Valid(lens.trackingPose)) return;
     lens.publishedAt = GetTickCount64();
     std::lock_guard<std::mutex> lock(m_PhysicalScopeLensMutex);
+    if (!m_PhysicalScopeWeapons.Current().Valid() || m_PhysicalScopeWeapons.Current().id != lens.weaponId) return;
+    lens.weapon = m_PhysicalScopeWeapons.Current();
     m_PhysicalScopeLenses[eye] = lens;
 }
 
@@ -65,7 +67,58 @@ bool VR::ReadPhysicalScopeLens(int eye, PhysicalScopeLensSnapshot& lens)
     lens = m_PhysicalScopeLenses[eye];
     const uint64_t now = GetTickCount64();
     return l4d2vr_optics::Fresh(now,lens.publishedAt) &&
-        lens.weaponId == m_PhysicalScopeWeaponId.load(std::memory_order_acquire);
+        lens.weapon.Valid() && lens.weapon == m_PhysicalScopeWeapons.Current();
+}
+
+bool VR::HasFreshPhysicalScopeTracking() const
+{
+    VRWorldPoseTrackingSnapshot pose{};
+    if (!ReadWorldPoseTrackingSnapshot(pose) || !pose.hmdValid ||
+        !l4d2vr_optics::Fresh(GetTickCount64(), pose.capturedAtMs)) return false;
+    const bool left = IsGameplayHandLeftPhysical(false);
+    const auto finiteAngles = [](const QAngle& angles) {
+        return std::isfinite(angles.x) && std::isfinite(angles.y) && std::isfinite(angles.z);
+    };
+    return (left ? pose.leftHandValid : pose.rightHandValid) &&
+        l4d2vr_optics::Finite(pose.hmdPosition) && finiteAngles(pose.hmdAngles) &&
+        l4d2vr_optics::Finite(left ? pose.leftHandPosition : pose.rightHandPosition) &&
+        finiteAngles(left ? pose.leftHandAngles : pose.rightHandAngles);
+}
+
+bool VR::ReadPhysicalScopeRender(PhysicalScopeRenderSnapshot& snapshot)
+{
+    if (!HasFreshPhysicalScopeTracking()) return false;
+    std::lock_guard<std::mutex> lock(m_PhysicalScopeLensMutex);
+    snapshot = m_PhysicalScopeRender;
+    return snapshot.weapon.Valid() && snapshot.weapon == m_PhysicalScopeWeapons.Current() &&
+        l4d2vr_optics::Fresh(GetTickCount64(), snapshot.publishedAt);
+}
+
+void VR::PublishPhysicalScopeImage(const PhysicalScopeRenderSnapshot& snapshot, uint32_t renderEpoch)
+{
+    if (m_SourceRenderQueueMarkerEpoch.load(std::memory_order_acquire) != renderEpoch) return;
+    std::lock_guard<std::mutex> lock(m_PhysicalScopeLensMutex);
+    const uint64_t now = GetTickCount64();
+    if (!snapshot.weapon.Valid() || !(snapshot.weapon == m_PhysicalScopeWeapons.Current()) ||
+        !l4d2vr_optics::Fresh(now, snapshot.publishedAt)) return;
+    m_PhysicalScopeImage = {snapshot.weapon, snapshot.magnification, now, renderEpoch};
+}
+
+l4d2vr_optics::ImageStamp VR::ReadPhysicalScopeImage(bool processed)
+{
+    std::lock_guard<std::mutex> lock(m_PhysicalScopeLensMutex);
+    return processed ? m_PhysicalScopeProcessedImage : m_PhysicalScopeImage;
+}
+
+void VR::PublishPhysicalScopeProcessedImage(const l4d2vr_optics::ImageStamp& source)
+{
+    std::lock_guard<std::mutex> lock(m_PhysicalScopeLensMutex);
+    if (source.weapon.Valid() && source.weapon == m_PhysicalScopeWeapons.Current() &&
+        source.weapon == m_PhysicalScopeImage.weapon && source.completedAt == m_PhysicalScopeImage.completedAt &&
+        source.magnification == m_PhysicalScopeImage.magnification &&
+        source.renderEpoch == m_SourceRenderQueueMarkerEpoch.load(std::memory_order_acquire))
+        m_PhysicalScopeProcessedImage = source;
+    else m_PhysicalScopeProcessedImage = {};
 }
 
 void VR::UpdatePhysicalScope()
@@ -76,9 +129,7 @@ void VR::UpdatePhysicalScope()
     if (!m_ScopeEnabled || !ScopeWeaponEligible() || !m_FirstPersonControlReady.load(std::memory_order_acquire) ||
         m_RenderPlayerIncap.load(std::memory_order_acquire) || m_RenderPlayerControlledBySI.load(std::memory_order_acquire) ||
         m_ManualInventoryEmptyHandsActive.load(std::memory_order_acquire)) return;
-    VRWorldPoseTrackingSnapshot tracking{};
-    if (!ReadWorldPoseTrackingSnapshot(tracking) || !tracking.hmdValid ||
-        !(IsGameplayHandLeftPhysical(false) ? tracking.leftHandValid : tracking.rightHandValid)) return;
+    if (!HasFreshPhysicalScopeTracking()) return;
     PhysicalScopeLensSnapshot lens{};
     if (!ReadPhysicalScopeLens(0, lens) && !ReadPhysicalScopeLens(1, lens)) return;
     l4d2vr_optics::Pose current{};
@@ -97,18 +148,32 @@ void VR::UpdatePhysicalScope()
     if (m_PhysicalScopeRenderFov <= 0.0f) return;
     m_ScopeCameraPosAbs = lens.sceneCenter;
     QAngle::VectorAngles(lens.sceneForward, lens.sceneUp, m_ScopeCameraAngAbs);
+    {
+        std::lock_guard<std::mutex> lock(m_PhysicalScopeLensMutex);
+        if (!(lens.weapon == m_PhysicalScopeWeapons.Current())) return;
+        m_PhysicalScopeRender = {lens.weapon, m_ScopeCameraPosAbs, m_ScopeCameraAngAbs,
+            m_PhysicalScopeRenderFov, magnification, GetTickCount64()};
+    }
     m_ScopeActive = true;
 }
 
 bool VR::DrawPhysicalScopeLensForEye(const CViewSetup& view, int eyeIndex, const PhysicalScopeLensSnapshot& lens)
 {
-    if (!IsPhysicalScopeMode() || !m_ScopeEnabled || !g_D3DVR9 || eyeIndex < 0 || eyeIndex > 1 ||
+    if (!IsPhysicalScopeMode() || !m_ScopeEnabled || !HasFreshPhysicalScopeTracking() || !g_D3DVR9 || eyeIndex < 0 || eyeIndex > 1 ||
         !l4d2vr_optics::Fresh(GetTickCount64(),lens.publishedAt) ||
         lens.weaponId != m_PhysicalScopeWeaponId.load(std::memory_order_acquire) ||
         !l4d2vr_optics::Finite(lens.center) || !l4d2vr_optics::Finite(lens.right) || !l4d2vr_optics::Finite(lens.up) ||
         !std::isfinite(lens.radius) || lens.radius <= 0.0f ||
         view.width <= 0 || view.height <= 0 || !std::isfinite(view.fovViewmodel) ||
         view.fovViewmodel < 1.0f || view.zFarViewmodel <= view.zNearViewmodel) return false;
+    l4d2vr_optics::ImageStamp scopeImage{};
+    l4d2vr_optics::ImageStamp processedImage{};
+    {
+        std::lock_guard<std::mutex> lock(m_PhysicalScopeLensMutex);
+        if (!lens.weapon.Valid() || !(lens.weapon == m_PhysicalScopeWeapons.Current())) return false;
+        scopeImage = m_PhysicalScopeImage;
+        processedImage = m_PhysicalScopeProcessedImage;
+    }
     struct DeviceLock
     {
         bool locked = false;
@@ -187,10 +252,14 @@ bool VR::DrawPhysicalScopeLensForEye(const CViewSetup& view, int eyeIndex, const
     if (m_D9ScopeSurface)
         m_D9ScopeSurface->GetContainer(__uuidof(IDirect3DTexture9), reinterpret_cast<void**>(&rawTexture));
     IDirect3DTexture9* texture = rawTexture;
-    if (!texture && m_ScopeLensOverlayReady.load(std::memory_order_acquire)) texture = m_D9ScopeLensTexture;
+    if (!texture && m_ScopeLensOverlayReady.load(std::memory_order_acquire))
+    {
+        texture = m_D9ScopeLensTexture;
+        scopeImage = processedImage;
+    }
     if (ok && eye.alpha > 0.0f && texture &&
-        l4d2vr_optics::Fresh(GetTickCount64(),m_PhysicalScopeTextureAt.load(std::memory_order_acquire)) &&
-        m_PhysicalScopeTextureWeaponId.load(std::memory_order_acquire) == lens.weaponId)
+        l4d2vr_optics::ImageMatches(scopeImage, lens.weapon, lens.magnification,
+            m_SourceRenderQueueMarkerEpoch.load(std::memory_order_acquire), GetTickCount64()))
     {
         const auto brightness = static_cast<unsigned char>(eye.alpha * 255.0f);
         for (auto& vertex : vertices) vertex.color = D3DCOLOR_ARGB(255,brightness,brightness,brightness);

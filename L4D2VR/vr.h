@@ -88,8 +88,18 @@ struct PhysicalScopeLensSnapshot
     Vector center{}, forward{}, right{}, up{}, sceneCenter{}, sceneForward{}, sceneUp{};
     float radius = 0.0f, sceneRadius = 0.0f, magnification = 1.0f;
     int weaponId = 0;
+    l4d2vr_optics::WeaponIdentity weapon{};
     uint64_t publishedAt = 0u;
     l4d2vr_optics::Pose trackingPose{};
+};
+
+struct PhysicalScopeRenderSnapshot
+{
+    l4d2vr_optics::WeaponIdentity weapon{};
+    Vector origin{};
+    QAngle angles{};
+    float fov = 0.0f, magnification = 1.0f;
+    uint64_t publishedAt = 0u;
 };
 
 
@@ -3724,9 +3734,11 @@ public:
 	float m_PhysicalScopeRenderFov = 10.0f;
 	std::atomic<int> m_PhysicalScopeWeaponId{ 0 };
 	std::atomic<float> m_PhysicalScopeMagnification{ 2.0f };
-	std::atomic<int> m_PhysicalScopeTextureWeaponId{ 0 };
-	std::atomic<uint64_t> m_PhysicalScopeTextureAt{ 0u };
 	std::mutex m_PhysicalScopeLensMutex;
+	l4d2vr_optics::WeaponTracker m_PhysicalScopeWeapons;
+	l4d2vr_optics::ImageStamp m_PhysicalScopeImage{};
+	l4d2vr_optics::ImageStamp m_PhysicalScopeProcessedImage{};
+	PhysicalScopeRenderSnapshot m_PhysicalScopeRender{};
 	PhysicalScopeLensSnapshot m_PhysicalScopeLenses[2]{};
 	int   m_ScopeRTTSize = 512;               // square RTT size in pixels
 	std::chrono::steady_clock::time_point m_LastScopeRTTRenderTime{};
@@ -3802,6 +3814,13 @@ public:
 	void PublishPhysicalScopeLens(const PhysicalScopeLensSnapshot& lens);
 	bool ReadPhysicalScopeLens(int eye, PhysicalScopeLensSnapshot& lens);
 	void UpdatePhysicalScope();
+	void UpdatePhysicalScopeWeapon(C_BasePlayer* owner, C_WeaponCSBase* weapon);
+	bool HasFreshPhysicalScopeTracking() const;
+	bool ReadPhysicalScopeRender(PhysicalScopeRenderSnapshot& snapshot);
+	void PublishPhysicalScopeImage(const PhysicalScopeRenderSnapshot& snapshot, uint32_t renderEpoch);
+	bool QueuePhysicalScopeImage(IMatRenderContext* context, const PhysicalScopeRenderSnapshot& snapshot, uint32_t renderEpoch);
+	l4d2vr_optics::ImageStamp ReadPhysicalScopeImage(bool processed = false);
+	void PublishPhysicalScopeProcessedImage(const l4d2vr_optics::ImageStamp& source);
 	bool DrawPhysicalScopeLensForEye(const CViewSetup& view, int eyeIndex, const PhysicalScopeLensSnapshot& lens);
 	QAngle GetScopeCameraAbsAngle() const { return m_ScopeCameraAngAbs; }
 	bool   IsMouseModeScopeActive() const { return m_MouseModeEnabled && m_ScopeEnabled && m_ScopeWeaponIsFirearm && m_MouseModeScopeToggleActive; }

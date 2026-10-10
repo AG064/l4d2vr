@@ -760,9 +760,7 @@ void VR::UpdateTracking()
             m_MeleeTrackingSnapshot = {};
         }
         m_ScopeWeaponIsFirearm = false;
-        m_PhysicalScopeWeaponId.store(0,std::memory_order_release);
-        m_PhysicalScopeTextureWeaponId.store(0,std::memory_order_release);
-        m_PhysicalScopeTextureAt.store(0u,std::memory_order_release);
+        UpdatePhysicalScopeWeapon(nullptr, nullptr);
         // If we temporarily lose the local player (connect/disconnect/map change),
         // clear mounted-gun edge tracking so we don't trigger a bogus reset later.
         m_UsingMountedGunPrev = false;
@@ -999,15 +997,16 @@ void VR::UpdateTracking()
 
     // Scope weapon classification (non-firearm can still use scope when front-view 3P forces it).
     m_ScopeWeaponIsFirearm = false;
-    m_PhysicalScopeWeaponId.store(0, std::memory_order_release);
+    C_WeaponCSBase* scopeWeapon = nullptr;
     if (C_BaseCombatWeapon* active = viewPlayer->GetActiveWeapon())
     {
         if (C_WeaponCSBase* weapon = (C_WeaponCSBase*)active)
         {
             m_ScopeWeaponIsFirearm = IsFirearmWeaponId(weapon->GetWeaponID());
-            m_PhysicalScopeWeaponId.store(static_cast<int>(weapon->GetWeaponID()), std::memory_order_release);
+            scopeWeapon = weapon;
         }
     }
+    UpdatePhysicalScopeWeapon(viewPlayer, scopeWeapon);
     m_BulletAimWeaponEligible.store(m_ScopeWeaponIsFirearm &&
         !IsUsingMountedGun(viewPlayer), std::memory_order_release);
     RefreshActiveViewmodelAdjustment(viewPlayer);

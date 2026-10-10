@@ -5524,7 +5524,8 @@ void __fastcall Hooks::dRenderView(void* ecx, void* edx, CViewSetup& setup, CVie
 	timingStereoSceneMs = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - stereoSceneStartTime).count();
 
 	auto renderToTexture_SetRT = [&](ITexture* target, int texW, int texH, QAngle passAngles,
-		CViewSetup& view, CViewSetup& hud, HooksNekoPostPass nekoPostPass)
+		CViewSetup& view, CViewSetup& hud, HooksNekoPostPass nekoPostPass,
+		const PhysicalScopeRenderSnapshot* physicalScope = nullptr)
 		{
 			// Scope/rear-mirror RTTs are allowed in queued rendering. Do not touch
 			// EngineClient viewangles in queueMode!=0; CViewSetup already carries
@@ -5537,6 +5538,7 @@ void __fastcall Hooks::dRenderView(void* ecx, void* edx, CViewSetup& setup, CVie
 				m_VR->HandleMissingRenderContext("Hooks::dRenderView(offscreen)");
 				return;
 			}
+			const uint32_t scopeImageEpoch = m_VR->m_SourceRenderQueueMarkerEpoch.load(std::memory_order_acquire);
 
 			const bool prevSuppress = m_VR->m_SuppressHudCapture;
 			m_VR->m_SuppressHudCapture = true;
@@ -5586,6 +5588,11 @@ void __fastcall Hooks::dRenderView(void* ecx, void* edx, CViewSetup& setup, CVie
 				hkViewport.fOriginal(rc, oldX, oldY, oldW, oldH);
 
 			m_VR->m_SuppressHudCapture = prevSuppress;
+			if (physicalScope)
+			{
+				if (queueMode == 0) m_VR->PublishPhysicalScopeImage(*physicalScope, scopeImageEpoch);
+				else m_VR->QueuePhysicalScopeImage(rc, *physicalScope, scopeImageEpoch);
+			}
 		};
 
 	bool scopeLensPostProcessPending = false;
@@ -5593,7 +5600,10 @@ void __fastcall Hooks::dRenderView(void* ecx, void* edx, CViewSetup& setup, CVie
 	// ----------------------------
 	// Scope RTT pass: render from scope camera into vrScope RTT
 	// ----------------------------
-	if (m_VR->m_CreatedVRTextures.load(std::memory_order_acquire) && m_VR->ShouldRenderScope() && m_VR->m_ScopeTexture && m_VR->ShouldUpdateScopeRTT())
+	PhysicalScopeRenderSnapshot physicalScope{};
+	const bool physicalScopeMode = m_VR->IsPhysicalScopeMode();
+	const bool physicalScopeReady = !physicalScopeMode || m_VR->ReadPhysicalScopeRender(physicalScope);
+	if (physicalScopeReady && m_VR->m_CreatedVRTextures.load(std::memory_order_acquire) && m_VR->ShouldRenderScope() && m_VR->m_ScopeTexture && m_VR->ShouldUpdateScopeRTT())
 	{
 		CViewSetup scopeView = setup;
 		scopeView.x = 0;
@@ -5608,14 +5618,14 @@ void __fastcall Hooks::dRenderView(void* ecx, void* edx, CViewSetup& setup, CVie
 			m_VR->m_ThirdPersonFrontViewEnabled && m_VR->m_IsThirdPersonCamera;
 		scopeView.fov = thirdPersonFrontViewScope
 			? m_VR->m_ThirdPersonFrontViewOverlayFov
-			: m_VR->GetScopeRenderFov();
+			: physicalScopeMode ? physicalScope.fov : m_VR->GetScopeRenderFov();
 		scopeView.m_flAspectRatio = 1.0f;
 		scopeView.fovViewmodel = scopeView.fov;
 		scopeView.zNear = m_VR->m_ScopeZNear;
 		scopeView.zNearViewmodel = 99999.0f; // hard-clip viewmodel so scope image is "world only"
 
-		QAngle scopeAngles = m_VR->GetScopeCameraAbsAngle();
-		scopeView.origin = m_VR->GetScopeCameraAbsPos();
+		QAngle scopeAngles = physicalScopeMode ? physicalScope.angles : m_VR->GetScopeCameraAbsAngle();
+		scopeView.origin = physicalScopeMode ? physicalScope.origin : m_VR->GetScopeCameraAbsPos();
 		scopeView.angles.x = scopeAngles.x;
 		scopeView.angles.y = scopeAngles.y;
 		scopeView.angles.z = scopeAngles.z;
@@ -5628,13 +5638,9 @@ void __fastcall Hooks::dRenderView(void* ecx, void* edx, CViewSetup& setup, CVie
 
 		renderToTexture_SetRT(m_VR->m_ScopeTexture,
 			m_VR->m_ScopeRTTSize, m_VR->m_ScopeRTTSize,
-			scopeAngles, scopeView, hudScope, HooksNekoPostPass::Scope);
+			scopeAngles, scopeView, hudScope, HooksNekoPostPass::Scope,
+			physicalScopeMode ? &physicalScope : nullptr);
 		m_VR->m_ScopeRenderingPass = false;
-		if (m_VR->IsPhysicalScopeMode())
-		{
-			m_VR->m_PhysicalScopeTextureWeaponId.store(m_VR->m_PhysicalScopeWeaponId.load(std::memory_order_acquire), std::memory_order_release);
-			m_VR->m_PhysicalScopeTextureAt.store(GetTickCount64(),std::memory_order_release);
-		}
 		scopeLensPostProcessPending = true;
 	}
 

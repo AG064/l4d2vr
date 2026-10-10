@@ -3432,6 +3432,20 @@ bool VR::RemoteShellRequestPending() const
     std::lock_guard<std::mutex> lock(m_RemoteShellMutex);
     return m_RemoteShellRequest.Pending();
 }
+void VR::UpdatePhysicalScopeWeapon(C_BasePlayer* owner, C_WeaponCSBase* weapon)
+{
+    const int id = weapon ? static_cast<int>(weapon->GetWeaponID()) : 0;
+    const uint32_t handle = l4d2vr_optics::HasOptic(id)
+        ? MagazineInteractionActiveWeaponHandle(m_Game, owner, weapon) : 0u;
+    std::lock_guard<std::mutex> lock(m_PhysicalScopeLensMutex);
+    if (m_PhysicalScopeWeapons.Observe(reinterpret_cast<uintptr_t>(owner), handle, id))
+    {
+        m_PhysicalScopeLenses[0] = {}; m_PhysicalScopeLenses[1] = {};
+        m_PhysicalScopeImage = {}; m_PhysicalScopeProcessedImage = {}; m_PhysicalScopeRender = {};
+    }
+    m_PhysicalScopeWeaponId.store(m_PhysicalScopeWeapons.Current().Valid() ? id : 0, std::memory_order_release);
+}
+
 bool VR::HasFreshMagazineInteractionTracking() const
 {
     VRWorldPoseTrackingSnapshot pose{};

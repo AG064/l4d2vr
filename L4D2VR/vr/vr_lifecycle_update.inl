@@ -342,6 +342,29 @@ namespace
         bool m_HaveScopeLens = false;
     };
 
+    class PhysicalScopeImageFunctor final : public CFunctor
+    {
+    public:
+        PhysicalScopeImageFunctor(VR* vr, const PhysicalScopeRenderSnapshot& snapshot, uint32_t epoch)
+            : m_VR(vr), m_Snapshot(snapshot), m_Epoch(epoch) {}
+        int AddRef() override { return static_cast<int>(m_Refs.fetch_add(1, std::memory_order_acq_rel) + 1); }
+        int Release() override
+        {
+            const long refs = m_Refs.fetch_sub(1, std::memory_order_acq_rel) - 1;
+            if (!refs) delete this;
+            return static_cast<int>(refs);
+        }
+        void operator()() override
+        {
+            if (m_VR) m_VR->PublishPhysicalScopeImage(m_Snapshot, m_Epoch);
+        }
+    private:
+        std::atomic<long> m_Refs{0};
+        VR* m_VR = nullptr;
+        PhysicalScopeRenderSnapshot m_Snapshot{};
+        uint32_t m_Epoch = 0u;
+    };
+
     inline bool IsSourceQueueReadableProtection(DWORD protect)
     {
         if (protect & PAGE_GUARD)
@@ -5120,8 +5143,32 @@ void VR::NotifyRearMirrorSpecialWarning()
     m_LastRearMirrorAlertTime = std::chrono::steady_clock::now();
 }
 
+bool VR::QueuePhysicalScopeImage(IMatRenderContext* context, const PhysicalScopeRenderSnapshot& snapshot, uint32_t renderEpoch)
+{
+    void* contextVtable = nullptr;
+    void* getCallQueue = nullptr;
+    ICallQueue* queue = GetSourceRenderContextCallQueue(context, &contextVtable, &getCallQueue);
+    void* queueVtable = nullptr;
+    if (!IsSourceCallQueueUsable(queue, &queueVtable)) return false;
+    queue->QueueFunctor(new PhysicalScopeImageFunctor(this, snapshot, renderEpoch));
+    return true;
+}
+
 bool VR::ShouldUpdateScopeRTT()
 {
+    if (IsPhysicalScopeMode())
+    {
+        PhysicalScopeRenderSnapshot snapshot{};
+        if (ReadPhysicalScopeRender(snapshot) &&
+            !l4d2vr_optics::ImageMatches(ReadPhysicalScopeImage(), snapshot.weapon, snapshot.magnification,
+                m_SourceRenderQueueMarkerEpoch.load(std::memory_order_acquire), GetTickCount64()))
+        {
+            // A new gun or zoom needs its own image, even if normal pacing would
+            // retain the previous frame. There is still one RTT pass per frame.
+            m_LastScopeRTTRenderTime = std::chrono::steady_clock::now();
+            return true;
+        }
+    }
     // Keep the scope RTT pacing aligned with the HMD refresh rate.
     // This avoids exposing another manual config knob while still preventing multiple scope updates per HMD frame.
     float effectiveMaxHz = GetHmdDisplayFrequencyHz();

@@ -73,6 +73,18 @@ checksum mismatches disable the applicable path. No physical-scope activation
 changes controller sensitivity, weapon aim, bullet origin or bullet calibration.
 Mouse and third-person modes retain their existing scope behavior.
 
+Physical lens and image snapshots also carry the native weapon handle, owner and
+draw generation. Switching between guns of the same type or holstering/redrawing
+a gun invalidates earlier snapshots. The scope camera's position, angles, FOV and
+magnification are captured together. Image readiness is published after its Source
+render commands in queue order, and a changed render-resource epoch rejects it.
+The raw and processed images retain separate stamps, so an older processed lens
+cannot borrow the readiness of a newer raw render or a different zoom setting.
+Changing the gun, zoom or render-resource epoch requests a fresh RTT immediately,
+while unchanged valid images keep the normal HMD refresh pacing.
+HMD and gun-hand tracking must be fresh and finite; losing only the support hand
+does not disable a one-handed optic.
+
 The optics tests cover magnification ratios, eye relief, pupil rejection, pose
 translation/rotation, model identity, non-finite input and stale samples. Native
 depth, UV orientation, aperture placement, occlusion, reticle alignment and timing

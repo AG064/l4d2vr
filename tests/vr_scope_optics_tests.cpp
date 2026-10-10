@@ -17,6 +17,31 @@
 int main()
 {
     using namespace l4d2vr_optics;
+    WeaponTracker weapon;
+    CHECK(weapon.Observe(10u, 0x3005u, 35));
+    const auto first = weapon.Current();
+    CHECK(first.Valid() && !weapon.Observe(10u, 0x3005u, 35));
+    ImageStamp image{first, 2.0f, 0u, 7u};
+    CHECK(!ImageMatches(image, first, 2.0f, 7u, 100u)); // Submission is not completion.
+    image.completedAt = 100u;
+    CHECK(ImageMatches(image, first, 2.0f, 7u, 150u));
+    CHECK(!ImageMatches(image, first, 4.0f, 7u, 150u)); // Old zoom cannot label a new view.
+    CHECK(!ImageMatches(image, first, 2.0f, 8u, 150u)); // Device/queue lifecycle changed.
+    CHECK(!ImageMatches(image, first, 2.0f, 7u, 201u));
+    CHECK(!ImageMatches(image, first, 2.0f, 7u, 99u));
+    CHECK(weapon.Observe(10u, 0x4005u, 35));
+    CHECK(!ImageMatches(image, weapon.Current(), 2.0f, 7u, 150u)); // Same type, different gun.
+    CHECK(weapon.Observe(10u, 0x3005u, 1));
+    CHECK(!weapon.Current().Valid());
+    CHECK(weapon.Observe(10u, 0x3005u, 35));
+    CHECK(!ImageMatches(image, weapon.Current(), 2.0f, 7u, 150u)); // Drawing it again needs a new render.
+    CHECK(weapon.Observe(20u, 0x3005u, 35));
+    CHECK(!ImageMatches(image, weapon.Current(), 2.0f, 7u, 150u));
+    image = {weapon.Current(), 4.0f, 160u, 8u};
+    CHECK(ImageMatches(image, weapon.Current(), 4.0f, 8u, 180u));
+    CHECK(!ImageMatches(image, weapon.Current(), std::numeric_limits<float>::quiet_NaN(), 8u, 180u));
+    CHECK(weapon.Observe(20u, 0xffffffffu, 35));
+    CHECK(!weapon.Current().Valid());
     for (int id = 0; id < 50; ++id)
         CHECK(HasOptic(id) == (id == 6 || id == 10 || id == 34 || id == 35 || id == 36));
     const Vector lens(10.0f, 0.0f, 0.0f), axis(1.0f, 0.0f, 0.0f);

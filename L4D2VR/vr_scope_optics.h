@@ -4,6 +4,7 @@
 #include <cmath>
 #include <cstdint>
 #include <string_view>
+#include <limits>
 
 namespace l4d2vr_optics
 {
@@ -40,6 +41,50 @@ namespace l4d2vr_optics
     }
     inline constexpr bool HasOptic(int id)
     { return id == 6 || id == 10 || id == 34 || id == 35 || id == 36; }
+    struct WeaponIdentity
+    {
+        std::uintptr_t owner = 0u;
+        std::uint32_t handle = 0u;
+        int id = 0;
+        std::uint64_t generation = 0u;
+        bool Valid() const { return owner && handle && handle != 0xffffffffu && HasOptic(id) && generation; }
+        bool operator==(const WeaponIdentity& other) const
+        { return owner == other.owner && handle == other.handle && id == other.id && generation == other.generation; }
+    };
+    class WeaponTracker
+    {
+    public:
+        const WeaponIdentity& Current() const { return m_Current; }
+        bool Observe(std::uintptr_t owner, std::uint32_t handle, int id)
+        {
+            if (!owner || !handle || handle == 0xffffffffu || !HasOptic(id))
+            {
+                const bool changed = m_Current.Valid(); m_Current = {}; return changed;
+            }
+            if (m_Current.Valid() && m_Current.owner == owner && m_Current.handle == handle && m_Current.id == id)
+                return false;
+            if (m_Generation == (std::numeric_limits<std::uint64_t>::max)())
+            { m_Current = {}; return true; }
+            m_Current = {owner, handle, id, ++m_Generation}; return true;
+        }
+    private:
+        WeaponIdentity m_Current{};
+        std::uint64_t m_Generation = 0u;
+    };
+    struct ImageStamp
+    {
+        WeaponIdentity weapon{};
+        float magnification = 0.0f;
+        std::uint64_t completedAt = 0u;
+        std::uint32_t renderEpoch = 0u;
+    };
+    inline bool ImageMatches(const ImageStamp& image, const WeaponIdentity& weapon,
+        float magnification, std::uint32_t renderEpoch, std::uint64_t now)
+    {
+        return weapon.Valid() && image.weapon == weapon && image.renderEpoch == renderEpoch &&
+            Fresh(now, image.completedAt) && std::isfinite(magnification) && magnification >= 1.0f &&
+            std::isfinite(image.magnification) && std::fabs(image.magnification - magnification) <= 0.001f;
+    }
     inline float Magnification(float controlFov, float maxControlFov, float base)
     {
         if (!std::isfinite(controlFov) || !std::isfinite(maxControlFov) || !std::isfinite(base) ||

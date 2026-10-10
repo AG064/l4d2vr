@@ -10208,6 +10208,7 @@ bool VR::ApplyScopeLensPostProcess()
 
     scopeSurface = m_D9ScopeSurface;
     scopeSurface->AddRef();
+    const auto physicalScopeSource = ReadPhysicalScopeImage();
 
     auto releaseRefs = [&]()
         {
@@ -10452,6 +10453,7 @@ bool VR::ApplyScopeLensPostProcess()
     }
 
     m_ScopeLensOverlayReady.store(ok ? 1u : 0u, std::memory_order_release);
+    if (ok) PublishPhysicalScopeProcessedImage(physicalScopeSource);
 
     unlockDevice();
     releaseRefs();
