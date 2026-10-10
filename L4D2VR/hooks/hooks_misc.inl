@@ -924,7 +924,6 @@ namespace
         struct ControllerPairReadiness
         {
             VR* owner = nullptr;
-            uint32_t generation = 0;
             bool ready = false;
             bool waitingLogged = false;
             bool readyLogged = false;
@@ -946,12 +945,12 @@ namespace
         constexpr auto kStableDuration = std::chrono::milliseconds(200);
 
         std::lock_guard<std::mutex> lock(s_readinessMutex);
-        if (s_readiness.owner != vr ||
-            s_readiness.generation != generation)
+        // Animation-freeze generations can change every frame. They are not
+        // controller tracking loss and must not restart the stability interval.
+        if (s_readiness.owner != vr)
         {
             s_readiness = ControllerPairReadiness{};
             s_readiness.owner = vr;
-            s_readiness.generation = generation;
         }
 
         if (!bothControllersValid)

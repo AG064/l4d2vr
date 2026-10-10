@@ -846,10 +846,9 @@ bool VrHandSystem::EnsureInitialized(
             (input->GetActionHandle(hand.actionPath, &hand.action) != vr::VRInputError_None ||
                 hand.action == vr::k_ulInvalidActionHandle))
         {
-            m_DependencyUnavailable = true;
             m_DependencyFailureReason = std::string("missing SteamVR skeletal action: ") +
                 (hand.actionPath ? hand.actionPath : "<unknown>");
-            return false;
+            continue;
         }
 
         vr::InputSkeletalActionData_t actionData{};
@@ -866,37 +865,31 @@ bool VrHandSystem::EnsureInitialized(
                     Game::logMsg("[VR][Hands] waiting for active skeletal action: %s", hand.actionPath);
                 }
             }
-            return false;
+            continue;
         }
 
         std::string error;
         if (!hand.skeleton.Initialize(input, hand.action, error))
         {
-            m_DependencyUnavailable = true;
             m_DependencyFailureReason = "failed to initialize SteamVR hand skeleton";
             if (!error.empty())
                 m_DependencyFailureReason += ": " + error;
-            return false;
+            continue;
         }
         hand.skeletonInitialized = true;
     }
 
-    m_Initialized = true;
+    m_Initialized = false;
     for (size_t handIndex = 0; handIndex < m_Hands.size(); ++handIndex)
     {
-        if (usesViewmodelPose(handIndex))
-            continue;
-        if (!m_Hands[handIndex].skeletonInitialized)
-        {
-            m_Initialized = false;
-            break;
-        }
+        if (usesViewmodelPose(handIndex) || m_Hands[handIndex].skeletonInitialized)
+            m_Initialized = true;
     }
     if (m_Initialized && debugLog && !m_DebugInitializationLogged)
     {
         m_DebugInitializationLogged = true;
-        const char* leftMode = usesViewmodelPose(0u) ? "viewmodel" : "openvr";
-        const char* rightMode = usesViewmodelPose(1u) ? "viewmodel" : "openvr";
+        const char* leftMode = usesViewmodelPose(0u) ? "viewmodel" : m_Hands[0].skeletonInitialized ? "openvr" : "pending";
+        const char* rightMode = usesViewmodelPose(1u) ? "viewmodel" : m_Hands[1].skeletonInitialized ? "openvr" : "pending";
         Game::logMsg(
             "[VR][Hands] initialized left=%s/%u vertices right=%s/%u vertices",
             leftMode,

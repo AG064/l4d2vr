@@ -2123,9 +2123,9 @@ void VR::Update()
 }
 
 bool VR::GetWalkAxis(float& x, float& y) {
-    vr::InputAnalogActionData_t d;
+    vr::InputAnalogActionData_t d{};
     bool hasAxis = false;
-    if (GetAnalogActionData(m_ActionWalk, d)) {
+    if (GetAnalogActionData(m_ActionWalk, d) && d.bActive && std::isfinite(d.x) && std::isfinite(d.y)) {
         x = d.x;
         y = d.y;
         hasAxis = true;
@@ -2133,6 +2133,19 @@ bool VR::GetWalkAxis(float& x, float& y) {
     else
     {
         x = y = 0.0f;
+    }
+    if (m_VrHandsDebugLog)
+    {
+        static std::atomic<int> previousState{-1};
+        const int currentState = hasAxis ? 1 : 0;
+        if (previousState.exchange(currentState, std::memory_order_acq_rel) != currentState)
+        {
+            const auto left = m_System ? m_System->GetTrackedDeviceIndexForControllerRole(vr::TrackedControllerRole_LeftHand)
+                : vr::k_unTrackedDeviceIndexInvalid;
+            Game::logMsg("[VR][Input] Walk action %s active=%d leftDevice=%u leftConnected=%d",
+                hasAxis ? "available" : "unavailable", d.bActive ? 1 : 0, left,
+                m_System && left < vr::k_unMaxTrackedDeviceCount && m_System->IsTrackedDeviceConnected(left) ? 1 : 0);
+        }
     }
     return hasAxis;
 }
