@@ -140,8 +140,8 @@ native fallback. Hidden-magazine contact publication uses a retargeted copy, and
 the slide's runtime sign hint is converted back to the native pre-retarget frame.
 Empty/tactical, finite/infinite and retained-magazine sequences are tested for
 both single hands. Native hand/model alignment, queued rendering, downing and
-matching co-op acceptance still need headset testing. Independent dual reloads
-and persistent magazine objects remain unfinished.
+matching co-op acceptance still need headset testing. Dual pistols intentionally
+use their shared native button reload. Persistent magazine objects remain unfinished.
 
 Native pickup hand assignment now remaps verified single-pistol physical state
 to the receiving hand. Attached-magazine and chamber bits plus removed contents

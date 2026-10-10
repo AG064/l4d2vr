@@ -315,7 +315,7 @@ namespace
         { "GripReleaseDropEnabled", CfgOptionType::Bool, "Weapons / Throwables", "Grip weapon pickup and release", 0.0f, 0.0f, "false" },
         { "BodyGripInventoryEnabled", CfgOptionType::Bool, "Hands / Manual Reload", "Grip body inventory", 0.0f, 0.0f, "false" },
         { "ManualPumpEnabled", CfgOptionType::Bool, "Hands / Manual Reload", "Manual shotgun pump", 0.0f, 0.0f, "false" },
-        { "DualPistolsNativeReloadFallbackEnabled", CfgOptionType::Bool, "Hands / Manual Reload", "Native dual pistol reload fallback", 0.0f, 0.0f, "false" },
+        { "DualPistolsNativeReloadFallbackEnabled", CfgOptionType::Bool, "Hands / Manual Reload", "Dual pistol button reload", 0.0f, 0.0f, "true" },
         { "DualPistolsIndependentHandsEnabled", CfgOptionType::Bool, "Weapons / Throwables", "Independent dual pistol hands", 0.0f, 0.0f, "false" },
         { "MagazineReleaseButtonRequired", CfgOptionType::Bool, "Hands / Manual Reload", "Require magazine release button", 0.0f, 0.0f, "false" },
         { "ObjectPullEnabled", CfgOptionType::Bool, "\xE6\xAD\xA6\xE5\x99\xA8 / \xE9\x9A\x94\xE7\xA9\xBA\xE6\x8A\x93\xE5\x8F\x96", "\xE9\x9A\x94\xE7\xA9\xBA\xE6\x8A\x93\xE5\x8F\x96", 0.00f, 0.00f, "true" },
@@ -1033,7 +1033,7 @@ namespace
         { "RightAmmoHudZOffset", "HUD (Hand)", "Ammo HUD Position Z", "Moves the gun-hand ammo HUD up or down in controller-local space.", "Adjust one axis at a time until the ammo display sits naturally near the weapon hand." },
         
         { "GripReleaseDropEnabled", "Weapons / Throwables", "Grip Pickup and Release", "Hold Weapon Grip near a usable weapon to pick it up; release the same grip to drop it on a VR-capable server.", "Requires Manual Throw. Keyboard and joystick switches require a fresh grip. Menus and tracking/action loss cancel a pending drop." },
-        { "DualPistolsNativeReloadFallbackEnabled", "Hands / Manual Reload", "Native Dual Pistol Reload", "Use Magazine Release to start the native dual-pistol reload while physical dual reload is incomplete.", "Only affects dual pistols. Physical single-pistol and other weapon reloads remain available. Native empty-clip auto reload and reload audio are allowed for dual pistols." },
+        { "DualPistolsNativeReloadFallbackEnabled", "Hands / Manual Reload", "Dual Pistol Button Reload", "Use Magazine Release to reload both pistols together with the native reload. Enabled by default.", "Single pistols retain magazine and slide interactions where supported. A retained single pistol without manual reload support also uses the native reload. Native empty-clip auto reload and reload audio are allowed for dual pistols." },
         { "DualPistolsIndependentHandsEnabled", "Weapons / Throwables", "Independent Dual Pistols", "Each pistol follows its own controller. Primary and secondary triggers fire from their corresponding hand on a VR-capable server.", "Left trigger replaces shove while dual pistols are equipped. Both held triggers alternate at the native weapon rate. Ammo, reload and firing animation remain the game's shared dual-pistol system." },
         { "BodyGripInventoryEnabled", "Hands / Manual Reload", "Body Grip Inventory", "Draw carried items by holding the weapon-hand grip near their body slot. Ammo pickup uses the same stable body reference.", "Back: primary. Weapon-side waist: secondary. Other waist: throwable/ammo. Chest: medical kit. Chest side: pills. Uses native inventory slots; items must already be carried." },
         { "ManualPumpEnabled", "Hands / Manual Reload", "Manual Shotgun Pump", "Pump and chrome shotguns require a full rear and forward fore-end stroke after a shot.", "Releasing the fore-end preserves its position. Automatic shotguns retain their normal cycling. Requires VR hands, manual reload and the shotgun server hook. Disable this option if an unsupported model has no usable pump pose." },
@@ -2533,7 +2533,7 @@ GripReleaseDropEnabled=false
 BodyGripInventoryEnabled=false
 ManualPumpEnabled=false
 DualPistolsIndependentHandsEnabled=false
-DualPistolsNativeReloadFallbackEnabled=false
+DualPistolsNativeReloadFallbackEnabled=true
 MagazineReleaseButtonRequired=false
 ManualThrowVelocityScale=4.0
 ManualThrowHorizontalVelocityScale=1.0

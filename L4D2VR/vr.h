@@ -1231,7 +1231,7 @@ public:
     std::atomic<bool> m_ManualPumpBlockingFire{ false };
     std::atomic<bool> m_BodyAmmoAvailable{ false };
     bool m_DualPistolsIndependentHandsEnabled = false;
-    bool m_DualPistolsNativeReloadFallbackEnabled = false;
+    bool m_DualPistolsNativeReloadFallbackEnabled = true;
     std::atomic<uint32_t> m_DualPistolNativeReloadState{ 0u };
     l4d2vr_dual::ReloadPulse m_DualPistolNativeReloadPulse;
     std::atomic<bool> m_DualPistolsActive{ false };

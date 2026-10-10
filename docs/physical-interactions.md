@@ -96,7 +96,8 @@ Enable `ManualThrowEnabled`, `GripReleaseDropEnabled`, and
 `DualPistolsIndependentHandsEnabled` to test pistol detachment on a server
 running the same build. Keep `DualPistolsNativeReloadFallbackEnabled` enabled
 for dual pistols and for a single pistol retained in the gameplay left hand.
-The repository config leaves these experimental switches off by default.
+The repository config leaves pickup/drop and independent tracking switches off
+by default. Shared dual-pistol button reload is enabled by default.
 The server also advertises `l4d2vr_interaction_ack 1` separately from its pose
 relay acknowledgement. Grip transport, independent pistol commands and native
 reload suppression require that matching capability. A pose-only or older
@@ -220,10 +221,10 @@ native bindings retain conventional reload. The source-side controller and
 mechanical-frame routing is tested offline; headset/model and co-op acceptance
 are pending.
 
-Dual pistols still use their shared native reload fallback. Independent dual
-reload gestures and persistent magazine objects remain unfinished. Matching
-builds and gameplay acceptance are required before claiming independent physical
-reloads.
+Dual pistols intentionally use their shared native button reload. Both hands
+hold a gun, so separate magazine and slide gestures are outside the current
+interaction design. Persistent magazine objects and native headset/co-op
+acceptance remain unfinished.
 
 An optional client prediction-command hook scopes local pistol bullet effects,
 hand haptics and predicted hit feedback to the command Source is simulating.

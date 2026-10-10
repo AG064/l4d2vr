@@ -41,10 +41,13 @@ ammo replication. Lost replies retry the same request up to three times, without
 applying its ammo transfer twice. Timeout or a changed weapon cancels the pending
 gesture.
 
-This input change does not implement separate physical magazines or chambers for
-dual pistols. Dual-pistol physical reload, native hand tracking without gloves,
-and recovery after incapacitation still need in-game verification. The existing
-VR Gloves workaround remains available.
+Dual pistols intentionally use a button reload because both hands hold a gun.
+With this Quest profile, right A reloads both pistols together using the native
+animation. `DualPistolsNativeReloadFallbackEnabled=true` is the default. Manual
+magazine and slide gestures remain available for a single pistol in either hand
+on a supported host. Native button reload, hand tracking without gloves and
+recovery after incapacitation still need in-game verification. The existing VR
+Gloves workaround remains available.
 
 An older workshop `config.sample` must not erase the saved optional release
 setting. A commented sample default seeds a missing setting; an active sample

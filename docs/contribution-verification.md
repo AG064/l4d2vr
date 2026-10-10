@@ -266,7 +266,8 @@ Geometry and ownership regression checks do not prove native visual acceptance.
 
 Muzzle flashes use the native animation parity/event path, which remains separate
 from this tracer change and still needs a command-to-event binding. Independent
-dual reload, left-pistol grip alignment and multiplayer acceptance remain pending.
+dual-pistol button reload, left-pistol grip alignment and multiplayer acceptance
+remain pending in native gameplay.
 
 ## Pistol firing animation selection
 
@@ -367,5 +368,5 @@ states, empty and tactical reloads, and every magazine action. They verify one
 host mutation, unchanged opposite-hand ammo, replication waits, retry limits,
 timeout, invalid replies and cancellation. The wire version is unchanged.
 This strengthens the existing single-pistol gesture path and the dual-capable
-transaction backend. Independent dual reload gestures remain unfinished; native
-headset and matching-build multiplayer acceptance remain pending.
+transaction backend. Dual pistols intentionally use a shared native button
+reload; native headset and matching-build multiplayer acceptance remain pending.
