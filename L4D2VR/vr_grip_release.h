@@ -35,8 +35,17 @@ namespace l4d2vr_grip
         }
         bool IsArmed() const { return m_Armed; }
         bool WaitingForRelease() const { return m_WaitForRelease; }
-        bool Update(bool eligible, bool actionActive, bool down, std::uintptr_t weapon)
+        bool Update(bool eligible, bool actionActive, bool down, std::uintptr_t weapon,
+            std::uint32_t discontinuity = 0u)
         {
+            if (discontinuity != m_Discontinuity)
+            {
+                m_Discontinuity = discontinuity;
+                m_Weapon = weapon;
+                m_Armed = false;
+                m_WaitForRelease = true;
+                return false;
+            }
             if (!eligible || !actionActive || weapon == 0u)
             {
                 Reset();
@@ -83,5 +92,6 @@ namespace l4d2vr_grip
         std::uintptr_t m_Weapon = 0u;
         bool m_Armed = false;
         bool m_WaitForRelease = false;
+        std::uint32_t m_Discontinuity = 0u;
     };
 }

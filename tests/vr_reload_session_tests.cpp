@@ -58,11 +58,88 @@ static void CheckEmptyPumpReload(int weaponId)
     Check(PumpShouldStartAfterShot(true, clip - 1, 0), "A normal shot with remaining shells still enters the pump stage");
 }
 
+static void CheckUnfinishedCycleReturn(int weaponId, int capacity, bool shotgun)
+{
+    using namespace l4d2vr_magazine;
+    constexpr std::uintptr_t owner = 501u, gun = 601u;
+    constexpr std::uint32_t handle = 0x3005u;
+    ChamberHistory chamber;
+    SessionTracker session;
+    chamber.ObserveOwner(true, owner);
+    chamber.Observe(gun, handle, weaponId, 0);
+    const unsigned mode = 3u | (shotgun ? kAuthoritativeShellInputMode : kAuthoritativeMagazineInputMode);
+    session.Observe(true, owner, gun, weaponId, mode, handle);
+    const bool infinite = weaponId == 32;
+    int clip = 0, reserve = shotgun ? 1 : infinite ? 0 : capacity;
+    const int originalAmmo = clip + reserve;
+    int writes = 0;
+    const auto writer = [&](int nextClip, int nextReserve) { clip = nextClip; reserve = nextReserve; ++writes; return true; };
+    if (shotgun)
+    {
+        l4d2vr_shell::ServerLedger host; host.Reset(9u);
+        l4d2vr_shell::ClientRequest client; client.Offer(l4d2vr_shell::kVersion,9u);
+        l4d2vr_shell::Request request{}; l4d2vr_shell::Reply reply{};
+        Check(client.Begin(handle,weaponId,clip,reserve,201u,owner,1u,1000u,request), "The last reserve shell can start insertion");
+        const l4d2vr_shell::Snapshot native{true,handle,201u,weaponId,clip,reserve,capacity};
+        const auto applied = host.Apply(request,native,1000u,writer);
+        client.Receive(applied);
+        Check(client.Update(handle,weaponId,owner,1u,1001u,reply,clip,reserve) == l4d2vr_shell::ClientRequest::Poll::Result,
+            "The host shell result settles through actual replicated counters");
+    }
+    else
+    {
+        l4d2vr_remote_mag::ServerLedger host; host.Reset(9u);
+        l4d2vr_remote_mag::ClientRequest client; client.Offer(l4d2vr_remote_mag::kVersion,9u);
+        for (const auto action : {l4d2vr_remote_mag::Action::Eject,l4d2vr_remote_mag::Action::Insert})
+        {
+            const bool eject = action == l4d2vr_remote_mag::Action::Eject;
+            const unsigned command = eject ? 201u : 202u;
+            const std::uint64_t now = eject ? 1000u : 1300u;
+            l4d2vr_remote_mag::Request request{}; l4d2vr_remote_mag::Reply reply{};
+            Check(client.Begin(handle,weaponId,clip,reserve,action,command,owner,1u,now,request), "An empty magazine reload submits native counters");
+            const l4d2vr_remote_mag::Snapshot native{true,handle,command,weaponId,clip,reserve,capacity,infinite};
+            const auto applied = host.Apply(request,native,now,writer);
+            Check(applied.status == l4d2vr_shell::Status::Applied, "The host applies each empty magazine action");
+            client.Receive(applied);
+            Check(client.Update(handle,weaponId,owner,1u,now+1u,reply,clip,reserve) == l4d2vr_shell::ClientRequest::Poll::Result,
+                "The magazine result settles through actual replicated counters");
+        }
+    }
+    Check(clip > 0 && reserve == 0 && (infinite ? clip == capacity : clip + reserve == originalAmmo),
+        "The physical cycle must use the last existing ammo or native infinite capacity");
+    chamber.Observe(gun,handle,weaponId,clip);
+    Check(session.Observe(true,owner,602u,12,3u,0x3006u), "Switching to an item fences only the active hand session");
+    chamber.ObserveOwner(true,owner); chamber.Observe(602u,0x3006u,12,-1);
+    Check(session.Observe(true,owner,gun,weaponId,mode,handle), "Returning starts a fresh hand session");
+    chamber.ObserveOwner(true,owner); chamber.Observe(gun,handle,weaponId,clip);
+    const bool retained = chamber.HasEmptyChamber(owner,gun,handle,weaponId);
+    Check(retained, "A same-owner same-serial return preserves its unfinished chamber cycle");
+    Check(shotgun ? MayFinishShotgunLoading(true,retained,clip,0,true) : ShouldResumeMagazineCycle(true,false,retained,clip),
+        "A returned loaded gun can cycle with no spare reserve and no insertions in the new session");
+    Check(chamber.HasEmptyChamber(owner,gun,handle,weaponId), "Missing or stale render regions do not ready the chamber");
+    Check(!chamber.HasEmptyChamber(owner+1u,gun,handle,weaponId) &&
+        !chamber.HasEmptyChamber(owner,gun,0x4005u,weaponId) &&
+        !chamber.HasEmptyChamber(owner,gun,handle,weaponId+1), "A reused owner, serial or weapon type cannot inherit the requirement");
+    Check(!ShouldResumeMagazineCycle(false,false,retained,clip), "Lost capability must keep native fallback ownership");
+    Check(!l4d2vr_physical::PumpCycles::StrokeComplete(false,0.0f,0.02f), "A fresh action region alone cannot complete the stroke");
+    Check(l4d2vr_physical::PumpCycles::StrokeComplete(true,0.01f,0.02f), "The existing physical forward stroke can finish the returned gun");
+    chamber.Complete(gun);
+    Check(!chamber.HasEmptyChamber(owner,gun,handle,weaponId), "Only cycle completion releases the retained fire requirement");
+    Check(writes == (shotgun ? 1 : 2), "Switching, region recovery and cycling never write ammunition");
+}
+
 int main()
 {
     using namespace l4d2vr_magazine;
     CheckEmptyPumpReload(3);
     CheckEmptyPumpReload(8);
+    struct StockMagazine { int id, capacity; };
+    for (const auto gun : {StockMagazine{2,50},StockMagazine{5,50},StockMagazine{6,15},StockMagazine{7,50},
+        StockMagazine{9,60},StockMagazine{10,30},StockMagazine{26,40},StockMagazine{32,8},StockMagazine{33,50},
+        StockMagazine{34,50},StockMagazine{35,20},StockMagazine{36,15}})
+        CheckUnfinishedCycleReturn(gun.id,gun.capacity,false);
+    for (const auto gun : {StockMagazine{3,8},StockMagazine{8,8},StockMagazine{4,10},StockMagazine{11,10}})
+        CheckUnfinishedCycleReturn(gun.id,gun.capacity,true);
     SessionTracker serialSession;
     Check(serialSession.Observe(true, 100u, 200u, 3, 3u, 0x3005u), "A native gun starts its own reload session");
     Check(!serialSession.Observe(true, 100u, 200u, 3, 3u, 0x3005u), "The same serial keeps the current gesture");

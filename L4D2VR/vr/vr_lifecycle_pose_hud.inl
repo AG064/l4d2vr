@@ -640,6 +640,9 @@ bool VR::GetLeftHandedMirroredAnalogActionData(vr::VRActionHandle_t actionHandle
             anyQuerySucceeded = true;
             if (!data.bActive || !std::isfinite(data.x) || !std::isfinite(data.y) || !std::isfinite(data.z))
                 continue;
+            if ((actionHandle == m_ActionWalk || actionHandle == m_ActionTurn) &&
+                !l4d2vr_hand_input::ValidStickAxes(data))
+                continue;
 
             const double magnitudeSq = static_cast<double>(data.x) * data.x +
                 static_cast<double>(data.y) * data.y + static_cast<double>(data.z) * data.z;
@@ -732,11 +735,20 @@ bool VR::GetAnalogActionData(vr::VRActionHandle_t& actionHandle, vr::InputAnalog
         analogDataOut = {};
         return false;
     }
+    if ((actionHandle == m_ActionWalk || actionHandle == m_ActionTurn) &&
+        !l4d2vr_hand_input::ValidStickAxes(analogDataOut))
+    {
+        analogDataOut = {};
+        return false;
+    }
     return true;
 }
 
 void VR::ProcessMenuInput()
 {
+    l4d2vr_input::GripSample::Publish(m_WeaponGripInputState, 0u);
+    l4d2vr_input::GripSample::Publish(m_PistolOffhandGripState, 0u);
+    l4d2vr_input::GripSample::Publish(m_MagazineGripInputState, 0u);
     const bool inGame = m_Game->m_EngineClient->IsInGame();
     vr::VROverlayHandle_t currentOverlay = inGame ? m_HUDTopHandle : m_MainMenuHandle;
 

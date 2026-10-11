@@ -44,6 +44,39 @@ namespace l4d2vr_input
         static constexpr std::uint64_t kFailureMask = 0xffffffff00000000ULL;
     };
 
+    class GripContributors
+    {
+    public:
+        void Reset() { m_Held = 0u; m_Context = 0u; }
+        bool Update(std::uint32_t known, std::uint32_t down, std::uint32_t context)
+        {
+            if (context != m_Context) { m_Held = 0u; m_Context = context; }
+            down &= known;
+            const auto unknownHeld = m_Held & ~known;
+            m_Held = unknownHeld | down;
+            return known != 0u && unknownHeld == 0u;
+        }
+        bool Down() const { return m_Held != 0u; }
+    private:
+        std::uint32_t m_Held = 0u, m_Context = 0u;
+    };
+
+    struct GripSample
+    {
+        static std::uint32_t Generation(std::uint32_t sample) { return sample >> 2; }
+        static void Publish(std::atomic<std::uint32_t>& destination, std::uint32_t flags)
+        {
+            const auto previous = destination.load(std::memory_order_acquire);
+            auto generation = previous & ~std::uint32_t{3};
+            flags &= 3u;
+            if ((flags & 1u) == 0u)
+                flags = 0u;
+            if ((previous & 1u) != 0u && (flags & 1u) == 0u)
+                generation += 4u;
+            destination.store(generation | flags, std::memory_order_release);
+        }
+    };
+
     class ReleaseInputGate
     {
     public:

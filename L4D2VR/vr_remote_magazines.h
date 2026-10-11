@@ -9,6 +9,14 @@ namespace l4d2vr_remote_mag
     constexpr int kMaxClip = 512;
     using Status = l4d2vr_shell::Status;
     enum class Action : unsigned { Eject = 0, Insert = 1, Reinsert = 2 };
+    inline bool RetainsRejectedHeldMagazine(Status status, Action action, bool held,
+        bool inputKnown, bool gripDown, bool retained, bool pistol)
+    {
+        if (!held || action == Action::Eject || status == Status::Applied)
+            return false;
+        return l4d2vr_shell::RetainRejectedShell(status) ||
+            (inputKnown && gripDown && (pistol || (action == Action::Reinsert && retained)));
+    }
     inline bool ValidAction(Action action)
     {
         return action == Action::Eject || action == Action::Insert || action == Action::Reinsert;

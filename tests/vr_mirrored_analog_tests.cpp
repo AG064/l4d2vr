@@ -11,6 +11,7 @@
 
 #include "openvr.h"
 #include "../L4D2VR/vr_input_recovery.h"
+#include "../L4D2VR/vr_hand_input_validation.h"
 #include "vr_mirrored_analog_types.inl"
 
 namespace
@@ -89,6 +90,7 @@ struct VR
     bool m_LeftHandedSwapInputActions = true;
     bool m_VrHandsDebugLog = false;
     vr::VRActionHandle_t m_ActionWalk = kWalkAction;
+    vr::VRActionHandle_t m_ActionTurn = 12u;
     uint64_t m_InputActionStateFrameSerial = 1;
     std::unordered_map<vr::VRActionHandle_t, std::vector<LeftHandedMirroredActionSource>> m_LeftHandedAnalogActionSwapMap;
     std::unordered_set<vr::VRActionHandle_t> m_LeftHandedAnalogHandBoundActions{ kWalkAction };
@@ -184,9 +186,9 @@ static void UsableSourceSelectionTests()
     VR large;
     const float maximum = std::numeric_limits<float>::max();
     large.Bind(2, Sample(true, maximum * 0.5f));
-    large.Bind(3, Sample(true, maximum));
-    Require(large.GetLeftHandedMirroredAnalogActionData(kWalkAction, output) && output.x == maximum,
-        "finite source ranking does not overflow float squared magnitude");
+    large.Bind(3, Sample(true, 0.75f));
+    Require(large.GetLeftHandedMirroredAnalogActionData(kWalkAction, output) && output.x == 0.75f,
+        "out-of-range finite source cannot displace a usable stick");
 }
 
 static void ControllerLossAndRecoveryTests()

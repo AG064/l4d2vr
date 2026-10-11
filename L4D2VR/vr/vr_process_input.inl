@@ -31,7 +31,7 @@ void VR::ProcessInput()
         uint32_t& value;
         ~GripInputPublication()
         {
-            destination.store(value, std::memory_order_release);
+            l4d2vr_input::GripSample::Publish(destination, value);
         }
     } gripInputPublication{ m_WeaponGripInputState, weaponGripInputState };
     uint32_t dualTriggerState = 0u;
@@ -44,7 +44,9 @@ void VR::ProcessInput()
     uint32_t nativeDualReloadState = 0u;
     DualTriggerPublication nativeDualReloadPublication{ m_DualPistolNativeReloadState, nativeDualReloadState };
     uint32_t pistolOffhandGripState = 0u;
-    DualTriggerPublication pistolGripPublication{ m_PistolOffhandGripState, pistolOffhandGripState };
+    GripInputPublication pistolGripPublication{ m_PistolOffhandGripState, pistolOffhandGripState };
+    uint32_t magazineGripInputState = 0u;
+    GripInputPublication magazineGripPublication{ m_MagazineGripInputState, magazineGripInputState };
     m_PistolUseLeft.store(false, std::memory_order_release);
     m_MagazineReleaseJustPressed = false;
     UpdateBodyInventoryPose();
@@ -508,20 +510,17 @@ void VR::ProcessInput()
 
     auto originMatchesRole = [&](vr::VRInputValueHandle_t origin, vr::ETrackedControllerRole role) -> bool
         {
-            if (!m_Input || !m_System)
+            if (!m_Input || !m_System ||
+                (role != vr::TrackedControllerRole_LeftHand && role != vr::TrackedControllerRole_RightHand))
                 return false;
-            if (origin == vr::k_ulInvalidInputValueHandle)
+            const auto frame = m_InputActionFrame.Read();
+            const bool physicalLeft = role == vr::TrackedControllerRole_LeftHand;
+            vr::VRInputValueHandle_t source = vr::k_ulInvalidInputValueHandle;
+            if (!l4d2vr_input::ActionFrame::Ready(frame) ||
+                m_Input->GetInputSourceHandle(physicalLeft ? "/user/hand/left" : "/user/hand/right", &source) != vr::VRInputError_None)
                 return false;
-
-            vr::InputOriginInfo_t info{};
-            if (m_Input->GetOriginTrackedDeviceInfo(origin, &info, sizeof(info)) != vr::VRInputError_None)
-                return false;
-
-            const vr::TrackedDeviceIndex_t roleIndex = m_System->GetTrackedDeviceIndexForControllerRole(role);
-            if (roleIndex == vr::k_unTrackedDeviceIndexInvalid)
-                return false;
-
-            return info.trackedDeviceIndex == roleIndex;
+            return l4d2vr_hand_input::ValidateOrigin(m_Input, m_System, origin, source,
+                GetPhysicalControllerIndexForHand(physicalLeft)) && m_InputActionFrame.Matches(frame);
         };
     auto roleForGameplayHand = [&](bool leftHand) -> vr::ETrackedControllerRole
         {
@@ -538,13 +537,12 @@ void VR::ProcessInput()
         l4d2vr_input::ActionFrame::Ready(gripFrame) &&
         m_ActionWeaponGrip != vr::k_ulInvalidActionHandle)
     {
-        vr::VRInputValueHandle_t gripSource = vr::k_ulInvalidInputValueHandle;
-        const char* gripSourcePath = IsGameplayHandLeftPhysical(false)
+        const bool physicalLeft = IsGameplayHandLeftPhysical(false);
+        const char* gripSourcePath = physicalLeft
             ? "/user/hand/left" : "/user/hand/right";
         vr::InputDigitalActionData_t gripData{};
-        if (m_Input->GetInputSourceHandle(gripSourcePath, &gripSource) == vr::VRInputError_None &&
-            m_Input->GetDigitalActionData(m_ActionWeaponGrip, &gripData,
-                sizeof(gripData), gripSource) == vr::VRInputError_None && m_InputActionFrame.Matches(gripFrame))
+        if (l4d2vr_hand_input::ReadDigitalForHand(m_Input, m_System, m_InputActionFrame,
+            m_ActionWeaponGrip, gripSourcePath, GetPhysicalControllerIndexForHand(physicalLeft), gripData))
         {
             rightGripValid = gripData.bActive;
             rightGripDown = gripData.bActive && gripData.bState;
@@ -590,7 +588,10 @@ void VR::ProcessInput()
     bool offHandGripDown = false;
     bool offHandGripJustPressed = false;
     const bool offHandGripValid = getActionState(&m_ActionOffHandGrip,
-        offHandGripData, offHandGripDown, offHandGripJustPressed);
+        offHandGripData, offHandGripDown, offHandGripJustPressed) && offHandGripData.bActive &&
+        originMatchesRole(offHandGripData.activeOrigin, gameplayLeftRole);
+    if (!offHandGripValid)
+        offHandGripDown = offHandGripJustPressed = false;
     pistolOffhandGripState = offHandGripValid && offHandGripData.bActive
         ? (1u | (offHandGripDown ? 2u : 0u)) : 0u;
     const bool leftPistolPickup = m_DualPistolsIndependentHandsEnabled && m_GripReleaseDropEnabled &&
@@ -624,9 +625,7 @@ void VR::ProcessInput()
     {
         const auto validHand = [&](bool gameplayLeft)
         {
-            const auto role = IsGameplayHandLeftPhysical(gameplayLeft)
-                ? vr::TrackedControllerRole_LeftHand : vr::TrackedControllerRole_RightHand;
-            const auto index = m_System->GetTrackedDeviceIndexForControllerRole(role);
+            const auto index = GetPhysicalControllerIndexForHand(IsGameplayHandLeftPhysical(gameplayLeft));
             return index < vr::k_unMaxTrackedDeviceCount && m_Poses[index].bPoseIsValid && m_Poses[index].bDeviceIsConnected;
         };
         const bool rightActive = primaryAttackActionData.bActive && validHand(false);
@@ -641,21 +640,17 @@ void VR::ProcessInput()
     // Manual magazine handling uses the gameplay left/off hand. In LeftHanded mode
     // that is the physical right controller after the pose remap in GetPoses().
     const bool reloadFromLeftHand =
-        reloadDataValid &&
-        (originMatchesRole(reloadActionData.activeOrigin, gameplayLeftRole) ||
-            reloadActionData.activeOrigin == vr::k_ulInvalidInputValueHandle);
+        reloadDataValid && reloadActionData.bActive &&
+        originMatchesRole(reloadActionData.activeOrigin, gameplayLeftRole);
     const bool crouchFromLeftHand =
-        crouchDataValid &&
-        (originMatchesRole(crouchActionData.activeOrigin, gameplayLeftRole) ||
-            crouchActionData.activeOrigin == vr::k_ulInvalidInputValueHandle);
+        crouchDataValid && crouchActionData.bActive &&
+        originMatchesRole(crouchActionData.activeOrigin, gameplayLeftRole);
     const bool jumpFromLeftHand =
-        jumpDataValid &&
-        (originMatchesRole(jumpActionData.activeOrigin, gameplayLeftRole) ||
-            jumpActionData.activeOrigin == vr::k_ulInvalidInputValueHandle);
+        jumpDataValid && jumpActionData.bActive &&
+        originMatchesRole(jumpActionData.activeOrigin, gameplayLeftRole);
     const bool secondaryAttackFromLeftHand =
-        secondaryAttackDataValid &&
-        (originMatchesRole(secondaryAttackActionData.activeOrigin, gameplayLeftRole) ||
-            secondaryAttackActionData.activeOrigin == vr::k_ulInvalidInputValueHandle);
+        secondaryAttackDataValid && secondaryAttackActionData.bActive &&
+        originMatchesRole(secondaryAttackActionData.activeOrigin, gameplayLeftRole);
 
     vr::InputDigitalActionData_t inventoryQuickSwitchActionData{};
     bool inventoryQuickSwitchDown = false;
@@ -672,9 +667,7 @@ void VR::ProcessInput()
         {
             if (!dataValid || !data.bActive)
                 return false;
-            return
-                originMatchesRole(data.activeOrigin, gameplayRightRole) ||
-                data.activeOrigin == vr::k_ulInvalidInputValueHandle;
+            return originMatchesRole(data.activeOrigin, gameplayRightRole);
         };
 
     const bool reloadCatchInputDown =
@@ -807,6 +800,22 @@ void VR::ProcessInput()
         ? (rightGripValid && rightGripDown) : legacyMagazineButtonGripDown;
     const bool magazineButtonGripJustPressed = leftHeldPistol
         ? (rightGripValid && rightGripJustPressed) : legacyMagazineButtonGripJustPressed;
+    const uint32_t knownMagazineButtons = leftHeldPistol ? (rightGripValid ? 32u : 0u) :
+        (offHandGripValid ? 1u : 0u) | (reloadFromLeftHand ? 2u : 0u) |
+        (crouchFromLeftHand ? 4u : 0u) | (jumpFromLeftHand ? 8u : 0u) | (secondaryAttackFromLeftHand ? 16u : 0u);
+    const uint32_t downMagazineButtons = leftHeldPistol ? (rightGripDown ? 32u : 0u) :
+        (offHandGripDown ? 1u : 0u) | (reloadButtonDown ? 2u : 0u) |
+        (crouchButtonDown ? 4u : 0u) | (jumpButtonDown ? 8u : 0u) | (secondaryAttackActive ? 16u : 0u);
+    const uint32_t buttonContext = (leftHeldPistol ? 32u : 31u) |
+        (IsGameplayHandLeftPhysical(MagazineReloadSupportIsLeft()) ? 256u : 0u);
+    const bool magazineButtonGripAvailable = m_MagazineButtonGripSources.Update(
+        knownMagazineButtons, downMagazineButtons, buttonContext);
+    const bool magazineGripInputAvailable = magazineButtonGripInput
+        ? (magazineButtonGripAvailable && (!m_MagazineInteractionSeparateButtonInput || !magazineFingerCurlInput || magazineInteractionFingerCurlsValid))
+        : magazineInteractionFingerCurlsValid;
+    const auto previousMagazineGrip = m_MagazineGripInputState.load(std::memory_order_acquire);
+    const bool magazineGripRecovered = (previousMagazineGrip & 1u) == 0u &&
+        l4d2vr_input::GripSample::Generation(previousMagazineGrip) != 0u;
     const bool magazineButtonGripJustPressedFromReload = reloadFromLeftHand && reloadJustPressed;
     const bool magazineButtonGripJustPressedFromOther =
         (crouchFromLeftHand && crouchJustPressed) ||
@@ -847,15 +856,22 @@ void VR::ProcessInput()
     const bool magazineGripDown = magazineButtonGripInput
         ? magazineButtonGripDown
         : (thumbIndexGripDown || threeFingerGripDown);
-    const bool magazineGripJustPressed = !l4d2vr_input::ActionFrame::SuppressEdges(m_InputActionFrame.Read()) && (magazineButtonGripInput
+    const bool magazineGripJustPressed = magazineGripInputAvailable && !magazineGripRecovered &&
+        !l4d2vr_input::ActionFrame::SuppressEdges(m_InputActionFrame.Read()) && (magazineButtonGripInput
         ? magazineButtonGripJustPressed
         : ((thumbIndexGripDown && !thumbIndexWasDown) ||
             (threeFingerGripDown && !threeFingerWasDown)));
     const bool supportHandDown = threeFingerGripDown;
-    const bool supportHandJustPressed = threeFingerGripDown && !threeFingerWasDown &&
+    const bool supportHandJustPressed = magazineGripInputAvailable && !magazineGripRecovered &&
+        threeFingerGripDown && !threeFingerWasDown &&
         !l4d2vr_input::ActionFrame::SuppressEdges(m_InputActionFrame.Read());
-    m_MagazineInteractionThumbIndexCurlDownPrev = thumbIndexGripDown;
-    m_MagazineInteractionThreeFingerCurlDownPrev = threeFingerGripDown;
+    if (magazineGripInputAvailable)
+    {
+        m_MagazineInteractionThumbIndexCurlDownPrev = thumbIndexGripDown;
+        m_MagazineInteractionThreeFingerCurlDownPrev = threeFingerGripDown;
+    }
+    magazineGripInputState = magazineGripInputAvailable ? (1u | (magazineGripDown ? 2u : 0u)) : 0u;
+    l4d2vr_input::GripSample::Publish(m_MagazineGripInputState, magazineGripInputState);
 
     const bool magazineInteractionReloadPulse = UpdateMagazineInteraction(
         localPlayer,

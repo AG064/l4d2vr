@@ -50,6 +50,11 @@ can still settle from the host reply and native replication. If tracking drops
 while holding a slide or pump, release the grip and grab it again after tracking
 returns so a changed controller pose cannot count as a stroke. Native weapon
 handles also fence reload state when a replacement gun reuses an entity address.
+With retained chamber history enabled, switching away from a loaded gun before
+cycling does not complete its action. Returning restores the existing cycle and
+blocks firing while its current grab region is being acquired. Auto shotgun and
+SPAS can finish an empty reload with their already loaded shell after a switch;
+they do not need another reserve shell to make the bolt available.
 
 Magazine, slide and support-grip contact boxes reject nonfinite or reversed
 bounds and degenerate transforms. Invalid contact cannot count as a grab.

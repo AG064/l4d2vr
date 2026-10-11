@@ -152,6 +152,28 @@ static void PoseValidationTests()
 {
     const auto good = Pose(1.0f);
     CHECK(identity::UsablePose(good));
+    auto noisy = good;
+    noisy.mDeviceToAbsoluteTracking.m[0][0] = 1.001f;
+    noisy.mDeviceToAbsoluteTracking.m[0][1] = 0.0001f;
+    CHECK(identity::UsablePose(noisy));
+    for (int x = -180; x <= 180; x += 30)
+        for (int y = -180; y <= 180; y += 30)
+            for (int z = -180; z <= 180; z += 30)
+            {
+                auto rotated = good;
+                constexpr double radians = 3.14159265358979323846 / 180.0;
+                const double cx = std::cos(x*radians), sx = std::sin(x*radians);
+                const double cy = std::cos(y*radians), sy = std::sin(y*radians);
+                const double cz = std::cos(z*radians), sz = std::sin(z*radians);
+                const double matrix[3][3] = {
+                    {cz*cy, cz*sy*sx-sz*cx, cz*sy*cx+sz*sx},
+                    {sz*cy, sz*sy*sx+cz*cx, sz*sy*cx-cz*sx},
+                    {-sy, cy*sx, cy*cx}};
+                for (int row = 0; row < 3; ++row)
+                    for (int column = 0; column < 3; ++column)
+                        rotated.mDeviceToAbsoluteTracking.m[row][column] = static_cast<float>(matrix[row][column]);
+                CHECK(identity::UsablePose(rotated));
+            }
     auto bad = good;
     bad.bDeviceIsConnected = false;
     CHECK(!identity::UsablePose(bad));

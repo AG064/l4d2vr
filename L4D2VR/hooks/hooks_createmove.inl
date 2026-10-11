@@ -1790,9 +1790,11 @@ bool __fastcall Hooks::dCreateMove(void* ecx, void* edx, float flInputSampleTime
             const bool leftReserved = m_VR->MagazineInteractionOwnsGrip(true);
             const bool rightReserved = m_VR->MagazineInteractionOwnsGrip(false);
             const bool leftPickupAllowed = s_leftGripReservation.AllowPickup(gripPickupEligible,
-                (leftGrip & 1u) != 0u, (leftGrip & 2u) != 0u, leftReserved);
+                (leftGrip & 1u) != 0u, (leftGrip & 2u) != 0u, leftReserved,
+                l4d2vr_input::GripSample::Generation(leftGrip));
             const bool rightPickupAllowed = s_rightGripReservation.AllowPickup(gripPickupEligible,
-                weaponGripActionActive, weaponGripDown, rightReserved);
+                weaponGripActionActive, weaponGripDown, rightReserved,
+                l4d2vr_input::GripSample::Generation(weaponGripInputState));
             if (leftReserved) s_pistolOwnership.CancelPickup(l4d2vr_dual::Hand::Left);
             if (rightReserved)
             {
@@ -1863,14 +1865,16 @@ bool __fastcall Hooks::dCreateMove(void* ecx, void* edx, float flInputSampleTime
             }
             const l4d2vr_dual::Hand pistolDropHand = pistolGripMode && gripDropEligible
                 ? s_pistolOwnership.Release(weaponGripActionActive, weaponGripDown,
-                    (leftGrip & 1u) != 0u, (leftGrip & 2u) != 0u, gripNowMs)
+                    (leftGrip & 1u) != 0u, (leftGrip & 2u) != 0u, gripNowMs,
+                    l4d2vr_input::GripSample::Generation(weaponGripInputState),
+                    l4d2vr_input::GripSample::Generation(leftGrip))
                 : l4d2vr_dual::Hand::None;
             m_VR->m_PistolOwnershipMask.store(s_pistolOwnership.Mask(), std::memory_order_release);
 			const bool gripDropRequested = s_weaponGripRelease.Update(
                 gripDropEligible && !pistolGripMode,
 				weaponGripActionActive,
 				weaponGripDown,
-				activeWeaponTag) || pistolDropHand != l4d2vr_dual::Hand::None;
+				activeWeaponTag, l4d2vr_input::GripSample::Generation(weaponGripInputState)) || pistolDropHand != l4d2vr_dual::Hand::None;
 			if (m_VR->m_GripReleaseDropEnabled && m_VR->m_VrHandsDebugLog)
 			{
 				static uint32_t previousGripGateState = ~0u;

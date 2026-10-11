@@ -125,7 +125,17 @@ namespace l4d2vr_physical
     public:
         bool Update(bool active, bool down, bool contact)
         {
-            if (!active || !down)
+            if (!active)
+            {
+                m_RequireRelease = true;
+                return false;
+            }
+            if (m_RequireRelease)
+            {
+                if (!down) { m_RequireRelease = false; m_Consumed = false; }
+                return false;
+            }
+            if (!down)
             {
                 m_Consumed = false;
                 return false;
@@ -137,13 +147,20 @@ namespace l4d2vr_physical
         }
     private:
         bool m_Consumed = false;
+        bool m_RequireRelease = false;
     };
 
     class ReservedGrip
     {
     public:
-        bool AllowPickup(bool eligible, bool active, bool down, bool reserved)
+        bool AllowPickup(bool eligible, bool active, bool down, bool reserved, std::uint32_t discontinuity = 0u)
         {
+            if (discontinuity != m_Discontinuity)
+            {
+                m_Discontinuity = discontinuity;
+                m_RequireRelease = true;
+                return false;
+            }
             if (!eligible || !active || reserved)
             { m_RequireRelease = true; return false; }
             if (!down) { m_RequireRelease = false; return false; }
@@ -152,6 +169,7 @@ namespace l4d2vr_physical
         void Reset() { m_RequireRelease = true; }
     private:
         bool m_RequireRelease = false;
+        std::uint32_t m_Discontinuity = 0u;
     };
 
     class PickupIntent

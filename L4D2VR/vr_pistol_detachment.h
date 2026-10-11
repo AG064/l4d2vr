@@ -79,10 +79,15 @@ namespace l4d2vr_pistol
             (hand == Hand::Left ? m_Left : m_Right).AdoptWeapon(m_Weapon);
             m_Pickup = Hand::None;
         }
-        Hand Release(bool rightActive, bool rightDown, bool leftActive, bool leftDown, std::uint32_t now)
+        Hand Release(bool rightActive, bool rightDown, bool leftActive, bool leftDown, std::uint32_t now,
+            std::uint32_t rightDiscontinuity = 0u, std::uint32_t leftDiscontinuity = 0u)
         {
-            if (m_Right.Update((m_Mask & 1u) != 0u, rightActive, rightDown, m_Weapon)) m_Queued |= 1u;
-            if (m_Left.Update((m_Mask & 2u) != 0u, leftActive, leftDown, m_Weapon)) m_Queued |= 2u;
+            if (rightDiscontinuity != m_RightDiscontinuity) m_Queued &= ~1u;
+            if (leftDiscontinuity != m_LeftDiscontinuity) m_Queued &= ~2u;
+            m_RightDiscontinuity = rightDiscontinuity;
+            m_LeftDiscontinuity = leftDiscontinuity;
+            if (m_Right.Update((m_Mask & 1u) != 0u, rightActive, rightDown, m_Weapon, rightDiscontinuity)) m_Queued |= 1u;
+            if (m_Left.Update((m_Mask & 2u) != 0u, leftActive, leftDown, m_Weapon, leftDiscontinuity)) m_Queued |= 2u;
             if (!m_Weapon || m_Awaiting) return Hand::None;
             const unsigned available = m_Queued & m_Mask;
             const Hand hand = (available & 1u) ? Hand::Right : (available & 2u) ? Hand::Left : Hand::None;
@@ -114,5 +119,6 @@ namespace l4d2vr_pistol
         std::uint32_t m_Started = 0u;
         Hand m_LastDrop = Hand::None, m_Pickup = Hand::None;
         l4d2vr_grip::ReleaseLatch m_Right, m_Left;
+        std::uint32_t m_RightDiscontinuity = 0u, m_LeftDiscontinuity = 0u;
     };
 }

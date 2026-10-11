@@ -6,6 +6,13 @@
 int main()
 {
     using namespace l4d2vr_pistol;
+    Ownership discontinuous;
+    discontinuous.Observe(true,88u,true,100u);
+    discontinuous.Release(true,false,true,false,101u,0u,0u);
+    discontinuous.Release(true,true,true,true,102u,0u,0u);
+    CHECK(discontinuous.Release(true,false,true,true,103u,1u,0u)==Hand::None);
+    CHECK(discontinuous.Release(true,true,true,false,104u,1u,0u)==Hand::Left);
+    CHECK(discontinuous.Mask()==3u); // the sent left drop remains pending while right is baselined
     Ownership cancelledPickup;
     cancelledPickup.Observe(true, 99u, false, 100u);
     cancelledPickup.PickupRequested(Hand::Left);

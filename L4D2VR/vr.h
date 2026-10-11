@@ -25,6 +25,7 @@
 #include "vr_pistol_reload.h"
 #include "vr_physical_controls.h"
 #include "vr_input_recovery.h"
+#include "vr_hand_input_validation.h"
 #include "vr_interaction_geometry.h"
 #include "vr_body_inventory.h"
 #include "vr_dual_pistols.h"
@@ -1252,6 +1253,9 @@ public:
     std::atomic<uint32_t> m_DualPistolTriggerState{ 0u };
     std::atomic<uint32_t> m_PistolOwnershipMask{ 0u }; // Right=1, left=2.
     std::atomic<uint32_t> m_PistolOffhandGripState{ 0u }; // Active=1, down=2.
+    std::atomic<uint32_t> m_MagazineGripInputState{ 0u }; // Ready/down plus discontinuity generation.
+    l4d2vr_input::GripContributors m_MagazineButtonGripSources;
+    bool IsMagazineGripInputAvailable() const { return (m_MagazineGripInputState.load(std::memory_order_acquire) & 1u) != 0u; }
     std::atomic<bool> m_PistolUseLeft{ false };
     std::atomic<bool> m_LeftHandPistolActive{ false };
     mutable std::mutex m_DualPistolShotMutex;
@@ -2219,7 +2223,7 @@ public:
     void ReceiveRemoteShellReply(const l4d2vr_shell::Reply& reply);
     void DisconnectRemoteShellProtocol();
     void CancelRemoteShellRequest();
-    bool HasFreshMagazineInteractionTracking() const;
+	bool HasFreshMagazineInteractionTracking() const;
     bool RemoteShellProtocolSupported() const;
     bool RemoteShellRequestPending() const;
     bool BeginRemoteShellRequest(uint32_t handle, int weaponId, int clip, int reserve,
@@ -2277,6 +2281,7 @@ public:
 	bool m_MagazineInteractionBoltStageBeforeBackendReloadComplete = false;
 	bool m_MagazineInteractionBoltCompletedBeforeBackendReload = false;
 	bool m_MagazineInteractionThumbIndexCurlDownPrev = false;
+    bool m_MagazineInteractionTransactionGripHeld = false;
 	bool m_MagazineInteractionThreeFingerCurlDownPrev = false;
 	bool m_MagazineInteractionShotgunStableCaptureValid = false;
 	std::chrono::steady_clock::time_point m_MagazineInteractionStarted{};

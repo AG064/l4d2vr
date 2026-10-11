@@ -263,6 +263,13 @@ Hand skeleton initialization and palette failures are independent per hand.
 Unavailable skeletons and palette failures retry, while another valid hand can
 draw. If a preferred native viewmodel hand capture is unavailable, a valid
 controller-backed skeletal palette uses scene placement until capture returns.
+Successful skeletal API calls still require valid curls, bone transforms and
+finite skinning palettes. Bone reads are staged before replacing retained data;
+failed or partial reads cannot supply a fresh fallback. Each free-hand palette
+carries its validated action-frame identity. Native viewmodel hand captures
+retain their independent placement and recovery path.
+Partial renderer retries reuse an existing declaration or shader while creating
+only missing resources, so repeated shader failures do not leak those objects.
 Full-arm readiness requires advancing, fresh tracking samples for 200 ms;
 repeated draws or animation-freeze generations cannot establish tracking.
 Physical controller identity prefers valid SteamVR hand assignments. If one is
@@ -284,11 +291,20 @@ owned held commands, and cancels teleport targeting. The first recovered frame
 can resume held controls without replaying one-shot presses. Pending ammo
 requests still poll the actual owner and weapon; input loss cannot clear their
 required chamber cycle or start another gesture.
+Specific hand inputs also validate the connected resolved controller and source
+path. Unknown curl or grip samples retain held ammunition while replies settle;
+they do not count as a release. Grip discontinuities persist across skipped
+native commands, requiring a deliberate fresh grip cycle before a drop or pickup.
+Walk and Turn stick axes must stay within their supported range before turning
+or scope adjustment consumes them.
 
 Tracking starts from explicit zero pose fields. Invalid or nonfinite samples
 retain the last usable position and angles while clearing linear and angular
 velocity. Queued rendering rejects those samples before converting a fresh
 output, retaining its existing camera fallback until usable tracking returns.
+Raw tracking rotations also reject collapsed, mirrored, scaled or sheared
+bases while accepting small rounding errors. This check applies to tracked
+device poses; scaled skeletal and weapon transforms retain their own rules.
 
 Fresh magazines and shells use a repeatable controller-local grip with
 `ManualReloadMagazineHandRotationOffsetDeg` applied at pickup. The grip point

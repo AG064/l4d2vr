@@ -88,6 +88,8 @@ int main()
     Check(contact.Update(true, true, true));
     Check(!contact.Update(true, true, true));
     Check(!contact.Update(false, true, true));
+    Check(!contact.Update(true, true, true));
+    Check(!contact.Update(true, false, true));
     Check(contact.Update(true, true, true));
 
     PickupIntent pickup;

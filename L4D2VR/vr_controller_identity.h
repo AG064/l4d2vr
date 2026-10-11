@@ -68,6 +68,38 @@ namespace l4d2vr_controller_identity
         return result;
     }
 
+    inline bool RigidRotation(const vr::HmdMatrix34_t& matrix)
+    {
+        // OpenVR tracking matrices contain a rotation, not scale or shear.
+        // Allow small driver rounding errors without accepting collapsed axes.
+        for (int column = 0; column < 3; ++column)
+        {
+            double lengthSquared = 0.0;
+            for (int row = 0; row < 3; ++row)
+            {
+                const double value = matrix.m[row][column];
+                if (!std::isfinite(value)) return false;
+                lengthSquared += value * value;
+            }
+            if (std::fabs(lengthSquared - 1.0) > 0.02) return false;
+            for (int other = 0; other < column; ++other)
+            {
+                double dot = 0.0;
+                for (int row = 0; row < 3; ++row)
+                    dot += static_cast<double>(matrix.m[row][column]) * matrix.m[row][other];
+                if (!std::isfinite(dot) || std::fabs(dot) > 0.02) return false;
+            }
+        }
+        const double determinant =
+            static_cast<double>(matrix.m[0][0]) *
+                (static_cast<double>(matrix.m[1][1]) * matrix.m[2][2] - static_cast<double>(matrix.m[1][2]) * matrix.m[2][1]) -
+            static_cast<double>(matrix.m[0][1]) *
+                (static_cast<double>(matrix.m[1][0]) * matrix.m[2][2] - static_cast<double>(matrix.m[1][2]) * matrix.m[2][0]) +
+            static_cast<double>(matrix.m[0][2]) *
+                (static_cast<double>(matrix.m[1][0]) * matrix.m[2][1] - static_cast<double>(matrix.m[1][1]) * matrix.m[2][0]);
+        return std::isfinite(determinant) && std::fabs(determinant - 1.0) <= 0.05;
+    }
+
     inline bool UsablePose(const vr::TrackedDevicePose_t& pose)
     {
         if (!pose.bDeviceIsConnected || !pose.bPoseIsValid)
@@ -76,6 +108,7 @@ namespace l4d2vr_controller_identity
             for (float value : row)
                 if (!std::isfinite(value))
                     return false;
+        if (!RigidRotation(pose.mDeviceToAbsoluteTracking)) return false;
         for (float value : pose.vVelocity.v)
             if (!std::isfinite(value))
                 return false;

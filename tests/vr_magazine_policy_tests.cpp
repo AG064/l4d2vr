@@ -67,6 +67,23 @@ int main()
     Check(l4d2vr_magazine::ChamberReadyAfterEject(false, 1), "An existing loaded chamber survives a tactical ejection ACK");
     Check(!l4d2vr_magazine::ChamberReadyAfterEject(false, 0), "The native empty result cannot preserve a chambered round");
     Check(!l4d2vr_magazine::ChamberReadyAfterEject(false, -1), "An unknown native count cannot ready the chamber");
+    Check(l4d2vr_magazine::ShouldResumeMagazineCycle(true,false,true,1), "A retained empty chamber resumes its existing cycle even with a partially loaded clip");
+    Check(!l4d2vr_magazine::ShouldResumeMagazineCycle(true,false,false,30), "A chambered tactical reload must not acquire another cycle");
+    Check(!l4d2vr_magazine::ShouldResumeMagazineCycle(true,true,true,30), "An active reload keeps its own transaction and hand stage");
+    Check(!l4d2vr_magazine::ShouldResumeMagazineCycle(true,false,true,0), "An empty magazine needs ammunition before cycle recovery");
+    Check(l4d2vr_magazine::MayFinishShotgunLoading(true,true,1,0,true), "Returning to a loaded shotgun permits cycling without another shell");
+    Check(l4d2vr_magazine::MayFinishShotgunLoading(true,true,0,1,true), "Existing empty-stroke interaction remains available after loading activity");
+    Check(!l4d2vr_magazine::MayFinishShotgunLoading(true,true,0,0,true), "A fresh empty tube must accept ammunition first");
+    Check(!l4d2vr_magazine::MayFinishShotgunLoading(true,false,8,2,true), "A loaded shotgun chamber does not need another cycle");
+    Check(!l4d2vr_magazine::MayFinishShotgunLoading(true,true,1,0,false), "Region recovery cannot grab the action without grip input");
+    l4d2vr_magazine::ChamberHistory optionalRetention;
+    optionalRetention.ObserveOwner(true,100u);
+    optionalRetention.Observe(200u,0x3005u,5,0);
+    Check(optionalRetention.HasEmptyChamber(100u,200u,0x3005u,5), "Enabled retention keeps the unfinished physical chamber");
+    optionalRetention.ObserveOwner(false,100u); // existing auto-reload suppression retention option disabled
+    Check(!optionalRetention.HasEmptyChamber(100u,200u,0x3005u,5), "Disabled retention cannot introduce a new switch-time fire block");
+    optionalRetention.ObserveOwner(true,100u);
+    Check(!optionalRetention.Observe(200u,0x3005u,5,50), "Re-enabled retention starts from the current loaded draw");
     Check(l4d2vr_magazine::MayCatchEjectedMagazine(true, true, 0.04f, 0.05f), "Grip held under the well can catch an ejected magazine");
     Check(!l4d2vr_magazine::MayCatchEjectedMagazine(false, true, 0.0f, 0.05f), "Ejection alone cannot attach a magazine to the support hand");
     Check(!l4d2vr_magazine::MayCatchEjectedMagazine(true, false, 0.0f, 0.05f), "Lost tracking cannot catch an ejected magazine");

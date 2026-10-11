@@ -302,7 +302,11 @@ file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/vr_action_frame_curl_edges.inl" "${actio
 extract_mirrored_analog_fixture("${action_frame_bridge_text}"
     "    bool ReadOpenVRSkeletalFingerCurls(" "    constexpr std::uint32_t kVrHandsLeftTargetDebugBoxMaxAgeMs" action_frame_curls)
 string(REPLACE "vr::IVRInput* input" "ScriptedInput* input" action_frame_curls "${action_frame_curls}")
+string(REPLACE "vr::IVRSystem* system" "ScriptedSystem* system" action_frame_curls "${action_frame_curls}")
 file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/vr_action_frame_curls.inl" "${action_frame_curls}")
+extract_mirrored_analog_fixture("${custom_action_text}"
+    "    auto originMatchesRole =" "    auto roleForGameplayHand =" action_frame_origin)
+file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/vr_action_frame_origin.inl" "${action_frame_origin}")
 extract_mirrored_analog_fixture("${action_frame_bridge_text}"
     "bool VR::HasFreshMagazineInteractionTracking()" "bool VR::BeginRemoteShellRequest(" action_frame_tracking)
 file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/vr_action_frame_tracking.inl" "${action_frame_tracking}")
@@ -328,11 +332,23 @@ extract_mirrored_analog_fixture("${action_frame_bridge_text}"
 extract_mirrored_analog_fixture("${action_frame_bridge_text}"
     "    m_MagazineInteractionSessionGeneration.fetch_add" "    {" action_frame_session_reset)
 extract_mirrored_analog_fixture("${action_frame_bridge_text}"
-    "        const bool shellInputAvailable = IsInputActionFrameAvailable();" "        l4d2vr_shell::Reply reply{};" action_frame_shell_hold)
+    "        const bool shellInputAvailable =" "        l4d2vr_shell::Reply reply{};" action_frame_shell_hold)
 file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/vr_action_frame_primary.inl" "${action_frame_primary}")
 file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/vr_action_frame_session.inl" "${action_frame_session}")
 file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/vr_action_frame_session_reset.inl" "${action_frame_session_reset}")
 file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/vr_action_frame_shell_hold.inl" "${action_frame_shell_hold}")
+extract_mirrored_analog_fixture("${action_frame_bridge_text}"
+    "    auto beginRemoteMagazineAction =" "    auto catchRetainedMagazine =" action_frame_magazine_begin)
+extract_mirrored_analog_fixture("${action_frame_magazine_begin}"
+    "        m_MagazineInteractionTransactionGripHeld =" "        m_MagazineInteractionFreshMagazineContactActive = false;" action_frame_magazine_snapshot)
+extract_mirrored_analog_fixture("${action_frame_bridge_text}"
+    "        const bool magazineInputAvailable =" "        clearNativeClientReloadState(\"remote-magazine-pending\");" action_frame_magazine_hold)
+extract_mirrored_analog_fixture("${action_frame_bridge_text}"
+    "        if (poll != l4d2vr_remote_mag::ClientRequest::Poll::Result || reply.status != l4d2vr_remote_mag::Status::Applied)"
+    "        m_MagazineInteractionStartClip = reply.clip;" action_frame_magazine_reject)
+file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/vr_action_frame_magazine_snapshot.inl" "${action_frame_magazine_snapshot}")
+file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/vr_action_frame_magazine_hold.inl" "${action_frame_magazine_hold}")
+file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/vr_action_frame_magazine_reject.inl" "${action_frame_magazine_reject}")
 extract_mirrored_analog_fixture("${action_frame_command_text}"
     "const bool physicalAttackDown = m_VR->m_PrimaryAttackDown;" "const uint32_t weaponGripInputState" action_frame_throw_gate)
 extract_mirrored_analog_fixture("${action_frame_command_text}"
@@ -377,3 +393,12 @@ if(MSVC)
     target_compile_options(vr_pose_data_tests PRIVATE /W4 /WX)
 endif()
 add_test(NAME vr_pose_data COMMAND vr_pose_data_tests)
+
+add_executable(vr_skeletal_data_tests vr_skeletal_data_tests.cpp)
+target_compile_features(vr_skeletal_data_tests PRIVATE cxx_std_17)
+target_include_directories(vr_skeletal_data_tests PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}/../thirdparty/openvr/include")
+if(MSVC)
+    target_compile_options(vr_skeletal_data_tests PRIVATE /W4 /WX)
+endif()
+add_test(NAME vr_skeletal_data COMMAND vr_skeletal_data_tests)

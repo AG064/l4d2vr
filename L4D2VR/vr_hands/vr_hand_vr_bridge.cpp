@@ -5,6 +5,7 @@
 #include "sdk.h"
 #include "trace.h"
 #include "vr_hand_system.h"
+#include "../vr_skeletal_data.h"
 #include "vr_hand_math.h"
 #include "vr_hand_vm_pose.h"
 #include "vr_magazine_policy.h"
@@ -84,7 +85,10 @@ namespace
 
     bool ReadOpenVRSkeletalFingerCurls(
         vr::IVRInput* input,
+        vr::IVRSystem* system,
         const l4d2vr_input::ActionFrame& actionFrame,
+        vr::TrackedDeviceIndex_t expectedDevice,
+        const char* sourcePath,
         vr::VRActionHandle_t& action,
         const char* actionPath,
         std::array<float, 5>& outCurls,
@@ -92,7 +96,7 @@ namespace
     {
         outCurls = { 0.0f, 0.0f, 0.0f, 0.0f, 0.0f };
         const auto frame = actionFrame.Read();
-        if (!input || !l4d2vr_input::ActionFrame::Ready(frame) || !actionPath || actionPath[0] == '\0')
+        if (!input || !system || !sourcePath || !l4d2vr_input::ActionFrame::Ready(frame) || !actionPath || actionPath[0] == '\0')
             return false;
 
         if (action == vr::k_ulInvalidActionHandle)
@@ -105,9 +109,11 @@ namespace
         }
 
         vr::InputSkeletalActionData_t actionData{};
+        vr::VRInputValueHandle_t source = vr::k_ulInvalidInputValueHandle;
         if (input->GetSkeletalActionData(action, &actionData, sizeof(actionData)) != vr::VRInputError_None ||
             !actionData.bActive ||
-            actionData.activeOrigin == vr::k_ulInvalidInputValueHandle)
+            input->GetInputSourceHandle(sourcePath, &source) != vr::VRInputError_None ||
+            !l4d2vr_hand_input::ValidateOrigin(input, system, actionData.activeOrigin, source, expectedDevice))
         {
             return false;
         }
@@ -118,13 +124,13 @@ namespace
                 action,
                 vr::VRSummaryType_FromAnimation,
                 summary,
-                label))
+                label) || !l4d2vr_skeletal::ValidSummaryCurls(summary))
         {
             return false;
         }
 
         for (int finger = 0; finger < 5; ++finger)
-            outCurls[static_cast<size_t>(finger)] = std::clamp(summary.flFingerCurl[finger], 0.0f, 1.0f);
+            outCurls[static_cast<size_t>(finger)] = summary.flFingerCurl[finger];
 
         if (!actionFrame.Matches(frame))
         {
@@ -2953,7 +2959,7 @@ bool VR::ReadLeftPistolGloveWrist(Vector& wrist) const
 {
     if (!m_VrHandsEnabled || !m_VrHandsGlovesEnabled || !m_VrHands || m_VrHandsTwoHandedGripActive) return false;
     Vector local{};
-    if (!m_VrHands->ReadFreeWristModelPosition(IsGameplayHandLeftPhysical(true),local)) return false;
+    if (!m_VrHands->ReadFreeWristModelPosition(IsGameplayHandLeftPhysical(true),m_InputActionFrame,local)) return false;
     VrHandMatrix4 tracked{};
     if (!BuildPistolControllerWorld(true,tracked)) return false;
     VR* mutableVr = const_cast<VR*>(this);
@@ -3474,7 +3480,7 @@ void VR::UpdatePhysicalScopeWeapon(C_BasePlayer* owner, C_WeaponCSBase* weapon)
 
 bool VR::HasFreshMagazineInteractionTracking() const
 {
-    if (!IsInputActionFrameAvailable())
+    if (!IsInputActionFrameAvailable() || !IsMagazineGripInputAvailable())
         return false;
     VRWorldPoseTrackingSnapshot pose{};
     if (!ReadWorldPoseTrackingSnapshot(pose) ||
@@ -4465,6 +4471,26 @@ bool VR::IsMagazineInteractionBlockingFire() const
         return true;
     if (RemoteShellRequestPending()) return true;
     if (RemoteMagazineRequestPending()) return true;
+    if (m_IsVREnabled && m_MagazineInteractionEnabled && m_Game && m_Game->m_EngineClient &&
+        m_Game->m_EngineClient->IsInGame())
+    {
+        const int playerIndex = m_Game->m_EngineClient->GetLocalPlayer();
+        auto* player = playerIndex > 0 ? static_cast<C_BasePlayer*>(m_Game->GetClientEntity(playerIndex)) : nullptr;
+        C_WeaponCSBase* weapon = nullptr;
+        C_WeaponCSBase::WeaponID weaponId = C_WeaponCSBase::WeaponID::NONE;
+        int clip = -1;
+        if (MagazineInteractionReadActiveWeapon(player, weapon, weaponId, clip) && clip > 0)
+        {
+            const int id = static_cast<int>(weaponId);
+            const bool supported = MagazineInteractionWeaponUsesShotgunShells(weaponId)
+                ? IsMagazineInteractionShotgunServerHookActive(id) : IsMagazineInteractionDetachableBackendActive(id);
+            const auto handle = MagazineInteractionActiveWeaponHandle(m_Game, player, weapon);
+            if (supported && l4d2vr_shell::ValidHandle(handle) &&
+                m_PhysicalReloadChambers.HasEmptyChamber(reinterpret_cast<uintptr_t>(player),
+                    reinterpret_cast<uintptr_t>(weapon), handle, id))
+                return true;
+        }
+    }
     if (m_MagazineInteractionShotgunShellMode)
     {
         const bool cycling =
@@ -4827,6 +4853,8 @@ void VR::ResetMagazineInteractionSession()
 
 void VR::CancelMagazineInteractionManual()
 {
+    m_MagazineButtonGripSources.Reset();
+    m_MagazineInteractionTransactionGripHeld = false;
     m_ShellRetryContact.Reset();
     m_ManualPumpBlockingFire.store(false, std::memory_order_release);
     const bool wasActive = IsMagazineInteractionManualActive() || m_MagazineInteractionLeftHandHolding;
@@ -4935,7 +4963,10 @@ bool VR::ReadMagazineInteractionFingerCurls(std::array<float, 5>& outCurls)
 
     return ReadOpenVRSkeletalFingerCurls(
         m_Input,
+        m_System,
         m_InputActionFrame,
+        GetPhysicalControllerIndexForHand(physicalLeftHand),
+        physicalLeftHand ? "/user/hand/left" : "/user/hand/right",
         action,
         actionPath,
         outCurls,
@@ -4950,7 +4981,10 @@ void VR::UpdateNativeViewmodelLeftHandOpenVRFingerCurls()
         m_Input &&
         ReadOpenVRSkeletalFingerCurls(
             m_Input,
+            m_System,
             m_InputActionFrame,
+            GetPhysicalControllerIndexForHand(true),
+            "/user/hand/left",
             m_NativeViewmodelLeftHandOpenVRAction,
             "/actions/base/in/skeleton_lefthand",
             curls,
@@ -4966,11 +5000,7 @@ void VR::UpdateNativeViewmodelLeftHandOpenVRFingerCurls()
         return;
     }
 
-    const bool stale =
-        m_NativeViewmodelLeftHandOpenVRFingerCurlsValid &&
-        std::chrono::duration<float>(now - m_NativeViewmodelLeftHandOpenVRFingerCurlsAt).count() > 0.35f;
-    if (!m_NativeViewmodelLeftHandOpenVRSkeleton || !m_Input || stale)
-        m_NativeViewmodelLeftHandOpenVRFingerCurlsValid = false;
+    m_NativeViewmodelLeftHandOpenVRFingerCurlsValid = false;
 }
 
 bool VR::GetNativeViewmodelLeftHandOpenVRFingerCurls(std::array<float, 5>& outCurls) const
@@ -5006,7 +5036,10 @@ void VR::UpdateNativeViewmodelRightHandOpenVRFingerCurls()
         m_Input &&
         ReadOpenVRSkeletalFingerCurls(
             m_Input,
+            m_System,
             m_InputActionFrame,
+            GetPhysicalControllerIndexForHand(physicalLeftHand),
+            physicalLeftHand ? "/user/hand/left" : "/user/hand/right",
             action,
             actionPath,
             curls,
@@ -5024,11 +5057,7 @@ void VR::UpdateNativeViewmodelRightHandOpenVRFingerCurls()
         return;
     }
 
-    const bool stale =
-        m_NativeViewmodelRightHandOpenVRFingerCurlsValid &&
-        std::chrono::duration<float>(now - m_NativeViewmodelRightHandOpenVRFingerCurlsAt).count() > 0.35f;
-    if (!m_NativeViewmodelLeftHandOpenVRSkeleton || !m_Input || stale)
-        m_NativeViewmodelRightHandOpenVRFingerCurlsValid = false;
+    m_NativeViewmodelRightHandOpenVRFingerCurlsValid = false;
 }
 
 bool VR::GetNativeViewmodelRightHandOpenVRFingerCurls(std::array<float, 5>& outCurls) const
@@ -5066,7 +5095,10 @@ bool VR::GetWorldPoseAnatomicalRightHandOpenVRFingerCurls(
 
     return ReadOpenVRSkeletalFingerCurls(
         m_Input,
+        m_System,
         m_InputActionFrame,
+        GetPhysicalControllerIndexForHand(false),
+        "/user/hand/right",
         m_NativeViewmodelRightHandOpenVRAction,
         "/actions/base/in/skeleton_righthand",
         outCurls,
@@ -6937,6 +6969,8 @@ bool VR::UpdateMagazineInteraction(
             !BeginRemoteMagazineRequest(activeWeaponHandle, activeWeaponIdInt, activeClip, reserve, action,
                 reinterpret_cast<uintptr_t>(localPlayer),
                 m_MagazineInteractionSessionGeneration.load(std::memory_order_acquire))) return false;
+        m_MagazineInteractionTransactionGripHeld =
+            m_MagazineInteractionLeftHandHolding || m_MagazineInteractionRetainedMagazineHeld;
         m_MagazineInteractionState = MagazineInteractionManualState::WaitingForServerMagazine;
         m_MagazineInteractionLeftHandHolding = false;
         m_MagazineInteractionLeftHandPoseActive.store(0, std::memory_order_relaxed);
@@ -7009,6 +7043,11 @@ bool VR::UpdateMagazineInteraction(
 
     if (m_MagazineInteractionState == MagazineInteractionManualState::WaitingForServerMagazine)
     {
+        const bool magazineInputAvailable = IsInputActionFrameAvailable() && IsMagazineGripInputAvailable();
+        m_MagazineInteractionTransactionGripHeld = l4d2vr_shell::ShellRemainsHeld(
+            m_MagazineInteractionTransactionGripHeld, leftGripDown,
+            m_MagazineInteractionQuickReloadMode && !m_MagazineInteractionRetainedMagazineHeld,
+            magazineInputAvailable);
         clearNativeClientReloadState("remote-magazine-pending");
         l4d2vr_remote_mag::Reply reply{};
         int ammoType = -1, replicatedReserve = -1, reserveOffset = -1;
@@ -7055,13 +7094,15 @@ bool VR::UpdateMagazineInteraction(
             // insertion leaves the magazine out and lets the player try again.
             if ((!authoritativePistol && !RemoteMagazineProtocolSupported()) || poll != l4d2vr_remote_mag::ClientRequest::Poll::Result ||
                 reply.request.action == l4d2vr_remote_mag::Action::Eject) CancelMagazineInteractionManual();
-            else if (leftGripDown && (authoritativePistol ||
-                (reply.request.action == l4d2vr_remote_mag::Action::Reinsert && m_MagazineInteractionRetainedMagazineHeld)))
+            else if (l4d2vr_remote_mag::RetainsRejectedHeldMagazine(reply.status, reply.request.action,
+                m_MagazineInteractionTransactionGripHeld, magazineInputAvailable, leftGripDown,
+                m_MagazineInteractionRetainedMagazineHeld, authoritativePistol))
             {
                 m_MagazineInteractionState = MagazineInteractionManualState::HoldingFreshMagazine;
                 m_MagazineInteractionLeftHandHolding = true;
                 m_MagazineInteractionLeftHandPoseActive.store(1, std::memory_order_relaxed);
-                m_RetainedMagazineCatchHandLocal = leftControllerPosRelativeToWeapon();
+                if (magazineInputAvailable)
+                    m_RetainedMagazineCatchHandLocal = leftControllerPosRelativeToWeapon();
                 m_RetainedMagazineInsertGate.Reset();
             }
             else
@@ -7128,6 +7169,21 @@ bool VR::UpdateMagazineInteraction(
         }
     }
 
+    const bool retainedMagazineChamberEmpty = l4d2vr_shell::ValidHandle(activeWeaponHandle) &&
+        m_PhysicalReloadChambers.HasEmptyChamber(reinterpret_cast<uintptr_t>(localPlayer),
+            reinterpret_cast<uintptr_t>(activeWeapon), activeWeaponHandle, activeWeaponIdInt);
+    if (l4d2vr_magazine::ShouldResumeMagazineCycle(authoritativeMagazine,
+            IsMagazineInteractionManualActive(), retainedMagazineChamberEmpty, activeClip))
+    {
+        MagazineInteractionBoxSnapshot box{};
+        if (!GetMagazineInteractionBox(box) || !boxFreshForActiveWeapon(box)) return false;
+        beginMagazineInteractionSession(box);
+        m_MagazineInteractionOneInChamber = false;
+        m_MagazineInteractionChamberEmpty = true;
+        if (!beginBoltStage(activeWeaponId, "magazine-resume-empty-chamber"))
+            m_MagazineInteractionState = MagazineInteractionManualState::WaitingForBoltGrab;
+    }
+
     if (activeAuthoritativeMagazineBackend && m_MagazineInteractionOldMagazinePulled && activeClip == 0)
     {
         m_MagazineInteractionOneInChamber = false;
@@ -7137,7 +7193,7 @@ bool VR::UpdateMagazineInteraction(
     if (m_MagazineInteractionState == MagazineInteractionManualState::WaitingForServerShell)
     {
         ApplyMagazineInteractionShotgunClientReloadAbort(activeWeapon, activeWeaponIdInt, "remote-shell-pending");
-        const bool shellInputAvailable = IsInputActionFrameAvailable();
+        const bool shellInputAvailable = IsInputActionFrameAvailable() && IsMagazineGripInputAvailable();
         const bool shellHeld = l4d2vr_shell::ShellRemainsHeld(m_MagazineInteractionLeftHandHolding,
             leftGripDown, m_MagazineInteractionQuickReloadMode, shellInputAvailable);
         m_MagazineInteractionLeftHandHolding = shellHeld;
@@ -7737,10 +7793,9 @@ bool VR::UpdateMagazineInteraction(
         m_MagazineInteractionLeftHandHolding = false;
         m_MagazineInteractionLeftHandPoseActive.store(0, std::memory_order_relaxed);
         const int maxClip = MagazineInteractionDefaultMaxClip(activeWeaponId, m_MagazineInteractionMagazineModelName);
-        if (m_MagazineInteractionShotgunShellMode &&
-            m_MagazineInteractionShotgunShellsLoadedThisSession > 0 &&
-            m_MagazineInteractionChamberEmpty &&
-            leftGripDown)
+        if (l4d2vr_magazine::MayFinishShotgunLoading(m_MagazineInteractionShotgunShellMode,
+                m_MagazineInteractionChamberEmpty, activeClip, m_MagazineInteractionShotgunShellsLoadedThisSession,
+                leftGripDown))
         {
             MagazineInteractionBoxSnapshot boltBox{};
             if (getFreshBoltBoxForActiveViewmodel(boltBox))
@@ -8593,9 +8648,16 @@ bool VR::DrawVrHandsForEyeImmediate(
 
     if (drawGloves)
     {
+        const auto physical = l4d2vr_controller_identity::Unpack(
+            m_PhysicalControllerIndexPair.load(std::memory_order_acquire));
+        VrHandControllerContext controllers{};
+        controllers.system = m_System;
+        controllers.physicalIndices = { physical.left, physical.right };
         drewAny = m_VrHands->DrawForEye(
             device,
             m_Input,
+            m_InputActionFrame,
+            controllers,
             view,
             eyeIndex,
             m_VRScale,

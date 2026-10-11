@@ -88,6 +88,14 @@ namespace l4d2vr_magazine
             if (clip == 0) selected->empty = true;
             return selected->empty;
         }
+        bool HasEmptyChamber(std::uintptr_t owner, std::uintptr_t weapon, std::uint32_t handle, int weaponId) const
+        {
+            if (!owner || owner != m_Owner || !weapon || !handle || weaponId <= 0) return false;
+            for (const auto& entry : m_Entries)
+                if (entry.weapon == weapon && entry.handle == handle && entry.weaponId == weaponId)
+                    return entry.empty;
+            return false;
+        }
         void Complete(std::uintptr_t weapon)
         {
             if (weapon != m_ActiveWeapon) return;
@@ -123,6 +131,10 @@ namespace l4d2vr_magazine
     {
         return chamberEmpty || shellHeld || cycling || backendReload || ammoSettlement;
     }
+    inline bool ShouldResumeMagazineCycle(bool supported, bool activeSession, bool retainedEmpty, int clip)
+    { return supported && !activeSession && retainedEmpty && clip > 0; }
+    inline bool MayFinishShotgunLoading(bool shotgun, bool chamberEmpty, int clip, int shellsLoaded, bool gripDown)
+    { return shotgun && chamberEmpty && gripDown && (clip > 0 || shellsLoaded > 0); }
     inline bool PumpShouldStartAfterShot(bool needsCycle, int clip, int shellsLoaded)
     {
         // Empty tubes must accept shells first. A shell-loading session lets

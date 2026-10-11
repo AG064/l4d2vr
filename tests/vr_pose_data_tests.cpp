@@ -133,5 +133,15 @@ int main()
     CheckRejected(malformed, "A disconnected device cannot update pose data");
     malformed = pose; malformed.bPoseIsValid = false;
     CheckRejected(malformed, "An invalid sample cannot update pose data");
+    malformed = pose;
+    for (auto& row : malformed.mDeviceToAbsoluteTracking.m)
+        for (int column = 0; column < 3; ++column) row[column] = 0.0f;
+    CheckRejected(malformed, "A collapsed rotation cannot move the camera to a fabricated origin");
+    malformed = pose; malformed.mDeviceToAbsoluteTracking.m[0][0] = -1.0f;
+    CheckRejected(malformed, "A mirrored rotation cannot enter native pose conversion");
+    malformed = pose; malformed.mDeviceToAbsoluteTracking.m[0][1] = 0.25f;
+    CheckRejected(malformed, "A sheared tracked pose cannot distort the retained camera");
+    malformed = pose; malformed.mDeviceToAbsoluteTracking.m[0][0] = 2.0f;
+    CheckRejected(malformed, "A scaled tracked rotation cannot distort pose conversion");
     std::printf("Pose data recovery passed %d checks\n", checks);
 }

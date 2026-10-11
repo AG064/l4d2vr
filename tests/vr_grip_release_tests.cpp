@@ -1,5 +1,6 @@
 #include "../L4D2VR/vr_grip_release.h"
 #include "../L4D2VR/vr_magazine_policy.h"
+#include "../L4D2VR/vr_input_recovery.h"
 #include <cstdlib>
 #include <iostream>
 
@@ -17,6 +18,20 @@ int main()
     using l4d2vr_grip::ReleaseLatch;
     using l4d2vr_grip::CanReleaseInventoryItem;
     using l4d2vr_grip::MayCommitDrop;
+    std::atomic<uint32_t> samples{0u};
+    ReleaseLatch missed;
+    l4d2vr_input::GripSample::Publish(samples,1u);
+    missed.Update(true,true,false,7u,l4d2vr_input::GripSample::Generation(samples.load()));
+    l4d2vr_input::GripSample::Publish(samples,3u);
+    missed.Update(true,true,true,7u,l4d2vr_input::GripSample::Generation(samples.load()));
+    l4d2vr_input::GripSample::Publish(samples,0u); // native command generation misses this sample
+    l4d2vr_input::GripSample::Publish(samples,1u);
+    const auto discontinuity=l4d2vr_input::GripSample::Generation(samples.load());
+    Check(!missed.Update(true,true,false,7u,discontinuity),"Skipped unavailable grip cannot become drop");
+    Check(!missed.Update(true,true,true,7u,discontinuity),"Recovered held grip cannot rearm drop");
+    Check(!missed.Update(true,true,false,7u,discontinuity),"Healthy neutral grip is only a new baseline");
+    Check(!missed.Update(true,true,true,7u,discontinuity),"Fresh grip press arms normally");
+    Check(missed.Update(true,true,false,7u,discontinuity),"Fresh grip release still drops normally");
     Check(MayCommitDrop(true, true, true, true, 0), "A current live owned weapon may be released");
     Check(MayCommitDrop(true, true, true, true, 48), "A bounded delayed command may still commit");
     Check(!MayCommitDrop(true, true, true, true, 49), "An expired release must not mutate inventory");
