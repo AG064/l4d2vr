@@ -81,12 +81,37 @@ namespace l4d2vr_interaction
         return Finite(shell) && Finite(port) && std::isfinite(radius) && radius > 0.0f &&
             (shell - port).LengthSqr() <= radius * radius;
     }
+    inline bool ValidBoxBounds(const Vector& mins, const Vector& maxs)
+    {
+        return Finite(mins) && Finite(maxs) && mins.x <= maxs.x && mins.y <= maxs.y && mins.z <= maxs.z;
+    }
+    inline bool ValidBox(const Vector& origin, const Vector& axisX, const Vector& axisY,
+        const Vector& axisZ, const Vector& mins, const Vector& maxs)
+    {
+        if (!Finite(origin) || !Finite(axisX) || !Finite(axisY) || !Finite(axisZ) || !ValidBoxBounds(mins, maxs))
+            return false;
+        const float xLength = axisX.Length(), yLength = axisY.Length(), zLength = axisZ.Length();
+        if (!std::isfinite(xLength) || !std::isfinite(yLength) || !std::isfinite(zLength) ||
+            xLength < 0.0001f || yLength < 0.0001f || zLength < 0.0001f)
+            return false;
+        Vector cross{};
+        CrossProduct(axisX * (1.0f / xLength), axisY * (1.0f / yLength), cross);
+        return std::fabs(DotProduct(cross, axisZ * (1.0f / zLength))) > 0.001f;
+    }
     inline float PointBoxDistance(const Vector& point, const Vector& mins, const Vector& maxs)
     {
-        if (!Finite(point) || !Finite(mins) || !Finite(maxs) || mins.x > maxs.x || mins.y > maxs.y || mins.z > maxs.z)
+        if (!Finite(point) || !ValidBoxBounds(mins, maxs))
             return INFINITY;
         const Vector closest(std::clamp(point.x, mins.x, maxs.x), std::clamp(point.y, mins.y, maxs.y),
             std::clamp(point.z, mins.z, maxs.z));
         return (point - closest).Length();
+    }
+    inline float OrientedBoxDistance(const Vector& point, const Vector& origin, const Vector& axisX,
+        const Vector& axisY, const Vector& axisZ, const Vector& mins, const Vector& maxs)
+    {
+        if (!Finite(point) || !ValidBox(origin, axisX, axisY, axisZ, mins, maxs)) return INFINITY;
+        const Vector delta = point - origin;
+        return PointBoxDistance(Vector(DotProduct(delta, axisX), DotProduct(delta, axisY), DotProduct(delta, axisZ)),
+            mins, maxs);
     }
 }

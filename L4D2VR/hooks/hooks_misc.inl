@@ -924,10 +924,9 @@ namespace
         struct ControllerPairReadiness
         {
             VR* owner = nullptr;
-            bool ready = false;
             bool waitingLogged = false;
             bool readyLogged = false;
-            std::chrono::steady_clock::time_point bothValidSince{};
+            l4d2vr_input::ControllerPairReadiness tracking;
         };
 
         static std::mutex s_readinessMutex;
@@ -937,12 +936,12 @@ namespace
         const bool haveTracking =
             vr->ReadWorldPoseTrackingSnapshot(tracking);
         const bool bothControllersValid =
-            haveTracking && tracking.leftHandValid && tracking.rightHandValid;
+            haveTracking && tracking.hmdValid && tracking.leftHandValid && tracking.rightHandValid;
         const uint32_t generation =
             vr->m_NativeViewmodelLeftHandFreezeGeneration.load(
                 std::memory_order_acquire);
-        const auto now = std::chrono::steady_clock::now();
-        constexpr auto kStableDuration = std::chrono::milliseconds(200);
+        const uint64_t nowMs = GetTickCount64();
+        const uint32_t poseToken = vr->m_SubmitPoseToken.load(std::memory_order_acquire);
 
         std::lock_guard<std::mutex> lock(s_readinessMutex);
         // Animation-freeze generations can change every frame. They are not
@@ -953,42 +952,35 @@ namespace
             s_readiness.owner = vr;
         }
 
-        if (!bothControllersValid)
+        const bool pairReady = s_readiness.tracking.Update(
+            vr->m_FirstPersonControlReady.load(std::memory_order_acquire),
+            bothControllersValid, tracking.capturedAtMs, poseToken, nowMs);
+        if (!pairReady)
         {
-            s_readiness.ready = false;
             s_readiness.readyLogged = false;
-            s_readiness.bothValidSince = {};
             if (!s_readiness.waitingLogged)
             {
                 Game::logMsg(
-                    "[VR][ViewmodelArmIK] waiting for atomic controller pair generation=%u snapshot=%s leftValid=%s rightValid=%s",
+                    "[VR][ViewmodelArmIK] waiting for fresh stable controller pair generation=%u snapshot=%s leftValid=%s rightValid=%s poseToken=%u",
                     generation,
                     haveTracking ? "ready" : "missing",
                     tracking.leftHandValid ? "true" : "false",
-                    tracking.rightHandValid ? "true" : "false");
+                    tracking.rightHandValid ? "true" : "false", poseToken);
                 s_readiness.waitingLogged = true;
             }
             return false;
         }
 
-        if (s_readiness.bothValidSince.time_since_epoch().count() == 0)
-            s_readiness.bothValidSince = now;
-        if (now - s_readiness.bothValidSince < kStableDuration)
-            return false;
-
-        s_readiness.ready = true;
         s_readiness.waitingLogged = false;
         if (!s_readiness.readyLogged)
         {
             Game::logMsg(
-                "[VR][ViewmodelArmIK] atomic controller pair stable; enabling both arms generation=%u stableMs=%lld",
+                "[VR][ViewmodelArmIK] fresh controller pair stable; enabling both arms generation=%u stableMs=%llu",
                 generation,
-                static_cast<long long>(
-                    std::chrono::duration_cast<std::chrono::milliseconds>(
-                        now - s_readiness.bothValidSince).count()));
+                static_cast<unsigned long long>(s_readiness.tracking.StableDurationMs()));
             s_readiness.readyLogged = true;
         }
-        return s_readiness.ready;
+        return true;
     }
 
     inline bool HooksModelNameIsViewmodel(const std::string& modelName)
@@ -17823,11 +17815,14 @@ namespace
         vr_vm_stabilize::Mat3x4*& outBones)
     {
         outBones = nullptr;
-        if (!HooksNativeViewmodelFullArmIkActive(vr) ||
-            !drawState || !pCustomBoneToWorld)
+        if (!HooksNativeViewmodelFullArmIkActive(vr))
         {
+            if (vr && !vr->m_FirstPersonControlReady.load(std::memory_order_acquire))
+                (void)HooksNativeViewmodelFullArmControllerPairReady(vr);
             return false;
         }
+        if (!drawState || !pCustomBoneToWorld)
+            return false;
 
         const std::string lowerModel = vr_vm_stabilize::ToLowerAscii(modelName);
         if (!HooksModelNameIsArmsOrHands(lowerModel))

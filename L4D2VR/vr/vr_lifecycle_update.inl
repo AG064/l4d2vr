@@ -2092,6 +2092,7 @@ void VR::Update()
 
     if (!m_Game->m_VguiSurface)
     {
+        ReleaseCustomActionInputs();
         PumpSpeechToTextVoiceBroadcast();
         FlushHapticMixer();
         markPresentSpikeUpdatePhase(m_PresentSpikeUpdateInputUs);
@@ -2104,6 +2105,7 @@ void VR::Update()
 
     if (menuInputActive)
     {
+        ReleaseCustomActionInputs();
         CancelTeleportTargeting();
         ProcessMenuInput();
     }

@@ -16,6 +16,28 @@ int main()
 {
     using l4d2vr_magazine::UseNativeReloadFallback;
     using l4d2vr_magazine::WantsNativeReload;
+    using l4d2vr_magazine::ResolveBoltPullDistanceMeters;
+    const float scale = 43.2f;
+    for (const float invalid : {0.0f, -0.02f, std::numeric_limits<float>::quiet_NaN(),
+        std::numeric_limits<float>::infinity(), -std::numeric_limits<float>::infinity(), 0.000001f})
+    {
+        Check(ResolveBoltPullDistanceMeters(invalid,false,scale)==0.055f,
+            "An unusable slide calibration must recover a positive physical stroke");
+        Check(ResolveBoltPullDistanceMeters(invalid,true,scale)==0.09f,
+            "An unusable pump calibration must recover the longer physical pump stroke");
+    }
+    for (const float calibrated : {0.001f, 0.018f, 0.045f, 0.055f, 0.077f, 0.09f, 0.25f})
+    {
+        Check(ResolveBoltPullDistanceMeters(calibrated,false,scale)==calibrated &&
+            ResolveBoltPullDistanceMeters(calibrated,true,scale)==calibrated,
+            "A selected valid weapon or profile override must remain exact for slides and pumps");
+    }
+    Check(ResolveBoltPullDistanceMeters(0.4f,false,scale)==0.25f &&
+        ResolveBoltPullDistanceMeters(0.4f,true,scale)==0.25f,
+        "A finite oversized calibration must retain the existing upper limit");
+    Check(ResolveBoltPullDistanceMeters(0.0001f,false,5.0f)==0.055f &&
+        ResolveBoltPullDistanceMeters(0.0001f,false,scale)==0.0001f,
+        "Only calibration that cannot clear the scaled mechanical threshold needs recovery");
     Check(!WantsNativeReload(true,true,false), "A reload gesture must not start stock animation while physical magazines own it");
     Check(WantsNativeReload(false,true,true), "An explicit backend completion must still reach native reload when needed");
     Check(WantsNativeReload(true,false,false), "Unsupported physical hosts must retain normal reload input");

@@ -2,8 +2,13 @@ void VR::GetPoses()
 {
     vr::TrackedDevicePose_t hmdPose = m_Poses[vr::k_unTrackedDeviceIndex_Hmd];
 
-    const vr::TrackedDeviceIndex_t leftControllerIndex = m_System->GetTrackedDeviceIndexForControllerRole(vr::TrackedControllerRole_LeftHand);
-    const vr::TrackedDeviceIndex_t rightControllerIndex = m_System->GetTrackedDeviceIndexForControllerRole(vr::TrackedControllerRole_RightHand);
+    // Refresh identity once per tracking update. Render and hand consumers read
+    // this atomic pair without repeating the driver-property scan.
+    const auto controllers = l4d2vr_controller_identity::WithUsablePoses(
+        l4d2vr_controller_identity::Resolve(m_System), m_Poses, vr::k_unMaxTrackedDeviceCount);
+    m_PhysicalControllerIndexPair.store(l4d2vr_controller_identity::Pack(controllers), std::memory_order_release);
+    const vr::TrackedDeviceIndex_t leftControllerIndex = controllers.left;
+    const vr::TrackedDeviceIndex_t rightControllerIndex = controllers.right;
 
     vr::TrackedDevicePose_t leftControllerPose{};
     vr::TrackedDevicePose_t rightControllerPose{};
@@ -578,11 +583,11 @@ bool VR::GetLeftHandedMirroredAnalogActionData(vr::VRActionHandle_t actionHandle
     if (cache.dataValid && cache.frameSerial == m_InputActionStateFrameSerial)
     {
         analogDataOut = cache.data;
-        return true;
+        return cache.querySucceeded;
     }
 
     vr::InputAnalogActionData_t combined{};
-    float bestMagnitudeSq = -1.0f;
+    double bestMagnitudeSq = -1.0;
     bool anyQuerySucceeded = false;
     if (mapIt != m_LeftHandedAnalogActionSwapMap.end())
     {
@@ -598,7 +603,11 @@ bool VR::GetLeftHandedMirroredAnalogActionData(vr::VRActionHandle_t actionHandle
                 continue;
 
             anyQuerySucceeded = true;
-            const float magnitudeSq = data.x * data.x + data.y * data.y + data.z * data.z;
+            if (!data.bActive || !std::isfinite(data.x) || !std::isfinite(data.y) || !std::isfinite(data.z))
+                continue;
+
+            const double magnitudeSq = static_cast<double>(data.x) * data.x +
+                static_cast<double>(data.y) * data.y + static_cast<double>(data.z) * data.z;
             if (magnitudeSq > bestMagnitudeSq)
             {
                 bestMagnitudeSq = magnitudeSq;
@@ -607,14 +616,12 @@ bool VR::GetLeftHandedMirroredAnalogActionData(vr::VRActionHandle_t actionHandle
         }
     }
 
-    if (!anyQuerySucceeded)
-        combined.bActive = true;
-
     cache.frameSerial = m_InputActionStateFrameSerial;
     cache.dataValid = true;
+    cache.querySucceeded = anyQuerySucceeded;
     cache.data = combined;
     analogDataOut = combined;
-    return true;
+    return anyQuerySucceeded;
 }
 
 bool VR::GetDigitalActionData(vr::VRActionHandle_t& actionHandle, vr::InputDigitalActionData_t& digitalDataOut)

@@ -837,8 +837,6 @@ bool VrHandSystem::EnsureInitialized(
     for (size_t handIndex = 0; handIndex < m_Hands.size(); ++handIndex)
     {
         HandState& hand = m_Hands[handIndex];
-        if (usesViewmodelPose(handIndex))
-            continue;
         if (hand.skeletonInitialized)
             continue;
 
@@ -1259,7 +1257,8 @@ void VrHandSystem::UpdatePoses(
             ((magazineGripPhysicalMask & (1u << handIndex)) != 0u) ? &magazineGripOverride : nullptr;
         if (!hand.skeleton.BuildSkinningPalette(hand.asset, hand.palette, error, fingerCurlOverride, &gloveFingerMaxCurl))
         {
-            m_DependencyUnavailable = true;
+            ReportErrorOnce(std::string(handIndex == 0u ? "left" : "right") +
+                " hand skinning palette unavailable" + (error.empty() ? "" : ": " + error));
             continue;
         }
         hand.paletteValid = true;
@@ -1594,6 +1593,8 @@ bool VrHandSystem::DrawForEye(
             useViewmodelPose
             ? (useLeftViewmodelPose ? &leftViewmodelState : &rightViewmodelState)
             : nullptr;
+        if (viewmodelState && !viewmodelState->paletteValid)
+            viewmodelState = nullptr;
         const std::vector<VrHandMatrixRows3x4>& palette =
             viewmodelState ? viewmodelState->palette : hand.palette;
         const bool paletteValid =
@@ -1629,7 +1630,7 @@ bool VrHandSystem::DrawForEye(
 
         const bool magazineHandUsesViewmodelLayer = magazineUsesViewmodelLayer &&
             (magazineGripPhysicalMask & (1u << physicalHandIndex)) != 0u;
-        const bool useViewmodelLayer = useViewmodelPose || magazineHandUsesViewmodelLayer;
+        const bool useViewmodelLayer = viewmodelState != nullptr || magazineHandUsesViewmodelLayer;
         if (magazineHandUsesViewmodelLayer &&
             drawPass == VrHandDrawPass::WorldVisibilityMask)
         {

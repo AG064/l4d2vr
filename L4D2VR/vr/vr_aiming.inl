@@ -4226,11 +4226,8 @@ bool VR::IsGameplayHandLeftPhysical(bool leftHand) const
 
 vr::TrackedDeviceIndex_t VR::GetPhysicalControllerIndexForHand(bool leftHand) const
 {
-    if (!m_System)
-        return vr::k_unTrackedDeviceIndexInvalid;
-
-    return m_System->GetTrackedDeviceIndexForControllerRole(
-        leftHand ? vr::TrackedControllerRole_LeftHand : vr::TrackedControllerRole_RightHand);
+    return l4d2vr_controller_identity::CachedIndex(m_System,
+        m_PhysicalControllerIndexPair.load(std::memory_order_acquire), leftHand);
 }
 
 void VR::TriggerLegacyHapticPulse(vr::TrackedDeviceIndex_t deviceIndex, float durationSeconds, float amplitude) const

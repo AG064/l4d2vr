@@ -180,3 +180,92 @@ if(MSVC)
     target_compile_options(vr_client_command_tests PRIVATE /W4 /WX)
 endif()
 add_test(NAME vr_client_command COMMAND vr_client_command_tests)
+
+# Compile the production functions against scripted input without pulling in
+# the game's rendering and engine dependencies.
+function(extract_mirrored_analog_fixture source_text begin_marker end_marker result_name)
+    string(FIND "${source_text}" "${begin_marker}" begin_index)
+    if(begin_index LESS 0)
+        message(FATAL_ERROR "Mirrored analog fixture start marker missing: ${begin_marker}")
+    endif()
+    string(SUBSTRING "${source_text}" ${begin_index} -1 source_tail)
+    string(FIND "${source_tail}" "${end_marker}" end_index)
+    if(end_index LESS 0)
+        message(FATAL_ERROR "Mirrored analog fixture end marker missing: ${end_marker}")
+    endif()
+    string(SUBSTRING "${source_tail}" 0 ${end_index} fixture_text)
+    set(${result_name} "${fixture_text}" PARENT_SCOPE)
+endfunction()
+
+set(mirrored_analog_header "${CMAKE_CURRENT_SOURCE_DIR}/../L4D2VR/vr.h")
+set(mirrored_analog_source "${CMAKE_CURRENT_SOURCE_DIR}/../L4D2VR/vr/vr_lifecycle_pose_hud.inl")
+set(mirrored_analog_walk_source "${CMAKE_CURRENT_SOURCE_DIR}/../L4D2VR/vr/vr_lifecycle_update.inl")
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+    "${mirrored_analog_header}" "${mirrored_analog_source}" "${mirrored_analog_walk_source}")
+file(READ "${mirrored_analog_header}" mirrored_analog_header_text)
+file(READ "${mirrored_analog_source}" mirrored_analog_source_text)
+file(READ "${mirrored_analog_walk_source}" mirrored_analog_walk_text)
+extract_mirrored_analog_fixture("${mirrored_analog_header_text}"
+    "struct LeftHandedMirroredActionSource" "struct LeftHandedDigitalActionFrameCache" mirrored_analog_sources)
+extract_mirrored_analog_fixture("${mirrored_analog_header_text}"
+    "struct LeftHandedAnalogActionFrameCache" "struct WeaponHapticsProfile" mirrored_analog_cache)
+extract_mirrored_analog_fixture("${mirrored_analog_source_text}"
+    "bool VR::GetLeftHandedMirroredAnalogActionData(" "bool VR::GetDigitalActionData(" mirrored_analog_function)
+extract_mirrored_analog_fixture("${mirrored_analog_source_text}"
+    "bool VR::GetAnalogActionData(" "void VR::ProcessMenuInput()" mirrored_analog_wrapper)
+extract_mirrored_analog_fixture("${mirrored_analog_walk_text}"
+    "bool VR::GetWalkAxis(" "void VR::LogVAS(" mirrored_analog_walk)
+file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/vr_mirrored_analog_types.inl"
+    "${mirrored_analog_sources}\n${mirrored_analog_cache}")
+file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/vr_mirrored_analog_functions.inl"
+    "${mirrored_analog_function}\n${mirrored_analog_wrapper}\n${mirrored_analog_walk}")
+add_executable(vr_mirrored_analog_tests vr_mirrored_analog_tests.cpp)
+target_compile_features(vr_mirrored_analog_tests PRIVATE cxx_std_17)
+target_include_directories(vr_mirrored_analog_tests PRIVATE
+    "${CMAKE_CURRENT_BINARY_DIR}" "${CMAKE_CURRENT_SOURCE_DIR}/../thirdparty/openvr/include")
+if(MSVC)
+    target_compile_options(vr_mirrored_analog_tests PRIVATE /W4 /WX)
+endif()
+add_test(NAME vr_mirrored_analog COMMAND vr_mirrored_analog_tests)
+
+set(custom_action_source "${CMAKE_CURRENT_SOURCE_DIR}/../L4D2VR/vr/vr_process_input.inl")
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${custom_action_source}")
+file(READ "${custom_action_source}" custom_action_text)
+extract_mirrored_analog_fixture("${mirrored_analog_header_text}"
+    "struct CustomActionBinding" "struct LeftHandedMirroredActionSource" custom_action_binding)
+extract_mirrored_analog_fixture("${custom_action_text}"
+    "void VR::SendCustomActionTransition(" "void VR::ProcessInput()" custom_action_transitions)
+extract_mirrored_analog_fixture("${custom_action_text}"
+    "    auto isWalkPressCommand" "    UpdateTeleportTargeting();" custom_action_handler)
+file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/vr_custom_action_binding.inl" "${custom_action_binding}")
+file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/vr_custom_action_transitions.inl" "${custom_action_transitions}")
+file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/vr_custom_action_handler.inl" "${custom_action_handler}")
+add_executable(vr_input_recovery_tests vr_input_recovery_tests.cpp)
+target_compile_features(vr_input_recovery_tests PRIVATE cxx_std_17)
+target_include_directories(vr_input_recovery_tests PRIVATE
+    "${CMAKE_CURRENT_BINARY_DIR}" "${CMAKE_CURRENT_SOURCE_DIR}/../thirdparty/openvr/include")
+if(MSVC)
+    target_compile_options(vr_input_recovery_tests PRIVATE /W4 /WX)
+endif()
+add_test(NAME vr_input_recovery COMMAND vr_input_recovery_tests)
+
+set(controller_identity_aiming_source "${CMAKE_CURRENT_SOURCE_DIR}/../L4D2VR/vr/vr_aiming.inl")
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${controller_identity_aiming_source}")
+file(READ "${controller_identity_aiming_source}" controller_identity_aiming_text)
+extract_mirrored_analog_fixture("${mirrored_analog_source_text}"
+    "void VR::GetPoses()" "bool VR::ReadPoseWaiterSnapshot(" controller_identity_poses)
+extract_mirrored_analog_fixture("${controller_identity_aiming_text}"
+    "vr::TrackedDeviceIndex_t VR::GetPhysicalControllerIndexForHand(" "void VR::TriggerLegacyHapticPulse(" controller_identity_getter)
+extract_mirrored_analog_fixture("${mirrored_analog_header_text}"
+    "std::atomic<uint64_t> m_PhysicalControllerIndexPair" "mutable std::mutex m_WorldPoseTrackingSnapshotMutex" controller_identity_cache)
+file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/vr_controller_identity_cache.inl" "${controller_identity_cache}")
+file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/vr_controller_identity_functions.inl"
+    "${controller_identity_poses}\n${controller_identity_getter}")
+add_executable(vr_controller_identity_tests vr_controller_identity_tests.cpp)
+target_compile_features(vr_controller_identity_tests PRIVATE cxx_std_17)
+target_include_directories(vr_controller_identity_tests PRIVATE
+    "${CMAKE_CURRENT_BINARY_DIR}" "${CMAKE_CURRENT_SOURCE_DIR}/../thirdparty/openvr/include")
+if(MSVC)
+    target_compile_options(vr_controller_identity_tests PRIVATE /W4 /WX)
+endif()
+add_test(NAME vr_controller_identity COMMAND vr_controller_identity_tests)

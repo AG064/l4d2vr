@@ -399,16 +399,8 @@ namespace
         const MagazineInteractionBoxSnapshot& box,
         const Vector& worldPoint)
     {
-        const Vector delta = worldPoint - box.origin;
-        const Vector local(
-            VrHandMath::Dot(delta, box.axisX),
-            VrHandMath::Dot(delta, box.axisY),
-            VrHandMath::Dot(delta, box.axisZ));
-        const Vector closest(
-            std::clamp(local.x, box.mins.x, box.maxs.x),
-            std::clamp(local.y, box.mins.y, box.maxs.y),
-            std::clamp(local.z, box.mins.z, box.maxs.z));
-        return (local - closest).Length();
+        return l4d2vr_interaction::OrientedBoxDistance(worldPoint, box.origin,
+            box.axisX, box.axisY, box.axisZ, box.mins, box.maxs);
     }
 
     float MagazineInteractionResolveAspect(float preferred, uint32_t width, uint32_t height)
@@ -1514,7 +1506,10 @@ namespace
             vr->m_MagazineInteractionBoltPullDistanceMetersProfileOverrides,
             vr->m_MagazineInteractionBoltPullDistanceMetersOverrides,
             value);
-        return std::clamp(value, 0.0f, 0.25f);
+        const auto weaponId = static_cast<C_WeaponCSBase::WeaponID>(MagazineInteractionResolveWeaponIdForConfig(vr));
+        const bool pump = weaponId == C_WeaponCSBase::WeaponID::PUMPSHOTGUN ||
+            weaponId == C_WeaponCSBase::WeaponID::SHOTGUN_CHROME;
+        return l4d2vr_magazine::ResolveBoltPullDistanceMeters(value, pump, vr->m_VRScale);
     }
 
     float MagazineInteractionResolveBoltReturnDistanceMeters(const VR* vr)
@@ -2992,6 +2987,14 @@ void VR::PublishMagazineInteractionBox(
         return;
     }
 
+    if (!l4d2vr_interaction::ValidBox(origin, axisX, axisY, axisZ, mins, maxs))
+    {
+        std::lock_guard<std::mutex> lock(m_MagazineInteractionBoxMutex);
+        m_MagazineInteractionBoxValid = false;
+        m_MagazineInteractionBox = {};
+        return;
+    }
+
     MagazineInteractionBoxSnapshot snapshot{};
     snapshot.origin = origin;
     snapshot.axisX = MagazineInteractionNormalizeAxis(axisX, Vector(1.0f, 0.0f, 0.0f));
@@ -3065,6 +3068,14 @@ void VR::PublishMagazineInteractionBoltBox(
         return;
     }
 
+    if (!l4d2vr_interaction::ValidBox(origin, axisX, axisY, axisZ, mins, maxs))
+    {
+        std::lock_guard<std::mutex> lock(m_MagazineInteractionBoltBoxMutex);
+        m_MagazineInteractionBoltBoxValid = false;
+        m_MagazineInteractionBoltBox = {};
+        return;
+    }
+
     MagazineInteractionBoxSnapshot snapshot{};
     snapshot.origin = origin;
     snapshot.axisX = MagazineInteractionNormalizeAxis(axisX, Vector(1.0f, 0.0f, 0.0f));
@@ -3110,6 +3121,14 @@ void VR::PublishVrHandsTwoHandedGripWeaponBox(
 {
     if (!m_IsVREnabled || (!m_VrHandsEnabled && !m_NativeViewmodelHandsOnly))
         return;
+
+    if (!l4d2vr_interaction::ValidBox(origin, axisX, axisY, axisZ, mins, maxs))
+    {
+        std::lock_guard<std::mutex> lock(m_VrHandsTwoHandedGripWeaponBoxMutex);
+        m_VrHandsTwoHandedGripWeaponBoxValid = false;
+        m_VrHandsTwoHandedGripWeaponBox = {};
+        return;
+    }
 
     MagazineInteractionBoxSnapshot snapshot{};
     snapshot.origin = origin;
@@ -5733,10 +5752,10 @@ bool VR::UpdateMagazineInteraction(
         }
 
         const float requiredPull = std::max(0.0f, MagazineInteractionResolveBoltPullDistanceMeters(this)) * m_VRScale;
-        if (requiredPull <= 0.001f)
+        if (!std::isfinite(requiredPull) || requiredPull <= l4d2vr_magazine::kMinimumBoltPullSourceUnits)
         {
             Game::logMsg(
-                "[VR][MagazineInteraction] skipped bolt stage because pull distance is disabled weaponId=%d reason=%s",
+                "[VR][MagazineInteraction] cannot start bolt stage: invalid scaled pull distance weaponId=%d reason=%s",
                 static_cast<int>(weaponId),
                 reason ? reason : "unknown");
             return false;
@@ -6672,10 +6691,10 @@ bool VR::UpdateMagazineInteraction(
         }
 
         const float requiredPull = std::max(0.0f, MagazineInteractionResolveBoltPullDistanceMeters(this)) * m_VRScale;
-        if (requiredPull <= 0.001f)
+        if (!std::isfinite(requiredPull) || requiredPull <= l4d2vr_magazine::kMinimumBoltPullSourceUnits)
         {
             Game::logMsg(
-                "[VR][MagazineInteraction] quick reload auto-bolt animation fallback: pull distance disabled weaponId=%d reason=%s",
+                "[VR][MagazineInteraction] quick reload auto-bolt animation fallback: invalid scaled pull distance weaponId=%d reason=%s",
                 static_cast<int>(activeWeaponId),
                 reason ? reason : "unknown");
             return false;

@@ -1,3 +1,27 @@
+void VR::SendCustomActionTransition(const l4d2vr_input::HeldTarget& target, bool down)
+{
+    if (target.kind == l4d2vr_input::HeldTarget::Kind::VirtualKey)
+    {
+        if (down)
+            SendVirtualKeyDown(target.virtualKey);
+        else
+            SendVirtualKeyUp(target.virtualKey);
+    }
+    else if (target.kind == l4d2vr_input::HeldTarget::Kind::Command && m_Game)
+    {
+        const auto& command = down ? target.pressCommand : target.releaseCommand;
+        if (!command.empty())
+            m_Game->ClientCmd_Unrestricted(command.c_str());
+    }
+}
+
+void VR::ReleaseCustomActionInputs()
+{
+    m_CustomActionInputs.ReleaseAll([&](const l4d2vr_input::HeldTarget& target, bool down)
+        { SendCustomActionTransition(target, down); });
+    m_CustomWalkHeld = false;
+}
+
 void VR::ProcessInput()
 {
     uint32_t weaponGripInputState = 0u;
@@ -27,6 +51,7 @@ void VR::ProcessInput()
     UpdateBodyInventoryPose();
     if (!m_IsVREnabled)
     {
+        ReleaseCustomActionInputs();
         if (m_MagazineInteractionSession.Observe(false, 0u, 0u, 0, 0u))
             ResetMagazineInteractionSession();
         m_DualPistolsActive.store(false, std::memory_order_release);
@@ -70,6 +95,7 @@ void VR::ProcessInput()
 
     if (m_SuppressPlayerInput)
     {
+        ReleaseCustomActionInputs();
         // If some automation temporarily suppresses player input, ensure we don't leave
         // +attack/+attack2 stuck (we used to spam "-attack" every frame; now we edge-trigger).
         if (m_PrimaryAttackCmdOwned)
@@ -180,6 +206,7 @@ void VR::ProcessInput()
 
     if (m_TeleportVisualScoutActive)
     {
+        ReleaseCustomActionInputs();
         // Detached scout view is observation-only. Release any held gameplay command
         // immediately. Teleport remains available so the camera can be repositioned
         // repeatedly without returning to the authoritative body. A fresh Use press
@@ -1976,11 +2003,15 @@ void VR::ProcessInput()
             return false;
         };
 
-    auto handleCustomAction = [&](vr::VRActionHandle_t& actionHandle, const CustomActionBinding& binding)
+    auto handleCustomAction = [&](size_t index, vr::VRActionHandle_t& actionHandle, const CustomActionBinding& binding)
         {
             vr::InputDigitalActionData_t actionData{};
-            if (!GetDigitalActionData(actionHandle, actionData))
+            const bool available = GetDigitalActionData(actionHandle, actionData) && actionData.bActive;
+            if (!available)
+            {
+                m_CustomActionInputs.Reconcile(index, {}, false);
                 return;
+            }
 
             // If a CustomAction is mapped to +walk (press/release), optionally use it as a
             // hint to force third-person *rendering* while held. This is useful for slide
@@ -1991,50 +2022,47 @@ void VR::ProcessInput()
             }
 
             if (handleInternalCustomActionCommand(binding, actionData))
+            {
+                m_CustomActionInputs.Reconcile(index, {}, false);
                 return;
+            }
 
+            l4d2vr_input::HeldTarget target{};
+            if (binding.virtualKey.has_value() && binding.holdVirtualKey)
+            {
+                target.kind = l4d2vr_input::HeldTarget::Kind::VirtualKey;
+                target.virtualKey = *binding.virtualKey;
+            }
+            else if (!binding.virtualKey.has_value() && binding.usePressReleaseCommands)
+            {
+                target.kind = l4d2vr_input::HeldTarget::Kind::Command;
+                target.pressCommand = binding.command;
+                target.releaseCommand = binding.releaseCommand;
+            }
+            // Own the original release target and reconcile the current state.
+            // A release edge can be missed while menus or tracking interrupt input.
+            m_CustomActionInputs.Reconcile(index, target, actionData.bState);
             if (binding.virtualKey.has_value())
             {
-                if (binding.holdVirtualKey)
-                {
-                    if (!actionData.bChanged)
-                        return;
-
-                    if (actionData.bState)
-                        SendVirtualKeyDown(*binding.virtualKey);
-                    else
-                        SendVirtualKeyUp(*binding.virtualKey);
-                }
-                else if (actionData.bState && actionData.bChanged)
+                if (!binding.holdVirtualKey && actionData.bState && actionData.bChanged)
                 {
                     SendVirtualKey(*binding.virtualKey);
                 }
                 return;
             }
             if (binding.usePressReleaseCommands)
-            {
-                if (!actionData.bChanged)
-                    return;
-
-                if (actionData.bState)
-                {
-                    m_Game->ClientCmd_Unrestricted(binding.command.c_str());
-                }
-                else if (!binding.releaseCommand.empty())
-                {
-                    m_Game->ClientCmd_Unrestricted(binding.releaseCommand.c_str());
-                }
                 return;
-            }
             if (actionData.bState && actionData.bChanged && !binding.command.empty())
                 m_Game->ClientCmd_Unrestricted(binding.command.c_str());
         };
 
-    handleCustomAction(m_CustomAction1, m_CustomAction1Binding);
-    handleCustomAction(m_CustomAction2, m_CustomAction2Binding);
-    handleCustomAction(m_CustomAction3, m_CustomAction3Binding);
-    handleCustomAction(m_CustomAction4, m_CustomAction4Binding);
-    handleCustomAction(m_CustomAction5, m_CustomAction5Binding);
+    handleCustomAction(0u, m_CustomAction1, m_CustomAction1Binding);
+    handleCustomAction(1u, m_CustomAction2, m_CustomAction2Binding);
+    handleCustomAction(2u, m_CustomAction3, m_CustomAction3Binding);
+    handleCustomAction(3u, m_CustomAction4, m_CustomAction4Binding);
+    handleCustomAction(4u, m_CustomAction5, m_CustomAction5Binding);
+    m_CustomActionInputs.Flush([&](const l4d2vr_input::HeldTarget& target, bool down)
+        { SendCustomActionTransition(target, down); });
     UpdateTeleportTargeting();
 
     auto showTopHud = [&]()

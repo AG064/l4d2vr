@@ -109,6 +109,39 @@ int main()
         "Contact range must be measured from the item's surface");
     Check(!std::isfinite(PointBoxDistance(head,Vector(1.0f,0.0f,0.0f),Vector(-1.0f,1.0f,1.0f))),
         "Invalid item bounds must never offer grip pickup");
+    const Vector boxMins(-2.0f,-1.0f,-1.0f), boxMaxs(2.0f,1.0f,1.0f);
+    Check(ValidBox(head,forward,right,up,boxMins,boxMaxs), "A valid contact box can be published");
+    Check(OrientedBoxDistance(head+Vector(0.0f,3.0f,0.0f),head,Vector(0.0f,1.0f,0.0f),
+        Vector(1.0f,0.0f,0.0f),up,boxMins,boxMaxs)==1.0f,
+        "Rotated contact boxes must preserve distance from their surface");
+    const Vector invalidBounds(nan,nan,nan);
+    Check(!ValidBox(head,forward,right,up,invalidBounds,invalidBounds) &&
+        std::isinf(OrientedBoxDistance(movedHead,head,forward,right,up,invalidBounds,invalidBounds)),
+        "NaN bounds must be unavailable instead of reporting contact at every hand position");
+    const float inf=std::numeric_limits<float>::infinity();
+    for (const auto invalid : {Vector(nan,0.0f,0.0f),Vector(0.0f,inf,0.0f),Vector(0.0f,0.0f,-inf)})
+    {
+        Check(!ValidBox(head,forward,right,up,invalid,boxMaxs) &&
+            std::isinf(OrientedBoxDistance(head,head,forward,right,up,invalid,boxMaxs)),
+            "Nonfinite lower bounds must never reach box clamping");
+        Check(!ValidBox(head,forward,right,up,boxMins,invalid) &&
+            std::isinf(OrientedBoxDistance(head,head,forward,right,up,boxMins,invalid)),
+            "Nonfinite upper bounds must never reach box clamping");
+        Check(!ValidBox(invalid,forward,right,up,boxMins,boxMaxs) &&
+            std::isinf(OrientedBoxDistance(head,invalid,forward,right,up,boxMins,boxMaxs)),
+            "Nonfinite contact origins must be unavailable");
+        Check(!ValidBox(head,invalid,right,up,boxMins,boxMaxs) &&
+            std::isinf(OrientedBoxDistance(head,head,invalid,right,up,boxMins,boxMaxs)),
+            "Nonfinite contact axes must be unavailable");
+        Check(std::isinf(OrientedBoxDistance(invalid,head,forward,right,up,boxMins,boxMaxs)),
+            "Nonfinite hand probes must not produce contact");
+    }
+    Check(!ValidBox(head,forward,right,up,boxMaxs,boxMins) &&
+        std::isinf(OrientedBoxDistance(head,head,forward,right,up,boxMaxs,boxMins)),
+        "Reversed contact bounds must be unavailable at publication and consumption");
+    Check(!ValidBox(head,Vector(0.0f,0.0f,0.0f),right,up,boxMins,boxMaxs) &&
+        !ValidBox(head,forward,forward,up,boxMins,boxMaxs),
+        "Zero or parallel contact axes cannot define a usable box");
     Check(!LocalHandPosition(Vector(nan,0.0f,0.0f),head,forward,up,local),"Invalid tracking must not complete a stroke");
     Check(!ShellTouchesPort(head,head,nan),"Invalid port calibration must not load a shell");
 }

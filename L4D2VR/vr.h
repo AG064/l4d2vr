@@ -11,6 +11,7 @@
 #undef max
 #endif
 #include "openvr.h"
+#include "vr_controller_identity.h"
 #include "vr_weapon_calibration.h"
 #include "vr_scope_optics.h"
 #include "vr_weapon_models.h"
@@ -23,6 +24,7 @@
 #include "vr_pistol_prediction.h"
 #include "vr_pistol_reload.h"
 #include "vr_physical_controls.h"
+#include "vr_input_recovery.h"
 #include "vr_interaction_geometry.h"
 #include "vr_body_inventory.h"
 #include "vr_dual_pistols.h"
@@ -245,6 +247,7 @@ struct LeftHandedAnalogActionFrameCache
 {
 	uint64_t frameSerial = 0;
 	bool dataValid = false;
+	bool querySucceeded = false;
 	vr::InputAnalogActionData_t data{};
 };
 
@@ -1735,6 +1738,7 @@ public:
 	TrackedDevicePoseData m_HmdPose;
 	TrackedDevicePoseData m_LeftControllerPose;
 	TrackedDevicePoseData m_RightControllerPose;
+	std::atomic<uint64_t> m_PhysicalControllerIndexPair{ ~uint64_t{ 0 } };
 	mutable std::mutex m_WorldPoseTrackingSnapshotMutex;
 	VRWorldPoseTrackingSnapshot m_WorldPoseTrackingSnapshot{};
 
@@ -2565,6 +2569,7 @@ public:
 	CustomActionBinding m_CustomAction3Binding{};
 	CustomActionBinding m_CustomAction4Binding{};
 	CustomActionBinding m_CustomAction5Binding{};
+	l4d2vr_input::HeldCustomActions m_CustomActionInputs;
 
 	bool m_MotionGesturesEnabled = true;
 	bool m_MotionGestureSwingEnabled = true;
@@ -4100,6 +4105,8 @@ public:
 	void GetViewParameters();
 	void ProcessMenuInput();
 	void ProcessInput();
+	void ReleaseCustomActionInputs();
+	void SendCustomActionTransition(const l4d2vr_input::HeldTarget& target, bool down);
 	bool UpdateObjectPullInput(C_BasePlayer* localPlayer, bool gripActionDown);
 	void UpdateObjectPullClientTargetMainThread(C_BasePlayer* localPlayer);
 	bool GetObjectPullNativeHighlightIdentity(

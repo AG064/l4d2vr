@@ -259,6 +259,25 @@ reload remains available. Both client and server need this build.
 Free right gloves use the mirrored left glove calibration by default, rather
 than the held viewmodel hand calibration. Advanced overrides are
 `VrHandsRightFreePoseOffsetMeters` and `VrHandsRightFreePoseRotationOffsetDeg`.
+Hand skeleton initialization and palette failures are independent per hand.
+Unavailable skeletons and palette failures retry, while another valid hand can
+draw. If a preferred native viewmodel hand capture is unavailable, a valid
+controller-backed skeletal palette uses scene placement until capture returns.
+Full-arm readiness requires advancing, fresh tracking samples for 200 ms;
+repeated draws or animation-freeze generations cannot establish tracking.
+Physical controller identity prefers valid SteamVR hand assignments. If one is
+missing, a unique connected controller with the corresponding explicit driver
+role hint supplies that hand. Ambiguous hints, disconnected devices and invalid
+poses remain unavailable. Left-handed gameplay swaps the resolved pair once;
+anatomical model hands continue to use their physical controller.
+
+Inactive, failed or nonfinite mirrored stick reads do not replace keyboard
+movement with zero axes. Custom held keys and commands retain their original
+release target and reconcile current action state even when a release edge was
+missed. Menus, input suppression, detached scout mode and disabled VR release
+those inputs. Shared bindings transfer ownership without releasing the target
+between buttons. These software checks still require headset verification.
+
 Fresh magazines and shells use a repeatable controller-local grip with
 `ManualReloadMagazineHandRotationOffsetDeg` applied at pickup. The grip point
 lands at the palm; the gun and wrist orientation at the body anchor do not set

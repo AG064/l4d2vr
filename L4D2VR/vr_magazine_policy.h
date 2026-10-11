@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <array>
+#include <algorithm>
 #include <cmath>
 
 namespace l4d2vr_magazine
@@ -9,6 +10,15 @@ namespace l4d2vr_magazine
     constexpr unsigned kAuthoritativeMagazineInputMode = 64u;
     constexpr unsigned kAuthoritativeShellInputMode = 128u;
     constexpr unsigned kAuthoritativePistolInputMode = 256u;
+    constexpr float kMinimumBoltPullSourceUnits = 0.001f;
+    inline float ResolveBoltPullDistanceMeters(float configured, bool pump, float sourceUnitsPerMeter)
+    {
+        const float fallback = pump ? 0.09f : 0.055f;
+        if (!std::isfinite(configured) || configured <= 0.0f) return fallback;
+        const float bounded = std::min(configured, 0.25f);
+        const float stroke = bounded * sourceUnitsPerMeter;
+        return std::isfinite(stroke) && stroke > kMinimumBoltPullSourceUnits ? bounded : fallback;
+    }
     inline bool TrackingAllowsGesture(bool hmd, bool left, bool right,
         std::uint64_t captured, std::uint64_t now)
     {
