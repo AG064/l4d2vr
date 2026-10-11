@@ -114,7 +114,10 @@ void VR::PoseWaiterThreadMain()
 bool VR::UpdatePosesAndActions()
 {
     if (!m_Compositor)
+    {
+        m_InputActionFrame.Complete(m_InputActionFrame.Begin(), false);
         return false;
+    }
     const bool queued = (m_Game && (m_Game->GetMatQueueMode() != 0));
     uint32_t submitToken = 0;
     static std::atomic<uint32_t> s_fallbackSubmitToken{ 0 };
@@ -168,10 +171,27 @@ bool VR::UpdatePosesAndActions()
     if (!posesValid && m_CompositorExplicitTiming)
         m_CompositorNeedsHandoff = false;
 
-    m_Input->UpdateActionState(m_ActiveActionSets.data(), sizeof(vr::VRActiveActionSet_t), static_cast<uint32_t>(m_ActiveActionSets.size()));
-    ++m_InputActionStateFrameSerial;
-    RefreshLeftHandedInputActionSwapMaps(false);
+    // Pose pacing may block independently of native command generation. Keep
+    // the last completed action frame until the next action update begins.
+    UpdateInputActionState(m_InputActionFrame.Begin());
     return posesValid;
+}
+
+void VR::UpdateInputActionState(const l4d2vr_input::ActionFrame::Attempt& attempt)
+{
+    const auto error = m_Input
+        ? m_Input->UpdateActionState(m_ActiveActionSets.data(), sizeof(vr::VRActiveActionSet_t), static_cast<uint32_t>(m_ActiveActionSets.size()))
+        : vr::VRInputError_NoSteam;
+    ++m_InputActionStateFrameSerial;
+    if (error != m_LastInputActionStateError)
+    {
+        Game::logMsg("[VR][Input] action frame %s error=%d",
+            error == vr::VRInputError_None ? "available" : "unavailable", static_cast<int>(error));
+        m_LastInputActionStateError = error;
+    }
+    if (error == vr::VRInputError_None)
+        RefreshLeftHandedInputActionSwapMaps(false);
+    m_InputActionFrame.Complete(attempt, error == vr::VRInputError_None);
 }
 
 void VR::GetViewParameters()
@@ -494,22 +514,36 @@ void VR::RefreshLeftHandedInputActionSwapMaps(bool force)
 
 bool VR::GetLeftHandedMirroredDigitalActionData(vr::VRActionHandle_t actionHandle, vr::InputDigitalActionData_t& digitalDataOut)
 {
+    digitalDataOut = {};
+    const auto frame = m_InputActionFrame.Read();
+    if (!m_Input || !l4d2vr_input::ActionFrame::Ready(frame))
+        return false;
     const auto mapIt = m_LeftHandedDigitalActionSwapMap.find(actionHandle);
     const bool isHandBound = m_LeftHandedDigitalHandBoundActions.find(actionHandle) != m_LeftHandedDigitalHandBoundActions.end();
     if (!isHandBound)
     {
-        return m_Input->GetDigitalActionData(
+        const auto error = m_Input->GetDigitalActionData(
             actionHandle,
             &digitalDataOut,
             sizeof(digitalDataOut),
-            vr::k_ulInvalidInputValueHandle) == vr::VRInputError_None;
+            vr::k_ulInvalidInputValueHandle);
+        if (error != vr::VRInputError_None || !m_InputActionFrame.Matches(frame))
+        {
+            digitalDataOut = {};
+            return false;
+        }
+        if (!digitalDataOut.bActive)
+            digitalDataOut = {};
+        else if (l4d2vr_input::ActionFrame::SuppressEdges(frame))
+            digitalDataOut.bChanged = false;
+        return true;
     }
 
     LeftHandedDigitalActionFrameCache& cache = m_LeftHandedDigitalActionFrameCache[actionHandle];
     if (cache.dataValid && cache.frameSerial == m_InputActionStateFrameSerial)
     {
         digitalDataOut = cache.data;
-        return true;
+        return cache.querySucceeded;
     }
 
     vr::InputDigitalActionData_t combined{};
@@ -530,7 +564,9 @@ bool VR::GetLeftHandedMirroredDigitalActionData(vr::VRActionHandle_t actionHandl
                 continue;
 
             anyQuerySucceeded = true;
-            combined.bActive = combined.bActive || data.bActive;
+            if (!data.bActive)
+                continue;
+            combined.bActive = true;
             anyRawChanged = anyRawChanged || data.bChanged;
             if (data.bState)
             {
@@ -549,21 +585,20 @@ bool VR::GetLeftHandedMirroredDigitalActionData(vr::VRActionHandle_t actionHandl
         }
     }
 
-    // A hand-bound action with no binding on the mirrored controller is intentionally
-    // inactive after swapping. Do not leak its original-hand state back through.
-    if (!anyQuerySucceeded)
-        combined.bActive = true;
-
-    combined.bChanged = cache.previousStateValid
-        ? (cache.previousState != combined.bState)
-        : anyRawChanged;
-    cache.previousStateValid = true;
+    if (!m_InputActionFrame.Matches(frame))
+        return false;
+    const bool recovered = cache.dataValid && (!cache.querySucceeded || !cache.data.bActive);
+    combined.bChanged = combined.bActive && !recovered &&
+        !l4d2vr_input::ActionFrame::SuppressEdges(frame) &&
+        (cache.previousStateValid ? cache.previousState != combined.bState : anyRawChanged);
+    cache.previousStateValid = combined.bActive;
     cache.previousState = combined.bState;
     cache.frameSerial = m_InputActionStateFrameSerial;
     cache.dataValid = true;
+    cache.querySucceeded = anyQuerySucceeded;
     cache.data = combined;
     digitalDataOut = combined;
-    return true;
+    return anyQuerySucceeded;
 }
 
 bool VR::GetLeftHandedMirroredAnalogActionData(vr::VRActionHandle_t actionHandle, vr::InputAnalogActionData_t& analogDataOut)
@@ -626,10 +661,20 @@ bool VR::GetLeftHandedMirroredAnalogActionData(vr::VRActionHandle_t actionHandle
 
 bool VR::GetDigitalActionData(vr::VRActionHandle_t& actionHandle, vr::InputDigitalActionData_t& digitalDataOut)
 {
+    digitalDataOut = {};
+    const auto frame = m_InputActionFrame.Read();
+    if (!m_Input || !l4d2vr_input::ActionFrame::Ready(frame))
+        return false;
     if (m_LeftHanded && m_LeftHandedSwapInputActions)
     {
         RefreshLeftHandedInputActionSwapMaps(false);
-        return GetLeftHandedMirroredDigitalActionData(actionHandle, digitalDataOut);
+        const bool valid = GetLeftHandedMirroredDigitalActionData(actionHandle, digitalDataOut);
+        if (!m_InputActionFrame.Matches(frame))
+        {
+            digitalDataOut = {};
+            return false;
+        }
+        return valid;
     }
 
     const vr::EVRInputError result = m_Input->GetDigitalActionData(
@@ -637,15 +682,34 @@ bool VR::GetDigitalActionData(vr::VRActionHandle_t& actionHandle, vr::InputDigit
         &digitalDataOut,
         sizeof(digitalDataOut),
         vr::k_ulInvalidInputValueHandle);
-    return result == vr::VRInputError_None;
+    if (result != vr::VRInputError_None || !m_InputActionFrame.Matches(frame))
+    {
+        digitalDataOut = {};
+        return false;
+    }
+    if (!digitalDataOut.bActive)
+        digitalDataOut = {};
+    else if (l4d2vr_input::ActionFrame::SuppressEdges(frame))
+        digitalDataOut.bChanged = false;
+    return true;
 }
 
 bool VR::GetAnalogActionData(vr::VRActionHandle_t& actionHandle, vr::InputAnalogActionData_t& analogDataOut)
 {
+    analogDataOut = {};
+    const auto frame = m_InputActionFrame.Read();
+    if (!m_Input || !l4d2vr_input::ActionFrame::Ready(frame))
+        return false;
     if (m_LeftHanded && m_LeftHandedSwapInputActions)
     {
         RefreshLeftHandedInputActionSwapMaps(false);
-        return GetLeftHandedMirroredAnalogActionData(actionHandle, analogDataOut);
+        const bool valid = GetLeftHandedMirroredAnalogActionData(actionHandle, analogDataOut);
+        if (!m_InputActionFrame.Matches(frame))
+        {
+            analogDataOut = {};
+            return false;
+        }
+        return valid;
     }
 
     const vr::EVRInputError result = m_Input->GetAnalogActionData(
@@ -653,7 +717,22 @@ bool VR::GetAnalogActionData(vr::VRActionHandle_t& actionHandle, vr::InputAnalog
         &analogDataOut,
         sizeof(analogDataOut),
         vr::k_ulInvalidInputValueHandle);
-    return result == vr::VRInputError_None;
+    if (result != vr::VRInputError_None || !m_InputActionFrame.Matches(frame))
+    {
+        analogDataOut = {};
+        return false;
+    }
+    if (!analogDataOut.bActive)
+    {
+        analogDataOut = {};
+        return true;
+    }
+    if (!std::isfinite(analogDataOut.x) || !std::isfinite(analogDataOut.y) || !std::isfinite(analogDataOut.z))
+    {
+        analogDataOut = {};
+        return false;
+    }
+    return true;
 }
 
 void VR::ProcessMenuInput()

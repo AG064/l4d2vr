@@ -84,13 +84,15 @@ namespace
 
     bool ReadOpenVRSkeletalFingerCurls(
         vr::IVRInput* input,
+        const l4d2vr_input::ActionFrame& actionFrame,
         vr::VRActionHandle_t& action,
         const char* actionPath,
         std::array<float, 5>& outCurls,
         const char* label)
     {
         outCurls = { 0.0f, 0.0f, 0.0f, 0.0f, 0.0f };
-        if (!input || !actionPath || actionPath[0] == '\0')
+        const auto frame = actionFrame.Read();
+        if (!input || !l4d2vr_input::ActionFrame::Ready(frame) || !actionPath || actionPath[0] == '\0')
             return false;
 
         if (action == vr::k_ulInvalidActionHandle)
@@ -124,6 +126,11 @@ namespace
         for (int finger = 0; finger < 5; ++finger)
             outCurls[static_cast<size_t>(finger)] = std::clamp(summary.flFingerCurl[finger], 0.0f, 1.0f);
 
+        if (!actionFrame.Matches(frame))
+        {
+            outCurls = {};
+            return false;
+        }
         return true;
     }
 
@@ -3467,6 +3474,8 @@ void VR::UpdatePhysicalScopeWeapon(C_BasePlayer* owner, C_WeaponCSBase* weapon)
 
 bool VR::HasFreshMagazineInteractionTracking() const
 {
+    if (!IsInputActionFrameAvailable())
+        return false;
     VRWorldPoseTrackingSnapshot pose{};
     if (!ReadWorldPoseTrackingSnapshot(pose) ||
         !l4d2vr_magazine::TrackingAllowsGesture(pose.hmdValid, pose.leftHandValid, pose.rightHandValid,
@@ -4926,6 +4935,7 @@ bool VR::ReadMagazineInteractionFingerCurls(std::array<float, 5>& outCurls)
 
     return ReadOpenVRSkeletalFingerCurls(
         m_Input,
+        m_InputActionFrame,
         action,
         actionPath,
         outCurls,
@@ -4940,6 +4950,7 @@ void VR::UpdateNativeViewmodelLeftHandOpenVRFingerCurls()
         m_Input &&
         ReadOpenVRSkeletalFingerCurls(
             m_Input,
+            m_InputActionFrame,
             m_NativeViewmodelLeftHandOpenVRAction,
             "/actions/base/in/skeleton_lefthand",
             curls,
@@ -4965,7 +4976,7 @@ void VR::UpdateNativeViewmodelLeftHandOpenVRFingerCurls()
 bool VR::GetNativeViewmodelLeftHandOpenVRFingerCurls(std::array<float, 5>& outCurls) const
 {
     outCurls = { 0.0f, 0.0f, 0.0f, 0.0f, 0.0f };
-    if (!m_NativeViewmodelLeftHandOpenVRSkeleton)
+    if (!m_NativeViewmodelLeftHandOpenVRSkeleton || !IsInputActionFrameAvailable())
         return false;
 
     const auto now = std::chrono::steady_clock::now();
@@ -4995,6 +5006,7 @@ void VR::UpdateNativeViewmodelRightHandOpenVRFingerCurls()
         m_Input &&
         ReadOpenVRSkeletalFingerCurls(
             m_Input,
+            m_InputActionFrame,
             action,
             actionPath,
             curls,
@@ -5022,7 +5034,7 @@ void VR::UpdateNativeViewmodelRightHandOpenVRFingerCurls()
 bool VR::GetNativeViewmodelRightHandOpenVRFingerCurls(std::array<float, 5>& outCurls) const
 {
     outCurls = { 0.0f, 0.0f, 0.0f, 0.0f, 0.0f };
-    if (!m_NativeViewmodelLeftHandOpenVRSkeleton)
+    if (!m_NativeViewmodelLeftHandOpenVRSkeleton || !IsInputActionFrameAvailable())
         return false;
 
     const auto now = std::chrono::steady_clock::now();
@@ -5054,6 +5066,7 @@ bool VR::GetWorldPoseAnatomicalRightHandOpenVRFingerCurls(
 
     return ReadOpenVRSkeletalFingerCurls(
         m_Input,
+        m_InputActionFrame,
         m_NativeViewmodelRightHandOpenVRAction,
         "/actions/base/in/skeleton_righthand",
         outCurls,
@@ -7124,9 +7137,12 @@ bool VR::UpdateMagazineInteraction(
     if (m_MagazineInteractionState == MagazineInteractionManualState::WaitingForServerShell)
     {
         ApplyMagazineInteractionShotgunClientReloadAbort(activeWeapon, activeWeaponIdInt, "remote-shell-pending");
-        m_MagazineInteractionLeftHandHolding = leftGripDown;
-        m_MagazineInteractionLeftHandPoseActive.store(leftGripDown ? 1u : 0u,std::memory_order_relaxed);
-        if (leftGripDown) updateFreshDetachedMagazineFromLeftHand();
+        const bool shellInputAvailable = IsInputActionFrameAvailable();
+        const bool shellHeld = l4d2vr_shell::ShellRemainsHeld(m_MagazineInteractionLeftHandHolding,
+            leftGripDown, m_MagazineInteractionQuickReloadMode, shellInputAvailable);
+        m_MagazineInteractionLeftHandHolding = shellHeld;
+        m_MagazineInteractionLeftHandPoseActive.store(shellHeld ? 1u : 0u,std::memory_order_relaxed);
+        if (shellHeld && shellInputAvailable) updateFreshDetachedMagazineFromLeftHand();
         l4d2vr_shell::Reply reply{};
         int ammoType = -1, replicatedReserve = -1;
         if (MagazineInteractionTryReadValue(activeWeapon, kPrimaryAmmoTypeOffset, ammoType) && ammoType >= 0 && ammoType < 32)
@@ -7140,15 +7156,19 @@ bool VR::UpdateMagazineInteraction(
         m_MagazineInteractionState = MagazineInteractionManualState::WaitingForFreshMagazine;
         if (poll != l4d2vr_shell::ClientRequest::Poll::Result || reply.status != l4d2vr_shell::Status::Applied)
         {
-            if (leftGripDown && poll == l4d2vr_shell::ClientRequest::Poll::Result && l4d2vr_shell::RetainRejectedShell(reply.status))
+            if (shellHeld && poll == l4d2vr_shell::ClientRequest::Poll::Result && l4d2vr_shell::RetainRejectedShell(reply.status))
             {
                 m_ShellRetryContact.Reject(reply.status);
                 m_MagazineInteractionState = MagazineInteractionManualState::HoldingFreshMagazine;
                 m_MagazineInteractionLeftHandHolding = true;
                 m_MagazineInteractionLeftHandPoseActive.store(1u,std::memory_order_relaxed);
-                updateFreshDetachedMagazineFromLeftHand();
+                if (shellInputAvailable) updateFreshDetachedMagazineFromLeftHand();
             }
-            else m_MagazineInteractionFreshPickupBasisValid = false;
+            else
+            {
+                m_ShellRetryContact.Reset();
+                m_MagazineInteractionFreshPickupBasisValid = false;
+            }
             Game::logMsg("[VR][RemoteShell][client] insertion ended poll=%u status=%u",
                 static_cast<unsigned>(poll), static_cast<unsigned>(reply.status));
             return false;
@@ -7844,6 +7864,7 @@ bool VR::UpdateMagazineInteraction(
             m_MagazineInteractionRetainedMagazineHeld = false;
             m_MagazineInteractionLeftHandHolding = true;
             m_MagazineInteractionFreshGrabbedAt = now;
+            if (m_MagazineInteractionShotgunShellMode) m_ShellRetryContact.Reset();
             m_MagazineInteractionLeftHandPoseActive.store(1, std::memory_order_relaxed);
             const VrHandMatrix4 snappedFreshMagazineWorld = buildFreshHeldMagazineWorldFromLeftHand();
             setDetachedMagazineWorld(snappedFreshMagazineWorld);
@@ -7903,6 +7924,7 @@ bool VR::UpdateMagazineInteraction(
             m_MagazineInteractionRetainedMagazineHeld = false;
             m_MagazineInteractionLeftHandHolding = false;
             m_MagazineInteractionFreshPickupBasisValid = false;
+            if (m_MagazineInteractionShotgunShellMode) m_ShellRetryContact.Reset();
             m_MagazineInteractionLeftHandPoseActive.store(0, std::memory_order_relaxed);
             Game::logMsg(
                 "[VR][MagazineInteraction] fresh magazine dropped before socket insertion age=%.3fs",
@@ -7947,8 +7969,10 @@ bool VR::UpdateMagazineInteraction(
                     m_MagazineInteractionSessionGeneration.load(std::memory_order_acquire)))
                 {
                     m_MagazineInteractionState = MagazineInteractionManualState::WaitingForServerShell;
-                    m_MagazineInteractionLeftHandHolding = leftGripDown;
-                    m_MagazineInteractionLeftHandPoseActive.store(leftGripDown ? 1u : 0u, std::memory_order_relaxed);
+                    m_MagazineInteractionLeftHandHolding = l4d2vr_shell::ShellRemainsHeld(
+                        m_MagazineInteractionLeftHandHolding, leftGripDown, m_MagazineInteractionQuickReloadMode);
+                    m_MagazineInteractionLeftHandPoseActive.store(m_MagazineInteractionLeftHandHolding ? 1u : 0u,
+                        std::memory_order_relaxed);
                 }
                 else if (m_VrHandsDebugLog)
                 {

@@ -3436,7 +3436,7 @@ void VR::ParseConfigFile()
     m_ScopeSizeAdjustSpeed = std::clamp(getFloat("ScopeSizeAdjustSpeed", m_ScopeSizeAdjustSpeed), 0.0f, 5.0f);
     m_ScopeOffsetAdjustMoveSpeed = std::clamp(getFloat("ScopeOffsetAdjustMoveSpeed", m_ScopeOffsetAdjustMoveSpeed), 0.1f, 5.0f);
     m_ScopeAimSensitivityFovReductionRate = std::clamp(getFloat("ScopeAimSensitivityFovReductionRate", m_ScopeAimSensitivityFovReductionRate), 0.0f, 4.0f);
-    m_ScopeZNear = std::clamp(getFloat("ScopeZNear", m_ScopeZNear), 0.1f, 64.0f);
+    m_ScopeZNear = l4d2vr_optics::ResolveNearPlane(getFloat("ScopeZNear", m_ScopeZNear), m_ScopeZNear);
 
     m_ScopeCameraOffset = getVector3("ScopeCameraOffset", m_ScopeCameraOffset);
     { Vector tmp = getVector3("ScopeCameraAngleOffset", Vector{ m_ScopeCameraAngleOffset.x, m_ScopeCameraAngleOffset.y, m_ScopeCameraAngleOffset.z }); m_ScopeCameraAngleOffset = QAngle{ tmp.x, tmp.y, tmp.z }; }

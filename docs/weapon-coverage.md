@@ -54,6 +54,9 @@ bones place a circular lens in each eye render. It uses normal depth testing and
 Source's render queue, so the optic is part of the gun's render rather than a
 SteamVR overlay above the scene. The local gun's separate world model is excluded
 from the scope camera image; native gun shadows are preserved.
+The mounted lens follows the held weapon's near-clipping policy, including when
+it is inside the scene near plane. It retains world depth testing and restores
+the captured D3D pipeline state after drawing.
 
 Each eye is evaluated separately against the optic axis, pupil and 3.5 to 25 cm
 eye-relief interval. Off-axis or backwards viewing darkens the aperture. Looking
@@ -65,6 +68,9 @@ angular magnification as the eye moves. `ScopeBaseMagnification` defaults to 2x;
 the existing per-weapon FOV control and Use plus vertical left-stick adjustment
 increase it, bounded to 16x. Horizontal size adjustment and manual floating-lens
 placement do not resize or detach a physical optic.
+Requests outside the supported render FOV range fail closed rather than showing
+an image labeled with a magnification the projection cannot produce. Nonfinite
+clip planes and queued camera values cannot enter the scope render.
 
 The cached native mount is rebased onto the current controller pose for camera
 updates; each queued eye draw keeps its own captured lens pose. Lens and image

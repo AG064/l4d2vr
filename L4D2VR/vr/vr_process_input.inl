@@ -46,11 +46,11 @@ void VR::ProcessInput()
     uint32_t pistolOffhandGripState = 0u;
     DualTriggerPublication pistolGripPublication{ m_PistolOffhandGripState, pistolOffhandGripState };
     m_PistolUseLeft.store(false, std::memory_order_release);
-    m_LeftHandPistolActive.store(false, std::memory_order_release);
     m_MagazineReleaseJustPressed = false;
     UpdateBodyInventoryPose();
     if (!m_IsVREnabled)
     {
+        m_LeftHandPistolActive.store(false, std::memory_order_release);
         ReleaseCustomActionInputs();
         if (m_MagazineInteractionSession.Observe(false, 0u, 0u, 0, 0u))
             ResetMagazineInteractionSession();
@@ -64,6 +64,37 @@ void VR::ProcessInput()
         m_ObjectPullCatchActionSuppressMask = 0;
         return;
     }
+
+    // Resolve weapon ownership before unavailable-frame settlement. This state
+    // depends on the live player/weapon, not on controller action availability.
+    C_BasePlayer* localPlayer = nullptr;
+    if (m_Game && m_Game->m_EngineClient && m_Game->m_EngineClient->IsInGame())
+    {
+        const int playerIndex = m_Game->m_EngineClient->GetLocalPlayer();
+        if (playerIndex > 0)
+            localPlayer = static_cast<C_BasePlayer*>(m_Game->GetClientEntity(playerIndex));
+    }
+    bool isObserverOrIdle = false;
+    if (localPlayer)
+    {
+        const unsigned char* base = reinterpret_cast<const unsigned char*>(localPlayer);
+        int teamNum = 0, obsMode = 0;
+        unsigned char lifeState = 0xFF;
+        isObserverOrIdle = !SafeReadInt(base, kTeamNumOffset, teamNum) ||
+            !SafeReadU8(base, kLifeStateOffset, lifeState) ||
+            !SafeReadInt(base, kObserverModeOffset, obsMode) ||
+            teamNum == 1 || lifeState != 0 || obsMode != 0;
+    }
+    const bool nativeDualPistols = localPlayer && !isObserverOrIdle &&
+        m_Game->IsDualPistolWeapon(reinterpret_cast<C_WeaponCSBase*>(localPlayer->GetActiveWeapon()));
+    const bool nativePistol = localPlayer && !isObserverOrIdle && localPlayer->GetActiveWeapon() &&
+        reinterpret_cast<C_WeaponCSBase*>(localPlayer->GetActiveWeapon())->GetWeaponID() == C_WeaponCSBase::WeaponID::PISTOL;
+    const bool leftHeldPistol = m_DualPistolsIndependentHandsEnabled && !m_MouseModeEnabled &&
+        nativePistol && !nativeDualPistols && m_PistolOwnershipMask.load(std::memory_order_acquire) == 2u;
+    m_LeftHandPistolActive.store(leftHeldPistol, std::memory_order_release);
+    const bool dualPistolsActive = m_DualPistolsIndependentHandsEnabled && !m_MouseModeEnabled && nativeDualPistols &&
+        m_ServerPhysicalInteractionVersion.load(std::memory_order_acquire) == 1u;
+    m_DualPistolsActive.store(dualPistolsActive, std::memory_order_release);
 
     if (m_InGameVguiMouseDown && m_Game && m_Game->m_VguiInput)
     {
@@ -93,7 +124,7 @@ void VR::ProcessInput()
 
     UpdateSpecialInfectedWarningAction();
 
-    if (m_SuppressPlayerInput)
+    if (m_SuppressPlayerInput || !IsInputActionFrameAvailable())
     {
         ReleaseCustomActionInputs();
         // If some automation temporarily suppresses player input, ensure we don't leave
@@ -125,6 +156,11 @@ void VR::ProcessInput()
             m_Game->ClientCmd_Unrestricted("-reload");
             m_ReloadCmdOwned = false;
         }
+        if (m_DuckCmdOwned)
+        {
+            m_Game->ClientCmd_Unrestricted("-duck");
+            m_DuckCmdOwned = false;
+        }
         if (m_SpeechToTextCaptureActive)
         {
             EndSpeechToTextCapture(false);
@@ -136,8 +172,20 @@ void VR::ProcessInput()
         m_PrimaryAttackDown = false;
         m_MagazineInteractionThumbIndexCurlDownPrev = false;
         m_MagazineInteractionThreeFingerCurlDownPrev = false;
-        (void)UpdateMagazineInteraction(nullptr, false, false, false, false, false);
-        CancelMagazineInteractionManual();
+        if (m_SuppressPlayerInput)
+        {
+            (void)UpdateMagazineInteraction(nullptr, false, false, false, false, false);
+            CancelMagazineInteractionManual();
+        }
+        else
+        {
+            // A transient input failure cannot cancel an ammo request already
+            // submitted to the game/server or clear the required chamber cycle.
+            (void)UpdateMagazineInteraction(localPlayer, false, false, false, false, false);
+            m_JumpGestureHoldUntil = {};
+            m_ReloadGestureHoldUntil = {};
+            m_SecondaryAttackGestureHoldUntil = {};
+        }
         CancelTeleportTargeting();
         if (m_ObjectPullPhase != ObjectPullClientPhase::Idle)
             ResetObjectPullInput(true);
@@ -145,8 +193,10 @@ void VR::ProcessInput()
     }
 
     vr::InputDigitalActionData_t teleportActionData{};
-    const bool teleportActionValid = GetDigitalActionData(m_ActionTeleport, teleportActionData);
-    if (teleportActionValid && teleportActionData.bChanged)
+    const bool teleportActionValid = GetDigitalActionData(m_ActionTeleport, teleportActionData) && teleportActionData.bActive;
+    if (!teleportActionValid)
+        CancelTeleportTargeting();
+    else if (teleportActionData.bChanged)
     {
         if (teleportActionData.bState)
             BeginTeleportTargeting();
@@ -297,30 +347,6 @@ void VR::ProcessInput()
 #endif
 
 
-    // Detect spectator / observer / idle state early so we can re-route some inputs.
-    C_BasePlayer* localPlayer = nullptr;
-    {
-        const int playerIndex = m_Game->m_EngineClient->GetLocalPlayer();
-        localPlayer = static_cast<C_BasePlayer*>(m_Game->GetClientEntity(playerIndex));
-    }
-
-    bool isObserverOrIdle = false;
-    if (localPlayer)
-    {
-        const unsigned char* base = reinterpret_cast<const unsigned char*>(localPlayer);
-        const int teamNum = *reinterpret_cast<const int*>(base + kTeamNumOffset);
-        const unsigned char lifeState = *reinterpret_cast<const unsigned char*>(base + kLifeStateOffset);
-        const int obsMode = *reinterpret_cast<const int*>(base + kObserverModeOffset);
-        isObserverOrIdle = (teamNum == 1) || (lifeState != 0) || (obsMode != 0);
-    }
-
-    const bool nativeDualPistols = localPlayer && !isObserverOrIdle &&
-        m_Game->IsDualPistolWeapon(reinterpret_cast<C_WeaponCSBase*>(localPlayer->GetActiveWeapon()));
-    const bool nativePistol = localPlayer && !isObserverOrIdle && localPlayer->GetActiveWeapon() &&
-        reinterpret_cast<C_WeaponCSBase*>(localPlayer->GetActiveWeapon())->GetWeaponID() == C_WeaponCSBase::WeaponID::PISTOL;
-    const bool leftHeldPistol = m_DualPistolsIndependentHandsEnabled && !m_MouseModeEnabled &&
-        nativePistol && !nativeDualPistols && m_PistolOwnershipMask.load(std::memory_order_acquire) == 2u;
-    m_LeftHandPistolActive.store(leftHeldPistol, std::memory_order_release);
     l4d2vr_pistol_sync::State leftPistolReloadState{};
     const bool leftPistolPhysicalReload = leftHeldPistol &&
         ((ReadPistolMagazineState(localPlayer, reinterpret_cast<C_WeaponCSBase*>(localPlayer->GetActiveWeapon()), leftPistolReloadState) &&
@@ -332,9 +358,6 @@ void VR::ProcessInput()
     const bool nativeDualReload = m_DualPistolsNativeReloadFallbackEnabled &&
         (nativeDualPistols || (leftHeldPistol && !leftPistolPhysicalReload));
     nativeDualReloadState = nativeDualReload ? 1u : 0u;
-    const bool dualPistolsActive = m_DualPistolsIndependentHandsEnabled && !m_MouseModeEnabled && nativeDualPistols &&
-        m_ServerPhysicalInteractionVersion.load(std::memory_order_acquire) == 1u;
-    m_DualPistolsActive.store(dualPistolsActive, std::memory_order_release);
 
     const bool jumpGestureActive = m_MotionGesturesEnabled && currentTime < m_JumpGestureHoldUntil;
 
@@ -510,7 +533,9 @@ void VR::ProcessInput()
     const vr::ETrackedControllerRole gameplayRightRole = roleForGameplayHand(false);
 
     bool rightGripValid = false, rightGripDown = false, rightGripJustPressed = false;
+    const auto gripFrame = m_InputActionFrame.Read();
     if ((m_GripReleaseDropEnabled || m_BodyGripInventoryEnabled || leftPistolPhysicalReload) && m_Input &&
+        l4d2vr_input::ActionFrame::Ready(gripFrame) &&
         m_ActionWeaponGrip != vr::k_ulInvalidActionHandle)
     {
         vr::VRInputValueHandle_t gripSource = vr::k_ulInvalidInputValueHandle;
@@ -519,11 +544,12 @@ void VR::ProcessInput()
         vr::InputDigitalActionData_t gripData{};
         if (m_Input->GetInputSourceHandle(gripSourcePath, &gripSource) == vr::VRInputError_None &&
             m_Input->GetDigitalActionData(m_ActionWeaponGrip, &gripData,
-                sizeof(gripData), gripSource) == vr::VRInputError_None)
+                sizeof(gripData), gripSource) == vr::VRInputError_None && m_InputActionFrame.Matches(gripFrame))
         {
             rightGripValid = gripData.bActive;
             rightGripDown = gripData.bActive && gripData.bState;
-            rightGripJustPressed = rightGripDown && gripData.bChanged;
+            rightGripJustPressed = rightGripDown && gripData.bChanged &&
+                !l4d2vr_input::ActionFrame::SuppressEdges(gripFrame);
             weaponGripInputState = gripData.bActive
                 ? (1u | (gripData.bState ? 2u : 0u)) : 0u;
         }
@@ -821,12 +847,13 @@ void VR::ProcessInput()
     const bool magazineGripDown = magazineButtonGripInput
         ? magazineButtonGripDown
         : (thumbIndexGripDown || threeFingerGripDown);
-    const bool magazineGripJustPressed = magazineButtonGripInput
+    const bool magazineGripJustPressed = !l4d2vr_input::ActionFrame::SuppressEdges(m_InputActionFrame.Read()) && (magazineButtonGripInput
         ? magazineButtonGripJustPressed
         : ((thumbIndexGripDown && !thumbIndexWasDown) ||
-            (threeFingerGripDown && !threeFingerWasDown));
+            (threeFingerGripDown && !threeFingerWasDown)));
     const bool supportHandDown = threeFingerGripDown;
-    const bool supportHandJustPressed = threeFingerGripDown && !threeFingerWasDown;
+    const bool supportHandJustPressed = threeFingerGripDown && !threeFingerWasDown &&
+        !l4d2vr_input::ActionFrame::SuppressEdges(m_InputActionFrame.Read());
     m_MagazineInteractionThumbIndexCurlDownPrev = thumbIndexGripDown;
     m_MagazineInteractionThreeFingerCurlDownPrev = threeFingerGripDown;
 

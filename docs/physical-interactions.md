@@ -278,6 +278,18 @@ missed. Menus, input suppression, detached scout mode and disabled VR release
 those inputs. Shared bindings transfer ownership without releasing the target
 between buttons. These software checks still require headset verification.
 
+Action-frame availability is separate from pose availability. A failed SteamVR
+action update rejects stale button, stick, grip and finger-curl data, releases
+owned held commands, and cancels teleport targeting. The first recovered frame
+can resume held controls without replaying one-shot presses. Pending ammo
+requests still poll the actual owner and weapon; input loss cannot clear their
+required chamber cycle or start another gesture.
+
+Tracking starts from explicit zero pose fields. Invalid or nonfinite samples
+retain the last usable position and angles while clearing linear and angular
+velocity. Queued rendering rejects those samples before converting a fresh
+output, retaining its existing camera fallback until usable tracking returns.
+
 Fresh magazines and shells use a repeatable controller-local grip with
 `ManualReloadMagazineHandRotationOffsetDeg` applied at pickup. The grip point
 lands at the palm; the gun and wrist orientation at the body anchor do not set

@@ -3971,7 +3971,7 @@ void __fastcall Hooks::dRenderView(void* ecx, void* edx, CViewSetup& setup, CVie
 				renderPoseTokenUsed = m_VR->m_PoseWaiterSeq.load(std::memory_order_acquire);
 			}
 
-			if (renderPoses[vr::k_unTrackedDeviceIndex_Hmd].bPoseIsValid)
+			if (l4d2vr_controller_identity::UsablePose(renderPoses[vr::k_unTrackedDeviceIndex_Hmd]))
 			{
 				TrackedDevicePoseData hmdPose{};
 				m_VR->GetPoseData(renderPoses[vr::k_unTrackedDeviceIndex_Hmd], hmdPose);
@@ -5604,7 +5604,9 @@ void __fastcall Hooks::dRenderView(void* ecx, void* edx, CViewSetup& setup, CVie
 	PhysicalScopeRenderSnapshot physicalScope{};
 	const bool physicalScopeMode = m_VR->IsPhysicalScopeMode();
 	const bool physicalScopeReady = !physicalScopeMode || m_VR->ReadPhysicalScopeRender(physicalScope);
-	if (physicalScopeReady && m_VR->m_CreatedVRTextures.load(std::memory_order_acquire) && m_VR->ShouldRenderScope() && m_VR->m_ScopeTexture && m_VR->ShouldUpdateScopeRTT())
+	const float scopeZNear = m_VR->m_ScopeZNear;
+	if (physicalScopeReady && l4d2vr_optics::ValidClipPlanes(scopeZNear, setup.zFar) &&
+		m_VR->m_CreatedVRTextures.load(std::memory_order_acquire) && m_VR->ShouldRenderScope() && m_VR->m_ScopeTexture && m_VR->ShouldUpdateScopeRTT())
 	{
 		CViewSetup scopeView = setup;
 		scopeView.x = 0;
@@ -5622,7 +5624,7 @@ void __fastcall Hooks::dRenderView(void* ecx, void* edx, CViewSetup& setup, CVie
 			: physicalScopeMode ? physicalScope.fov : m_VR->GetScopeRenderFov();
 		scopeView.m_flAspectRatio = 1.0f;
 		scopeView.fovViewmodel = scopeView.fov;
-		scopeView.zNear = m_VR->m_ScopeZNear;
+		scopeView.zNear = scopeZNear;
 		scopeView.zNearViewmodel = 99999.0f; // hard-clip viewmodel so scope image is "world only"
 
 		QAngle scopeAngles = physicalScopeMode ? physicalScope.angles : m_VR->GetScopeCameraAbsAngle();

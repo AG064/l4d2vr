@@ -9,6 +9,103 @@ static void CheckImpl(bool okay, int line)
 }
 #define Check(value) CheckImpl((value), __LINE__)
 
+static void CheckUnavailableShellRecovery(bool rejected, bool releasedOnRecovery)
+{
+    using namespace l4d2vr_shell;
+    constexpr uint32_t handle = 0x1001u;
+    ClientRequest client; ServerLedger host;
+    client.Offer(kVersion, 801u); host.Reset(801u);
+    Request request{};
+    Check(client.Begin(handle,3,3,20,200u,100u,1u,1000u,request));
+    Snapshot native{true,handle,200u,3,rejected ? 2 : 3,20,8};
+    int clip=native.clip,reserve=native.reserve;
+    const auto reply=host.Apply(request,native,1050u,[&](int c,int r){clip=c;reserve=r;return true;});
+    Check(reply.status==(rejected ? Status::Stale : Status::Applied));
+    bool held=ShellRemainsHeld(true,false,false,false);
+    Check(held); // unavailable input is unknown, not a grip release
+    Reply settled{};
+    Check(client.Update(handle,3,100u,1u,1060u,settled,clip,reserve)==ClientRequest::Poll::Waiting);
+    client.Receive(reply);
+    Check(client.Update(handle,3,100u,1u,1070u,settled,clip,reserve)==ClientRequest::Poll::Result);
+    Check(!client.Pending()); // reply/replication settlement does not wait for action recovery
+    if (!rejected) Check(clip==4 && reserve==19);
+    else
+    {
+        Check(held && RetainRejectedShell(settled.status));
+        held=ShellRemainsHeld(held,!releasedOnRecovery,false,true);
+        Check(held==!releasedOnRecovery);
+        if (releasedOnRecovery) Check(!ShellRemainsHeld(held,true,false,true));
+    }
+}
+
+static void CheckHeldShellSettlement(l4d2vr_shell::Status expectedStatus, bool quickReload, bool gripDown)
+{
+    using namespace l4d2vr_shell;
+    constexpr uint32_t handle = 0x1001u;
+    ClientRequest client;
+    ServerLedger host;
+    client.Offer(kVersion, 801u);
+    host.Reset(expectedStatus == Status::Session ? 802u : 801u);
+    Request request{};
+    Check(client.Begin(handle,3,3,20,200u,100u,1u,1000u,request));
+    Snapshot native{true,handle,200u,3,3,20,8};
+    int commits = 0, nativeClip = native.clip, nativeReserve = native.reserve;
+    const auto writer = [&](int clip, int reserve)
+    {
+        if (expectedStatus == Status::Backend) return false;
+        ++commits; nativeClip = clip; nativeReserve = reserve; return true;
+    };
+    if (expectedStatus == Status::RateLimited)
+    {
+        const auto first = host.Apply(request,native,1000u,writer);
+        Check(first.status == Status::Applied);
+        client.Receive(first);
+        Reply settled{};
+        Check(client.Update(handle,3,100u,1u,1020u,settled,nativeClip,nativeReserve) == ClientRequest::Poll::Result);
+        native.clip = nativeClip; native.reserve = nativeReserve;
+        native.latestCommand = 201u;
+        Check(client.Begin(handle,3,native.clip,native.reserve,201u,100u,1u,1050u,request));
+    }
+    if (expectedStatus == Status::Stale) native.clip = 2; // a shot reached the host before insertion
+    if (expectedStatus == Status::NoSpaceOrAmmo) native.capacity = native.clip;
+    if (expectedStatus == Status::Weapon) native.eligible = false;
+    nativeClip = native.clip; nativeReserve = native.reserve;
+    const int beforeClip = nativeClip, beforeReserve = nativeReserve, beforeCommits = commits;
+    const auto reply = expectedStatus == Status::Unsupported ? host.Unsupported(request) :
+        host.Apply(request,native,1050u,writer);
+    Check(reply.status == expectedStatus);
+    const bool held = ShellRemainsHeld(true,gripDown,quickReload);
+    Reply settled{};
+    Check(client.Update(handle,3,100u,1u,1060u,settled,nativeClip,nativeReserve) == ClientRequest::Poll::Waiting);
+    Check(held == (gripDown || quickReload)); // same policy drives the pending shell's draw flag
+    client.Receive(reply);
+    if (expectedStatus == Status::Applied)
+    {
+        Check(commits == beforeCommits + 1 && nativeClip == beforeClip + 1 && nativeReserve == beforeReserve - 1);
+        Check(client.Update(handle,3,100u,1u,1070u,settled,beforeClip,beforeReserve) == ClientRequest::Poll::Waiting);
+    }
+    else Check(commits == beforeCommits && nativeClip == beforeClip && nativeReserve == beforeReserve);
+    const auto poll = client.Update(handle,3,100u,1u,1080u,settled,nativeClip,nativeReserve);
+    Check(poll == ClientRequest::Poll::Result && settled.status == expectedStatus);
+    Check(!client.Pending());
+    const bool retained = held && RetainRejectedShell(settled.status);
+    Check(retained == ((quickReload || gripDown) && (expectedStatus == Status::Stale ||
+        expectedStatus == Status::RateLimited || expectedStatus == Status::NoSpaceOrAmmo)));
+    if (retained)
+    {
+        RetryContact contact;
+        contact.Reject(settled.status);
+        Check(!contact.Allows(true) && !contact.Allows(true)); // rejection cannot submit another request at the port
+        Check(!contact.Allows(false) && contact.Allows(true)); // withdrawal permits one new gesture
+        Request next{};
+        Check(client.Begin(handle,3,nativeClip,nativeReserve,202u,100u,1u,1700u,next));
+        Check(next.sequence == request.sequence + 1u);
+        client.Receive(reply); // the rejected insertion cannot settle its replacement
+        Check(client.Update(handle,3,100u,1u,1710u,settled,nativeClip,nativeReserve) == ClientRequest::Poll::Waiting);
+    }
+    Check(client.Supported() == (expectedStatus != Status::Backend && expectedStatus != Status::Unsupported));
+}
+
 int main()
 {
     using namespace l4d2vr_shell;
@@ -120,6 +217,35 @@ int main()
     }
     Check(!RetainRejectedShell(Status::Applied) && !RetainRejectedShell(Status::Backend) && !RetainRejectedShell(Status::Unsupported));
     contact.Reject(Status::Stale); contact.Reset(); Check(contact.Allows(true));
+
+    Check(ShellRemainsHeld(true,false,true) && ShellRemainsHeld(true,true,false));
+    const bool released = ShellRemainsHeld(true,false,false);
+    Check(!released && !ShellRemainsHeld(released,true,false)); // pressing grip cannot resurrect a dropped pending shell
+    Check(!ShellRemainsHeld(false,true,true)); // quick mode cannot manufacture a held shell
+    Check(ShellRemainsHeld(true,false,false,false) && !ShellRemainsHeld(false,false,false,false));
+    for (bool rejected : {false,true})
+        for (bool releasedOnRecovery : {false,true})
+            CheckUnavailableShellRecovery(rejected,releasedOnRecovery);
+    for (const bool quickReload : {false,true})
+        for (const bool gripDown : {false,true})
+            for (const auto status : {Status::Applied,Status::Stale,Status::RateLimited,Status::NoSpaceOrAmmo,
+                Status::Session,Status::Weapon,Status::Backend,Status::Unsupported})
+                CheckHeldShellSettlement(status,quickReload,gripDown);
+
+    ClientRequest canceled;
+    canceled.Offer(kVersion,900u);
+    Request canceledRequest{};
+    Check(canceled.Begin(handle,3,3,20,200u,100u,1u,1000u,canceledRequest));
+    canceled.Cancel();
+    canceled.Receive({canceledRequest,Status::Applied,4,19});
+    Reply canceledResult{};
+    Check(canceled.Update(handle,3,100u,1u,1100u,canceledResult,4,19) == ClientRequest::Poll::None);
+    Check(!canceled.NextRetry(1500u,resend) && canceled.Supported());
+    Check(canceled.Begin(handle,3,3,20,201u,100u,1u,1600u,canceledRequest));
+    Check(canceled.Update(handle,3,100u,1u,4100u,canceledResult) == ClientRequest::Poll::Timeout);
+    Check(!canceled.Pending() && !canceled.Supported());
+    contact.Reject(Status::Stale); contact.Reset(); // dropping or replacing the rejected shell ends its contact gate
+    Check(contact.Allows(true));
 
     ClientRequest client;
     client.Offer(2u, 10u); Check(!client.Supported());

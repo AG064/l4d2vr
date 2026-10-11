@@ -57,6 +57,7 @@ bool __fastcall Hooks::dCreateMove(void* ecx, void* edx, float flInputSampleTime
 	static bool s_manualCarryThrowPhysicalAttackDown = false;
 	static bool s_manualInventoryThrowPhysicalUseDown = false;
 	static bool s_manualInventoryThrowArmed = false;
+	static l4d2vr_input::ReleaseInputGate s_manualThrowInputGate;
 	static bool s_vrAwareThrowableAimPrevWeaponThrowable = false;
 	static int s_vrAwareThrowableAimTicks = 0;
 	// Auto-repeat spray-push for pump/chrome shotguns and AWP/scout:
@@ -219,6 +220,7 @@ bool __fastcall Hooks::dCreateMove(void* ecx, void* edx, float flInputSampleTime
 		s_manualCarryThrowPhysicalAttackDown = false;
 		s_manualInventoryThrowPhysicalUseDown = false;
 		s_manualInventoryThrowArmed = false;
+		s_manualThrowInputGate.Reset();
 		s_autoRepeatSprayPushWeapon = 0;
 		s_autoRepeatSprayPushPrevClip1 = -1;
 		s_autoRepeatSprayPushDelayTicks = 0;
@@ -1741,15 +1743,16 @@ bool __fastcall Hooks::dCreateMove(void* ecx, void* edx, float flInputSampleTime
 			const bool throwBackendReady = carriedProp
 				? ManualCarryThrowBackendIsReady(carryWeaponId)
 				: (inventoryItem && ManualInventoryThrowBackendIsReady(activeWeaponId));
+			const bool physicalAttackDown = m_VR->m_PrimaryAttackDown;
+			const bool physicalUseDown = localUseButtonDownForAutoActions || m_VR->m_UseCmdOwned;
+			const bool throwActionsUsable = s_manualThrowInputGate.Update(
+				m_VR->m_InputActionFrame.Read(), physicalAttackDown, physicalUseDown);
 			const bool manualThrowInputActive =
 				m_VR->m_IsVREnabled &&
 				m_VR->m_ManualThrowEnabled &&
 				s_ServerUnderstandsVR &&
 				throwBackendReady &&
-				!emptyHandsPlaceholderActive;
-
-			const bool physicalAttackDown = m_VR->m_PrimaryAttackDown;
-			const bool physicalUseDown = localUseButtonDownForAutoActions || m_VR->m_UseCmdOwned;
+				!emptyHandsPlaceholderActive && throwActionsUsable;
 			const uint32_t weaponGripInputState =
 				m_VR->m_WeaponGripInputState.load(std::memory_order_acquire);
 			const bool weaponGripActionActive = (weaponGripInputState & 1u) != 0u;
@@ -1895,6 +1898,12 @@ bool __fastcall Hooks::dCreateMove(void* ecx, void* edx, float flInputSampleTime
 			}
 			if (!manualThrowInputActive)
 			{
+				if (!throwActionsUsable)
+				{
+					cmd->buttons &= ~static_cast<int>(kManualCarryThrowWeaponMask);
+					if (cmd->impulse == l4d2vr_grip::kReleaseImpulse)
+						cmd->impulse = 0;
+				}
 				s_manualCarryThrowWeapon = 0;
 				s_manualCarryThrowPhysicalAttackDown = physicalAttackDown;
 				s_manualInventoryThrowPhysicalUseDown = physicalUseDown;

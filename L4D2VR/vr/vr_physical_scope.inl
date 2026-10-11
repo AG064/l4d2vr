@@ -91,6 +91,10 @@ bool VR::ReadPhysicalScopeRender(PhysicalScopeRenderSnapshot& snapshot)
     std::lock_guard<std::mutex> lock(m_PhysicalScopeLensMutex);
     snapshot = m_PhysicalScopeRender;
     return snapshot.weapon.Valid() && snapshot.weapon == m_PhysicalScopeWeapons.Current() &&
+        l4d2vr_optics::Finite(snapshot.origin) &&
+        std::isfinite(snapshot.angles.x) && std::isfinite(snapshot.angles.y) && std::isfinite(snapshot.angles.z) &&
+        l4d2vr_optics::ValidRenderFov(snapshot.fov) &&
+        std::isfinite(snapshot.magnification) && snapshot.magnification >= 1.0f && snapshot.magnification <= 16.0f &&
         l4d2vr_optics::Fresh(GetTickCount64(), snapshot.publishedAt);
 }
 
@@ -172,7 +176,9 @@ bool VR::DrawPhysicalScopeLensForEye(const CViewSetup& view, int eyeIndex, const
         !l4d2vr_optics::Finite(lens.center) || !l4d2vr_optics::Finite(lens.right) || !l4d2vr_optics::Finite(lens.up) ||
         !std::isfinite(lens.radius) || lens.radius <= 0.0f ||
         view.width <= 0 || view.height <= 0 || !std::isfinite(view.fovViewmodel) ||
-        view.fovViewmodel < 1.0f || view.zFarViewmodel <= view.zNearViewmodel) return false;
+        view.fovViewmodel < 1.0f || view.fovViewmodel >= 179.0f ||
+        !l4d2vr_optics::Finite(view.origin) || !l4d2vr_optics::Finite(view.angles) ||
+        !l4d2vr_optics::ValidClipPlanes(view.zNearViewmodel, view.zFarViewmodel)) return false;
     l4d2vr_optics::ImageStamp scopeImage{};
     l4d2vr_optics::ImageStamp processedImage{};
     {
@@ -240,6 +246,8 @@ bool VR::DrawPhysicalScopeLensForEye(const CViewSetup& view, int eyeIndex, const
     ok = SUCCEEDED(device->SetRenderState(D3DRS_ZENABLE,TRUE)) && ok;
     ok = SUCCEEDED(device->SetRenderState(D3DRS_ZWRITEENABLE,FALSE)) && ok;
     ok = SUCCEEDED(device->SetRenderState(D3DRS_ZFUNC,D3DCMP_LESSEQUAL)) && ok;
+    // Match the native held weapon's depth clamping without changing its projection.
+    ok = SUCCEEDED(device->SetRenderState(D3DRS_CLIPPING,m_VRNearClipSelfBody ? FALSE : TRUE)) && ok;
     device->SetRenderState(D3DRS_CULLMODE,D3DCULL_NONE);
     device->SetRenderState(D3DRS_LIGHTING,FALSE);
     device->SetRenderState(D3DRS_FOGENABLE,FALSE);

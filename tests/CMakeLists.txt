@@ -269,3 +269,111 @@ if(MSVC)
     target_compile_options(vr_controller_identity_tests PRIVATE /W4 /WX)
 endif()
 add_test(NAME vr_controller_identity COMMAND vr_controller_identity_tests)
+
+set(action_frame_bridge_source "${CMAKE_CURRENT_SOURCE_DIR}/../L4D2VR/vr_hands/vr_hand_vr_bridge.cpp")
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${action_frame_bridge_source}")
+file(READ "${action_frame_bridge_source}" action_frame_bridge_text)
+extract_mirrored_analog_fixture("${mirrored_analog_header_text}"
+    "struct LeftHandedDigitalActionFrameCache" "struct WeaponHapticsProfile" action_frame_caches)
+file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/vr_action_frame_types.inl"
+    "${mirrored_analog_sources}\n${action_frame_caches}")
+extract_mirrored_analog_fixture("${mirrored_analog_source_text}"
+    "void VR::UpdateInputActionState(" "void VR::GetViewParameters()" action_frame_update)
+extract_mirrored_analog_fixture("${mirrored_analog_source_text}"
+    "bool VR::PressedDigitalAction(" "namespace" action_frame_pressed)
+extract_mirrored_analog_fixture("${mirrored_analog_source_text}"
+    "bool VR::GetLeftHandedMirroredDigitalActionData(" "bool VR::GetLeftHandedMirroredAnalogActionData(" action_frame_digital)
+extract_mirrored_analog_fixture("${mirrored_analog_source_text}"
+    "bool VR::GetDigitalActionData(" "bool VR::GetAnalogActionData(" action_frame_wrapper)
+file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/vr_action_frame_functions.inl"
+    "${action_frame_update}\n${action_frame_pressed}\n${action_frame_digital}\n${mirrored_analog_function}\n${action_frame_wrapper}\n${mirrored_analog_wrapper}\n${mirrored_analog_walk}")
+extract_mirrored_analog_fixture("${custom_action_text}"
+    "    if (m_SuppressPlayerInput || !IsInputActionFrameAvailable())" "    vr::InputDigitalActionData_t teleportActionData" action_frame_cleanup)
+extract_mirrored_analog_fixture("${custom_action_text}"
+    "    vr::InputDigitalActionData_t teleportActionData" "    vr::InputAnalogActionData_t analogActionData;" action_frame_teleport)
+extract_mirrored_analog_fixture("${custom_action_text}"
+    "    bool rightGripValid" "    vr::InputDigitalActionData_t primaryAttackActionData" action_frame_grip)
+extract_mirrored_analog_fixture("${custom_action_text}"
+    "    const bool magazineGripDown" "    const bool magazineInteractionReloadPulse" action_frame_curl_edges)
+file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/vr_action_frame_cleanup.inl" "${action_frame_cleanup}")
+file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/vr_action_frame_teleport.inl" "${action_frame_teleport}")
+file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/vr_action_frame_grip.inl" "${action_frame_grip}")
+file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/vr_action_frame_curl_edges.inl" "${action_frame_curl_edges}")
+extract_mirrored_analog_fixture("${action_frame_bridge_text}"
+    "    bool ReadOpenVRSkeletalFingerCurls(" "    constexpr std::uint32_t kVrHandsLeftTargetDebugBoxMaxAgeMs" action_frame_curls)
+string(REPLACE "vr::IVRInput* input" "ScriptedInput* input" action_frame_curls "${action_frame_curls}")
+file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/vr_action_frame_curls.inl" "${action_frame_curls}")
+extract_mirrored_analog_fixture("${action_frame_bridge_text}"
+    "bool VR::HasFreshMagazineInteractionTracking()" "bool VR::BeginRemoteShellRequest(" action_frame_tracking)
+file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/vr_action_frame_tracking.inl" "${action_frame_tracking}")
+add_executable(vr_action_frame_tests vr_action_frame_tests.cpp)
+target_compile_features(vr_action_frame_tests PRIVATE cxx_std_17)
+target_include_directories(vr_action_frame_tests PRIVATE
+    "${CMAKE_CURRENT_BINARY_DIR}" "${CMAKE_CURRENT_SOURCE_DIR}/../thirdparty/openvr/include")
+if(MSVC)
+    target_compile_options(vr_action_frame_tests PRIVATE /W4 /WX)
+endif()
+add_test(NAME vr_action_frame COMMAND vr_action_frame_tests)
+
+set(action_frame_command_source "${CMAKE_CURRENT_SOURCE_DIR}/../L4D2VR/hooks/hooks_createmove.inl")
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${action_frame_command_source}")
+file(READ "${action_frame_command_source}" action_frame_command_text)
+extract_mirrored_analog_fixture("${custom_action_text}"
+    "    // Resolve weapon ownership before unavailable-frame settlement." "    if (m_InGameVguiMouseDown" action_frame_ownership)
+file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/vr_action_frame_ownership.inl" "${action_frame_ownership}")
+extract_mirrored_analog_fixture("${action_frame_bridge_text}"
+    "l4d2vr_dual::Hand VR::GetPrimaryPistolHand()" "bool VR::MagazineReloadSupportIsLeft()" action_frame_primary)
+extract_mirrored_analog_fixture("${action_frame_bridge_text}"
+    "    const unsigned int interactionInputMode" "    if (!vrHandsInteractionAvailable)" action_frame_session)
+extract_mirrored_analog_fixture("${action_frame_bridge_text}"
+    "    m_MagazineInteractionSessionGeneration.fetch_add" "    {" action_frame_session_reset)
+extract_mirrored_analog_fixture("${action_frame_bridge_text}"
+    "        const bool shellInputAvailable = IsInputActionFrameAvailable();" "        l4d2vr_shell::Reply reply{};" action_frame_shell_hold)
+file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/vr_action_frame_primary.inl" "${action_frame_primary}")
+file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/vr_action_frame_session.inl" "${action_frame_session}")
+file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/vr_action_frame_session_reset.inl" "${action_frame_session_reset}")
+file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/vr_action_frame_shell_hold.inl" "${action_frame_shell_hold}")
+extract_mirrored_analog_fixture("${action_frame_command_text}"
+    "const bool physicalAttackDown = m_VR->m_PrimaryAttackDown;" "const uint32_t weaponGripInputState" action_frame_throw_gate)
+extract_mirrored_analog_fixture("${action_frame_command_text}"
+    "if (!manualThrowInputActive)" "if (m_VR->m_ManualInventoryEmptyHandsActive" action_frame_throw_release)
+set(action_frame_throw_last "s_manualInventoryThrowPhysicalUseDown = physicalUseDown;")
+string(FIND "${action_frame_throw_release}" "${action_frame_throw_last}" action_frame_throw_last_index REVERSE)
+if(action_frame_throw_last_index LESS 0)
+    message(FATAL_ERROR "Manual throw release fixture endpoint is missing")
+endif()
+string(LENGTH "${action_frame_throw_last}" action_frame_throw_last_length)
+math(EXPR action_frame_throw_end "${action_frame_throw_last_index} + ${action_frame_throw_last_length}")
+string(SUBSTRING "${action_frame_throw_release}" 0 ${action_frame_throw_end} action_frame_throw_release)
+string(APPEND action_frame_throw_release "\n}")
+file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/vr_action_frame_throw_gate.inl" "${action_frame_throw_gate}")
+file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/vr_action_frame_throw_release.inl" "${action_frame_throw_release}")
+
+set(pose_data_source "${CMAKE_CURRENT_SOURCE_DIR}/../L4D2VR/vr/vr_lifecycle_update.inl")
+set(pose_render_source "${CMAKE_CURRENT_SOURCE_DIR}/../L4D2VR/hooks/hooks_render.inl")
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${pose_data_source}" "${pose_render_source}")
+file(READ "${pose_data_source}" pose_data_text)
+file(READ "${pose_render_source}" pose_render_text)
+extract_mirrored_analog_fixture("${mirrored_analog_header_text}"
+    "struct TrackedDevicePoseData" "struct VRMeleeTrackingSnapshot" pose_data_type)
+extract_mirrored_analog_fixture("${pose_data_text}"
+    "void VR::GetPoseData(" "void VR::UpdateRearMirrorOverlayTransform()" pose_data_function)
+string(REGEX MATCH "if \\(([^\r\n]+)\\)[\r\n \t]*\\{[\r\n \t]*TrackedDevicePoseData hmdPose\\{\\};"
+    queued_pose_match "${pose_render_text}")
+set(queued_pose_condition "${CMAKE_MATCH_1}")
+string(FIND "${queued_pose_condition}" "renderPoses[" queued_pose_index)
+if(queued_pose_index LESS 0)
+    message(FATAL_ERROR "Queued HMD conversion fixture condition is missing")
+endif()
+file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/vr_pose_data_type.inl" "${pose_data_type}")
+file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/vr_pose_data_function.inl" "${pose_data_function}")
+file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/vr_pose_data_render_condition.inl" "return ${queued_pose_condition};")
+add_executable(vr_pose_data_tests vr_pose_data_tests.cpp)
+target_compile_features(vr_pose_data_tests PRIVATE cxx_std_17)
+target_compile_definitions(vr_pose_data_tests PRIVATE VECTOR_PARANOIA)
+target_include_directories(vr_pose_data_tests PRIVATE
+    "${CMAKE_CURRENT_BINARY_DIR}" "${CMAKE_CURRENT_SOURCE_DIR}/../thirdparty/openvr/include")
+if(MSVC)
+    target_compile_options(vr_pose_data_tests PRIVATE /W4 /WX)
+endif()
+add_test(NAME vr_pose_data COMMAND vr_pose_data_tests)

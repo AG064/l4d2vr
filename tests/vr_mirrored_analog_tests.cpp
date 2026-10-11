@@ -10,6 +10,7 @@
 #include <vector>
 
 #include "openvr.h"
+#include "../L4D2VR/vr_input_recovery.h"
 #include "vr_mirrored_analog_types.inl"
 
 namespace
@@ -79,6 +80,8 @@ struct Game
 
 struct VR
 {
+    l4d2vr_input::ActionFrame m_InputActionFrame;
+    VR() { m_InputActionFrame.Complete(m_InputActionFrame.Begin(), true); }
     ScriptedInput input;
     ScriptedInput* m_Input = &input;
     vr::IVRSystem* m_System = nullptr;

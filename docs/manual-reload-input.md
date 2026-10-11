@@ -57,6 +57,12 @@ An unusable bolt pull calibration uses a physical default of 0.055 meters for
 slides or 0.09 meters for pump/chrome shotguns. Valid per-gun calibration remains
 unchanged; recovery still requires the actual pull and return stroke.
 
+In optional quick reload mode, a picked-up shell stays attached while its
+request is pending or receives a retryable rejection. In physical grip mode,
+releasing a pending shell remains a release even if the grip is pressed again.
+A retained rejected shell must leave and re-enter the loading port to retry;
+the host still decides whether an existing round can be transferred.
+
 Dual pistols intentionally use a button reload because both hands hold a gun.
 With this Quest profile, right A reloads both pistols together using the native
 animation. `DualPistolsNativeReloadFallbackEnabled=true` is the default. Manual

@@ -4843,7 +4843,14 @@ void VR::LogCompositorError(const char* action, vr::EVRCompositorError error)
 
 void VR::GetPoseData(vr::TrackedDevicePose_t& poseRaw, TrackedDevicePoseData& poseOut)
 {
-    if (poseRaw.bPoseIsValid)
+    if (!l4d2vr_controller_identity::UsablePose(poseRaw))
+    {
+        // Preserve the last usable position through tracking loss, but do not
+        // keep applying a velocity from a controller that is no longer tracked.
+        poseOut.TrackedDeviceVel = Vector(0.0f, 0.0f, 0.0f);
+        poseOut.TrackedDeviceAngVel = QAngle(0.0f, 0.0f, 0.0f);
+        return;
+    }
     {
         vr::HmdMatrix34_t mat = poseRaw.mDeviceToAbsoluteTracking;
         Vector pos;
@@ -4853,15 +4860,15 @@ void VR::GetPoseData(vr::TrackedDevicePose_t& poseRaw, TrackedDevicePoseData& po
         pos.x = -mat.m[2][3];
         pos.y = -mat.m[0][3];
         pos.z = mat.m[1][3];
-        ang.x = asin(mat.m[1][2]) * (180.0 / 3.141592654);
-        ang.y = atan2f(mat.m[0][2], mat.m[2][2]) * (180.0 / 3.141592654);
-        ang.z = atan2f(-mat.m[1][0], mat.m[1][1]) * (180.0 / 3.141592654);
+        ang.x = static_cast<float>(asin(mat.m[1][2]) * (180.0 / 3.141592654));
+        ang.y = static_cast<float>(atan2f(mat.m[0][2], mat.m[2][2]) * (180.0 / 3.141592654));
+        ang.z = static_cast<float>(atan2f(-mat.m[1][0], mat.m[1][1]) * (180.0 / 3.141592654));
         vel.x = -poseRaw.vVelocity.v[2];
         vel.y = -poseRaw.vVelocity.v[0];
         vel.z = poseRaw.vVelocity.v[1];
-        angvel.x = -poseRaw.vAngularVelocity.v[2] * (180.0 / 3.141592654);
-        angvel.y = -poseRaw.vAngularVelocity.v[0] * (180.0 / 3.141592654);
-        angvel.z = poseRaw.vAngularVelocity.v[1] * (180.0 / 3.141592654);
+        angvel.x = static_cast<float>(-poseRaw.vAngularVelocity.v[2] * (180.0 / 3.141592654));
+        angvel.y = static_cast<float>(-poseRaw.vAngularVelocity.v[0] * (180.0 / 3.141592654));
+        angvel.z = static_cast<float>(poseRaw.vAngularVelocity.v[1] * (180.0 / 3.141592654));
 
         poseOut.TrackedDevicePos = pos;
         poseOut.TrackedDeviceVel = vel;

@@ -1738,8 +1738,7 @@ void VR::UpdateTracking()
         snapshot.initialized = true;
         snapshot.capturedAtMs = GetTickCount64();
         snapshot.hmdValid =
-            m_Poses[vr::k_unTrackedDeviceIndex_Hmd].bPoseIsValid &&
-            m_Poses[vr::k_unTrackedDeviceIndex_Hmd].bDeviceIsConnected;
+            l4d2vr_controller_identity::UsablePose(m_Poses[vr::k_unTrackedDeviceIndex_Hmd]);
 
         const vr::TrackedDeviceIndex_t physicalLeftIndex =
             GetPhysicalControllerIndexForHand(true);

@@ -108,10 +108,10 @@ struct PhysicalScopeRenderSnapshot
 struct TrackedDevicePoseData
 {
 	std::string TrackedDeviceName;
-	Vector TrackedDevicePos;
-	Vector TrackedDeviceVel;
-	QAngle TrackedDeviceAng;
-	QAngle TrackedDeviceAngVel;
+	Vector TrackedDevicePos{ 0.0f, 0.0f, 0.0f };
+	Vector TrackedDeviceVel{ 0.0f, 0.0f, 0.0f };
+	QAngle TrackedDeviceAng{ 0.0f, 0.0f, 0.0f };
+	QAngle TrackedDeviceAngVel{ 0.0f, 0.0f, 0.0f };
 };
 
 struct VRMeleeTrackingSnapshot
@@ -238,6 +238,7 @@ struct LeftHandedDigitalActionFrameCache
 {
 	uint64_t frameSerial = 0;
 	bool dataValid = false;
+	bool querySucceeded = false;
 	bool previousStateValid = false;
 	bool previousState = false;
 	vr::InputDigitalActionData_t data{};
@@ -1725,6 +1726,8 @@ public:
 	std::chrono::steady_clock::time_point m_LeftHandedInputSwapNextRefresh{};
 	uint64_t m_LeftHandedInputBindingHash = 0;
 	uint64_t m_InputActionStateFrameSerial = 0;
+	l4d2vr_input::ActionFrame m_InputActionFrame;
+	vr::EVRInputError m_LastInputActionStateError = vr::VRInputError_None;
 	bool m_LeftHandedInputSwapRuntimeEnabled = false;
 	bool m_WeaponHapticsEnabled = true;
 	std::unordered_map<std::string, WeaponHapticsProfile> m_WeaponHapticsOverrides;
@@ -4102,6 +4105,8 @@ public:
 	void DestroyHandHudWorldQuadTextures();
 	void GetPoses();
 	bool UpdatePosesAndActions();
+	void UpdateInputActionState(const l4d2vr_input::ActionFrame::Attempt& attempt);
+	bool IsInputActionFrameAvailable() const { return l4d2vr_input::ActionFrame::Ready(m_InputActionFrame.Read()); }
 	void GetViewParameters();
 	void ProcessMenuInput();
 	void ProcessInput();

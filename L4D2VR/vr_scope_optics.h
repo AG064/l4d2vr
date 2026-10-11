@@ -94,12 +94,25 @@ namespace l4d2vr_optics
         return std::clamp(base * std::tan(maxControlFov * radians) /
             std::tan(controlFov * radians), 1.0f, 16.0f);
     }
+    inline bool ValidClipPlanes(float nearPlane, float farPlane)
+    {
+        return std::isfinite(nearPlane) && std::isfinite(farPlane) &&
+            nearPlane > 0.0f && farPlane > nearPlane;
+    }
+    inline float ResolveNearPlane(float value, float previous)
+    {
+        const float fallback = std::isfinite(previous) && previous > 0.0f ? previous : 2.0f;
+        return std::clamp(std::isfinite(value) && value > 0.0f ? value : fallback, 0.1f, 64.0f);
+    }
+    inline bool ValidRenderFov(float fov)
+    { return std::isfinite(fov) && fov >= 0.1f && fov <= 120.0f; }
     inline float RenderFov(float radius, float eyeRelief, float magnification)
     {
         if (!std::isfinite(radius) || !std::isfinite(eyeRelief) || !std::isfinite(magnification) ||
             radius <= 0.0f || eyeRelief <= 0.0f || magnification < 1.0f) return 0.0f;
-        return std::clamp(2.0f * std::atan(radius / (eyeRelief * magnification)) *
-            (180.0f / 3.14159265358979323846f), 0.1f, 120.0f);
+        const float fov = 2.0f * std::atan(radius / (eyeRelief * magnification)) *
+            (180.0f / 3.14159265358979323846f);
+        return ValidRenderFov(fov) ? fov : 0.0f;
     }
     struct EyeSample { float alpha = 0.0f, relief = 0.0f; };
     inline EyeSample EvaluateEye(const Vector& eye, const Vector& lens, Vector axis,

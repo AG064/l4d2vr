@@ -48,6 +48,8 @@ namespace l4d2vr_shell
     };
     inline bool RetainRejectedShell(Status status)
     { return status == Status::Stale || status == Status::NoSpaceOrAmmo || status == Status::RateLimited; }
+    inline bool ShellRemainsHeld(bool held, bool gripDown, bool quickReload, bool inputAvailable = true)
+    { return held && (!inputAvailable || gripDown || quickReload); }
 
     class RetryContact
     {

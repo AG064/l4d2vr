@@ -52,9 +52,27 @@ int main()
     CHECK(EvaluateEye(Vector(-20,0,0), lens, axis, 1.0f, 100.0f, 4.0f).alpha == 0.0f);
     CHECK(EvaluateEye(Vector(0,0,0), lens, Vector(0,0,0), 1.0f, 100.0f, 4.0f).alpha == 0.0f);
     const float nan = std::numeric_limits<float>::quiet_NaN();
+    const float infinity = std::numeric_limits<float>::infinity();
+    CHECK(ResolveNearPlane(nan, 2.0f) == 2.0f);
+    CHECK(ResolveNearPlane(infinity, 3.0f) == 3.0f);
+    CHECK(ResolveNearPlane(0.0f, 3.0f) == 3.0f);
+    CHECK(ResolveNearPlane(-1.0f, 3.0f) == 3.0f);
+    CHECK(ResolveNearPlane(nan, nan) == 2.0f);
+    CHECK(ResolveNearPlane(0.01f, 2.0f) == 0.1f);
+    CHECK(ResolveNearPlane(100.0f, 2.0f) == 64.0f);
+    CHECK(ValidClipPlanes(2.0f, 10000.0f));
+    CHECK(!ValidClipPlanes(nan, 10000.0f));
+    CHECK(!ValidClipPlanes(2.0f, infinity));
+    CHECK(!ValidClipPlanes(0.0f, 10000.0f));
+    CHECK(!ValidClipPlanes(2.0f, 2.0f));
+    CHECK(!ValidClipPlanes(3.0f, 2.0f));
     Vector invalidEye(0,0,0); invalidEye.x = nan;
     CHECK(EvaluateEye(invalidEye, lens, axis, 1,100,4).alpha == 0.0f);
     CHECK(RenderFov(1,10,nan) == 0.0f);
+    CHECK(RenderFov(0.037f, 10.8f, 16.0f) == 0.0f);
+    CHECK(RenderFov(8.0f, 1.512f, 1.0f) == 0.0f);
+    CHECK(!ValidRenderFov(0.09f) && !ValidRenderFov(120.01f) && !ValidRenderFov(nan));
+    CHECK(ValidRenderFov(0.1f) && ValidRenderFov(120.0f));
     for (const float relief : {4.0f, 8.0f, 15.0f})
         for (const float magnification : {1.0f, 2.0f, 4.0f, 8.0f})
         {
@@ -62,6 +80,27 @@ int main()
             const float recovered = 1.0f / (relief * std::tan(fov * 3.14159265358979323846f / 360.0f));
             CHECK(std::fabs(recovered - magnification) < 0.001f);
         }
+    const ModelLens* stockLenses[] = {
+        FindModel("models/v_models/v_huntingrifle.mdl", 4068759009u),
+        FindModel("models/v_models/v_sniper_military.mdl", 1046396963u),
+        FindModel("models/v_models/v_rif_sg552.mdl", 1582432951u),
+        FindModel("models/v_models/v_snip_awp.mdl", 1241414224u),
+        FindModel("models/v_models/v_snip_scout.mdl", 2116180069u)
+    };
+    for (const ModelLens* stock : stockLenses)
+    {
+        CHECK(stock);
+        for (const float reliefMeters : {0.035f, 0.05f, 0.1f, 0.25f})
+            for (const float magnification : {1.0f, 2.0f, 4.0f, 8.0f, 16.0f})
+            {
+                const float relief = reliefMeters * 43.2f;
+                const float fov = RenderFov(stock->radius, relief, magnification);
+                CHECK(ValidRenderFov(fov));
+                const float recovered = stock->radius /
+                    (relief * std::tan(fov * 3.14159265358979323846f / 360.0f));
+                CHECK(std::fabs(recovered - magnification) < 0.001f);
+            }
+    }
     CHECK(Magnification(20,20,2) == 2.0f);
     CHECK(Magnification(10,20,2) > 4.0f);
     CHECK(Magnification(3,20,2) > 10.0f);

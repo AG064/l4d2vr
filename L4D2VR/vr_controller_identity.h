@@ -3,6 +3,7 @@
 #include "openvr.h"
 #include <cmath>
 #include <cstdint>
+#include <limits>
 
 namespace l4d2vr_controller_identity
 {
@@ -79,7 +80,8 @@ namespace l4d2vr_controller_identity
             if (!std::isfinite(value))
                 return false;
         for (float value : pose.vAngularVelocity.v)
-            if (!std::isfinite(value))
+            if (!std::isfinite(value) || std::fabs(value) >
+                std::numeric_limits<float>::max() / (180.0 / 3.141592654))
                 return false;
         // GetPoseData converts this element through asin.
         return pose.mDeviceToAbsoluteTracking.m[1][2] >= -1.0f &&
