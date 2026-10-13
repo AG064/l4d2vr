@@ -11,13 +11,15 @@ friend-hosted shell and detachable-magazine transactions. See `physical-interact
 `manual-reload-input.md`, `weapon-calibration.md` and `vr-backlog.md` for their
 controls, limitations and remaining tests.
 
-The current runtime source passed 22 CTest suites and Windows Release x86
-DLL/pose-server builds with v143 in a temporary build tree. Seven native ammo
-signatures matched uniquely against the installed server binary. These are
+The current local runtime source passed all 38 CTest suites in both Release and
+Debug, plus a full Windows Release x86 DLL/pose-server rebuild with v143 in a
+temporary build tree. Seven native ammo signatures matched uniquely against
+the installed server binary. These are
 offline checks. Later documentation edits do not change the tested runtime.
 
-The experimental switches are disabled in the repository defaults. Saved user
-configuration is preserved. The material tool derives overrides locally and
+Manual throwing and grip-release dropping remain disabled in repository
+defaults; mounted physical scopes are enabled. Saved user configuration is
+preserved. The material tool derives overrides locally and
 does not add Valve weapon models/materials or compiled game binaries to this PR.
 
 This is an umbrella draft for maintainer feedback and can be divided into
@@ -38,8 +40,8 @@ $testRoot = Join-Path $env:TEMP ('l4d2vr-tests-' + [guid]::NewGuid().ToString('N
 cmake -S tests -B $testRoot -G 'Visual Studio 17 2022' -A Win32
 cmake --build $testRoot --config Release --clean-first
 ctest --test-dir $testRoot -C Release --output-on-failure
-cmake --build $testRoot --config Debug --target vr_hand_alignment_tests
-ctest --test-dir $testRoot -C Debug -R '^vr_hand_alignment$' --output-on-failure
+cmake --build $testRoot --config Debug
+ctest --test-dir $testRoot -C Debug --output-on-failure --no-tests=error
 ```
 
 Python 3 is needed for the controller-profile and material tests. CMake reports
@@ -52,8 +54,8 @@ project, and build that copy. Keep output and intermediate directories there.
 
 Use `Rebuild` for the staged DLL solution. MSBuild can omit dependencies under
 TEMP from its incremental tracking, so a header or `.inl` edit may otherwise
-leave old object code in a seemingly passing build. The final checks use clean
-test builds and a full DLL/pose-server rebuild. The Debug hand test enables
+leave old object code in a seemingly passing build. The final checks verify
+staged source hashes and use a full DLL/pose-server rebuild. The Debug hand test enables
 the SDK's `VECTOR_PARANOIA` behavior, which seeds unspecified vector/angle
 values with NaN and detects accidental assumptions about zero defaults.
 

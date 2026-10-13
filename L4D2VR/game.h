@@ -16,6 +16,7 @@ class C_WeaponCSBase;
 #include "vr_pistol_ammo.h"
 #include "vr_pistol_ammo_sync.h"
 #include "vr_pistol_reload.h"
+#include "vr_throw_lifecycle.h"
 
 #include "vector.h"
 
@@ -71,6 +72,8 @@ struct ManualThrowPending
     void* sourceWeapon = nullptr;
     void* sourceWeaponVtable = nullptr;
     void* spawnedPhysicsProp = nullptr;
+    l4d2vr_throw::EntityIdentity ownerIdentity{}, sourceIdentity{}, spawnedPhysicsPropIdentity{};
+    bool sourceDetached = false;
     bool velocityMismatchLogged = false;
     Vector origin = { 0.f, 0.f, 0.f };
     QAngle angles = { 0.f, 0.f, 0.f };
@@ -181,7 +184,9 @@ struct Player
     VRPoseFrame latestWorldPose{};
     float worldPoseBlendWeight = 0.0f;
     std::uint64_t worldPoseBlendTickMs = 0u;
+    C_BasePlayer* worldPoseEntity = nullptr;
     int worldPoseUserID = -1;
+    std::uint64_t worldPoseRevision = 0u;
 };
 
 struct VRPoseRelayServerClient
@@ -371,6 +376,7 @@ public:
 
     // === Multiplayer VR world-model poses ===
     void ResetVRPoseServerSession();
+    void RefreshVRPosePlayerIdentitiesMainThread();
     void HandleVRPoseServerAck(int protocolVersion);
     void ObserveBuiltinVRPoseRelayClient(
         int playerIndex,

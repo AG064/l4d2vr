@@ -209,12 +209,25 @@ bool VR::DrawPhysicalScopeLensForEye(const CViewSetup& view, int eyeIndex, const
         D3DVIEWPORT9 viewport{};
         bool haveViewport = false;
         bool captured = false;
+        bool restored = false;
+        bool RestoreState()
+        {
+            if (restored) return true;
+            restored = true;
+            bool ok = true;
+            // SetRenderTarget resets viewport and scissor state. Restore it
+            // before applying the captured pipeline, including its scissor rect.
+            if (target) ok = SUCCEEDED(device->SetRenderTarget(0, target)) && ok;
+            if (state && captured) ok = SUCCEEDED(state->Apply()) && ok;
+            if (haveViewport) ok = SUCCEEDED(device->SetViewport(&viewport)) && ok;
+            return ok;
+        }
         ~Restore()
         {
-            if (state) { if (captured) state->Apply(); state->Release(); }
-            if (target) { device->SetRenderTarget(0, target); target->Release(); }
+            (void)RestoreState();
+            if (state) state->Release();
+            if (target) target->Release();
             if (depth) depth->Release();
-            if (haveViewport) device->SetViewport(&viewport);
             device->Release();
         }
     } restore{device};
@@ -243,23 +256,35 @@ bool VR::DrawPhysicalScopeLensForEye(const CViewSetup& view, int eyeIndex, const
         SUCCEEDED(device->SetFVF(D3DFVF_XYZ | D3DFVF_DIFFUSE | D3DFVF_TEX1)) &&
         SUCCEEDED(device->SetTransform(D3DTS_WORLD,&world)) && SUCCEEDED(device->SetTransform(D3DTS_VIEW,&camera)) &&
         SUCCEEDED(device->SetTransform(D3DTS_PROJECTION,&projection));
-    ok = SUCCEEDED(device->SetRenderState(D3DRS_ZENABLE,TRUE)) && ok;
-    ok = SUCCEEDED(device->SetRenderState(D3DRS_ZWRITEENABLE,FALSE)) && ok;
-    ok = SUCCEEDED(device->SetRenderState(D3DRS_ZFUNC,D3DCMP_LESSEQUAL)) && ok;
-    // Match the native held weapon's depth clamping without changing its projection.
-    ok = SUCCEEDED(device->SetRenderState(D3DRS_CLIPPING,m_VRNearClipSelfBody ? FALSE : TRUE)) && ok;
-    device->SetRenderState(D3DRS_CULLMODE,D3DCULL_NONE);
-    device->SetRenderState(D3DRS_LIGHTING,FALSE);
-    device->SetRenderState(D3DRS_FOGENABLE,FALSE);
-    device->SetRenderState(D3DRS_STENCILENABLE,FALSE);
-    device->SetRenderState(D3DRS_ALPHATESTENABLE,FALSE);
-    device->SetRenderState(D3DRS_ALPHABLENDENABLE,FALSE);
-    device->SetRenderState(D3DRS_COLORWRITEENABLE,15u);
-    device->SetTexture(0,nullptr);
-    device->SetTextureStageState(0,D3DTSS_COLOROP,D3DTOP_SELECTARG1);
-    device->SetTextureStageState(0,D3DTSS_COLORARG1,D3DTA_TFACTOR);
-    device->SetRenderState(D3DRS_TEXTUREFACTOR,D3DCOLOR_ARGB(255,0,0,0));
-    device->SetTextureStageState(1,D3DTSS_COLOROP,D3DTOP_DISABLE);
+    // Establish the fixed-function state instead of inheriting native material
+    // blending, generated UVs, wireframe fill or a prior scissor test.
+    ok = ok && SUCCEEDED(device->SetRenderState(D3DRS_ZENABLE,TRUE)) &&
+        SUCCEEDED(device->SetRenderState(D3DRS_ZWRITEENABLE,FALSE)) &&
+        SUCCEEDED(device->SetRenderState(D3DRS_ZFUNC,D3DCMP_LESSEQUAL)) &&
+        SUCCEEDED(device->SetRenderState(D3DRS_CLIPPING,m_VRNearClipSelfBody ? FALSE : TRUE)) &&
+        SUCCEEDED(device->SetRenderState(D3DRS_SCISSORTESTENABLE,FALSE)) &&
+        SUCCEEDED(device->SetRenderState(D3DRS_CLIPPLANEENABLE,0u)) &&
+        SUCCEEDED(device->SetRenderState(D3DRS_FILLMODE,D3DFILL_SOLID)) &&
+        SUCCEEDED(device->SetRenderState(D3DRS_VERTEXBLEND,D3DVBF_DISABLE)) &&
+        SUCCEEDED(device->SetRenderState(D3DRS_INDEXEDVERTEXBLENDENABLE,FALSE)) &&
+        SUCCEEDED(device->SetRenderState(D3DRS_CULLMODE,D3DCULL_NONE)) &&
+        SUCCEEDED(device->SetRenderState(D3DRS_LIGHTING,FALSE)) &&
+        SUCCEEDED(device->SetRenderState(D3DRS_FOGENABLE,FALSE)) &&
+        SUCCEEDED(device->SetRenderState(D3DRS_STENCILENABLE,FALSE)) &&
+        SUCCEEDED(device->SetRenderState(D3DRS_ALPHATESTENABLE,FALSE)) &&
+        SUCCEEDED(device->SetRenderState(D3DRS_ALPHABLENDENABLE,FALSE)) &&
+        SUCCEEDED(device->SetRenderState(D3DRS_COLORWRITEENABLE,15u)) &&
+        SUCCEEDED(device->SetRenderState(D3DRS_WRAP0,0u)) &&
+        SUCCEEDED(device->SetTexture(0,nullptr)) &&
+        SUCCEEDED(device->SetTextureStageState(0,D3DTSS_TEXCOORDINDEX,0u)) &&
+        SUCCEEDED(device->SetTextureStageState(0,D3DTSS_TEXTURETRANSFORMFLAGS,D3DTTFF_DISABLE)) &&
+        SUCCEEDED(device->SetTextureStageState(0,D3DTSS_COLOROP,D3DTOP_SELECTARG1)) &&
+        SUCCEEDED(device->SetTextureStageState(0,D3DTSS_COLORARG1,D3DTA_TFACTOR)) &&
+        SUCCEEDED(device->SetTextureStageState(0,D3DTSS_ALPHAOP,D3DTOP_SELECTARG1)) &&
+        SUCCEEDED(device->SetTextureStageState(0,D3DTSS_ALPHAARG1,D3DTA_DIFFUSE)) &&
+        SUCCEEDED(device->SetRenderState(D3DRS_TEXTUREFACTOR,D3DCOLOR_ARGB(255,0,0,0))) &&
+        SUCCEEDED(device->SetTextureStageState(1,D3DTSS_COLOROP,D3DTOP_DISABLE)) &&
+        SUCCEEDED(device->SetTextureStageState(1,D3DTSS_ALPHAOP,D3DTOP_DISABLE));
     if (ok) ok = SUCCEEDED(device->DrawPrimitiveUP(D3DPT_TRIANGLEFAN,64,vertices.data(),sizeof(Vertex)));
     const auto eye = l4d2vr_optics::EvaluateEye(view.origin, lens.sceneCenter, lens.sceneForward,
         lens.sceneRadius, m_VRScale, lens.magnification);
@@ -278,14 +303,14 @@ bool VR::DrawPhysicalScopeLensForEye(const CViewSetup& view, int eyeIndex, const
     {
         const auto brightness = static_cast<unsigned char>(eye.alpha * 255.0f);
         for (auto& vertex : vertices) vertex.color = D3DCOLOR_ARGB(255,brightness,brightness,brightness);
-        ok = SUCCEEDED(device->SetTexture(0,texture)) && ok;
-        device->SetTextureStageState(0,D3DTSS_COLOROP,D3DTOP_MODULATE);
-        device->SetTextureStageState(0,D3DTSS_COLORARG1,D3DTA_TEXTURE);
-        device->SetTextureStageState(0,D3DTSS_COLORARG2,D3DTA_DIFFUSE);
-        device->SetSamplerState(0,D3DSAMP_MINFILTER,D3DTEXF_LINEAR);
-        device->SetSamplerState(0,D3DSAMP_MAGFILTER,D3DTEXF_LINEAR);
-        device->SetSamplerState(0,D3DSAMP_ADDRESSU,D3DTADDRESS_CLAMP);
-        device->SetSamplerState(0,D3DSAMP_ADDRESSV,D3DTADDRESS_CLAMP);
+        ok = SUCCEEDED(device->SetTexture(0,texture)) &&
+            SUCCEEDED(device->SetTextureStageState(0,D3DTSS_COLOROP,D3DTOP_MODULATE)) &&
+            SUCCEEDED(device->SetTextureStageState(0,D3DTSS_COLORARG1,D3DTA_TEXTURE)) &&
+            SUCCEEDED(device->SetTextureStageState(0,D3DTSS_COLORARG2,D3DTA_DIFFUSE)) &&
+            SUCCEEDED(device->SetSamplerState(0,D3DSAMP_MINFILTER,D3DTEXF_LINEAR)) &&
+            SUCCEEDED(device->SetSamplerState(0,D3DSAMP_MAGFILTER,D3DTEXF_LINEAR)) &&
+            SUCCEEDED(device->SetSamplerState(0,D3DSAMP_ADDRESSU,D3DTADDRESS_CLAMP)) &&
+            SUCCEEDED(device->SetSamplerState(0,D3DSAMP_ADDRESSV,D3DTADDRESS_CLAMP));
         if (ok) ok = SUCCEEDED(device->DrawPrimitiveUP(D3DPT_TRIANGLEFAN,64,vertices.data(),sizeof(Vertex)));
         if (ok && rawTexture && m_ScopeReticleAlpha > 0.0f)
         {
@@ -296,17 +321,20 @@ bool VR::DrawPhysicalScopeLensForEye(const CViewSetup& view, int eyeIndex, const
             const Vertex reticle[] = {
                 {center-lens.right*extent,color,0,0},{center+lens.right*extent,color,0,0},
                 {center-lens.up*extent,color,0,0},{center+lens.up*extent,color,0,0}};
-            device->SetTexture(0,nullptr);
-            device->SetTextureStageState(0,D3DTSS_COLOROP,D3DTOP_SELECTARG1);
-            device->SetTextureStageState(0,D3DTSS_COLORARG1,D3DTA_DIFFUSE);
-            device->SetTextureStageState(0,D3DTSS_ALPHAOP,D3DTOP_SELECTARG1);
-            device->SetTextureStageState(0,D3DTSS_ALPHAARG1,D3DTA_DIFFUSE);
-            device->SetRenderState(D3DRS_ALPHABLENDENABLE,TRUE);
-            device->SetRenderState(D3DRS_SRCBLEND,D3DBLEND_SRCALPHA);
-            device->SetRenderState(D3DRS_DESTBLEND,D3DBLEND_INVSRCALPHA);
-            ok = SUCCEEDED(device->DrawPrimitiveUP(D3DPT_LINELIST,2,reticle,sizeof(Vertex)));
+            ok = SUCCEEDED(device->SetTexture(0,nullptr)) &&
+                SUCCEEDED(device->SetTextureStageState(0,D3DTSS_COLOROP,D3DTOP_SELECTARG1)) &&
+                SUCCEEDED(device->SetTextureStageState(0,D3DTSS_COLORARG1,D3DTA_DIFFUSE)) &&
+                SUCCEEDED(device->SetTextureStageState(0,D3DTSS_ALPHAOP,D3DTOP_SELECTARG1)) &&
+                SUCCEEDED(device->SetTextureStageState(0,D3DTSS_ALPHAARG1,D3DTA_DIFFUSE)) &&
+                SUCCEEDED(device->SetRenderState(D3DRS_ALPHABLENDENABLE,TRUE)) &&
+                SUCCEEDED(device->SetRenderState(D3DRS_BLENDOP,D3DBLENDOP_ADD)) &&
+                SUCCEEDED(device->SetRenderState(D3DRS_SEPARATEALPHABLENDENABLE,FALSE)) &&
+                SUCCEEDED(device->SetRenderState(D3DRS_SRCBLEND,D3DBLEND_SRCALPHA)) &&
+                SUCCEEDED(device->SetRenderState(D3DRS_DESTBLEND,D3DBLEND_INVSRCALPHA));
+            if (ok) ok = SUCCEEDED(device->DrawPrimitiveUP(D3DPT_LINELIST,2,reticle,sizeof(Vertex)));
         }
     }
     if (rawTexture) rawTexture->Release();
-    return ok;
+    const bool restored = restore.RestoreState();
+    return ok && restored;
 }

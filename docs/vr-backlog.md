@@ -47,7 +47,7 @@ Object Pull conflicts and retain per-player reload ownership across them.
 - Check two clients and prevent a released grip from dropping a subsequently
   selected weapon. Keep the existing control preset available.
 
-## VR-003: Finish independent dual pistols
+## VR-003: Verify independent dual-pistol aiming and shared reload
 
 Priority: high. Earlier dual pistols followed only the right controller and
 aimed both shots from that hand; the prototype also lost reload functionality.
@@ -56,9 +56,10 @@ Confirmed single-to-pair pickup contents and executed native shot deltas now
 feed a per-player/per-weapon ammunition ledger. Known partitions preserve the
 selected pistol's ammunition when splitting; unknown partial pairs and native
 ammunition changes fall back to a conservative balanced split. Retained single
-pistols keep their hand identity for another pickup. Actual per-hand reloads,
-chambers, larger capacity variants and gameplay acceptance
-remain unfinished.
+pistols keep their hand identity for another pickup. Dual pistols intentionally
+keep the shared native button reload requested for this control scheme.
+Independent dual magazine gestures are deferred. Larger capacity variants and
+gameplay acceptance remain unfinished.
 
 An optional native firing-boundary adapter now captures actual gun identity
 after weapon selection, correlating bullet events with clip consumption and
@@ -103,8 +104,9 @@ An empty reload waits for acknowledged chambering after the slide stroke;
 tactical insertion retains its chamber. Pending gestures retain their backend
 and native handle through transient snapshot gaps. Current native ammo modes,
 unsupported capacities and dual pistols still use their existing fallbacks.
-Retained-left single gestures are connected below. Independent dual gestures
-and persistent magazine-object ownership remain unfinished.
+Retained-left single gestures are connected below. Dual pistols retain the
+intentional shared button reload. Persistent magazine-object ownership remains
+unfinished.
 
 Retained-left pistol contact geometry now uses the same controller frame as the
 visible weapon. Retargeting precedes magazine/slide and calibration publication;
@@ -257,6 +259,14 @@ detect wrist-led swings, remove walking velocity, and reject repeated collision
 commands. Sweep history is scoped to a living owner and melee weapon. Native
 collision/gore calls are retained; headset and two-client outcomes remain untested.
 
+Remote pose history now uses a dedicated entity/userID identity. A main-thread
+refresh invalidates missing or replaced slot occupants without native identity
+queries from queued rendering. A recovered tracker starts from its latest valid
+sample; continuously valid trackers retain interpolation and body-yaw rebasing.
+This prevents interpolation from invalid payload components and reuse of a
+departed player's pose. Transport and visible two-client movement still need
+gameplay acceptance.
+
 - Verify the committed listen-server acknowledgement with two VR clients,
   including a late join, compatibility fallback and map change.
 - Check both hands and melee sweeps on the other client. Physical swings must
@@ -269,6 +279,14 @@ Related: [remote tracking #408](https://github.com/keyou91/l4d2vr/issues/408).
 
 Priority: high. A friend crashed using a pipe bomb. Another player's upstream
 report associates crashes with Grip Pull; neither establishes the friend's cause.
+
+Pending projectile throws, inventory drops and detached carry items now use
+separate consumers. A slot change alone cannot authorize dropped-entity movement.
+Deferred calls validate native owner and source serials; spawned physics props
+are paired with the exact source invocation and validated before use. Missing
+owner/edict bindings disable the custom drop path and retain native behavior.
+These changes address routing and entity lifetime defects found in the code;
+they do not establish the cause of the earlier pipe-bomb crash.
 
 - Obtain a matching crash dump and logs before attributing the pipe-bomb crash.
 - Audit object-pull entity lifetime and client/server transitions. Compare

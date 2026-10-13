@@ -94,6 +94,8 @@ bool __fastcall Hooks::dCreateMove(void* ecx, void* edx, float flInputSampleTime
 
 	auto updateFirstPersonBodyLocalState = [&](bool hasRealUserCmd)
 		{
+			if (m_Game)
+				m_Game->RefreshVRPosePlayerIdentitiesMainThread();
 			C_BasePlayer* localPlayer = nullptr;
 			if (m_Game && m_Game->m_EngineClient)
 			{

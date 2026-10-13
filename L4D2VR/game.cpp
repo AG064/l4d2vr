@@ -1300,7 +1300,8 @@ void Game::ResetVRPoseServerSession()
             player.worldPoseBlendWeight = 0.0f;
             player.worldPoseBlendTickMs = 0u;
             player.worldPoseUserID = -1;
-            player.pPlayer = nullptr;
+            player.worldPoseEntity = nullptr;
+            ++player.worldPoseRevision;
         }
         m_VRPoseServerCapable.store(false, std::memory_order_release);
         m_VRPoseHelloSent.store(false, std::memory_order_release);
@@ -1640,12 +1641,15 @@ namespace
     {
         outPlayer = nullptr;
         outUserID = -1;
-        if (!game || playerIndex <= 0)
+        if (!game || playerIndex <= 0 || !game->IsValidPlayerIndex(playerIndex) ||
+            !game->m_ClientEntityList || !game->m_EngineClient)
             return;
 #ifdef _MSC_VER
         __try
         {
 #endif
+            if (!game->m_EngineClient->IsInGame())
+                return;
             if (game->m_ClientEntityList)
             {
                 outPlayer = reinterpret_cast<C_BasePlayer*>(
@@ -2239,6 +2243,20 @@ bool Game::ReceiveVRPosePayload(
         return false;
     }
 
+    // Invalid wire components have no usable sample history, even if their
+    // packed bytes happen to contain finite positions.
+    if ((frame.validMask & l4d2vr_pose::kValidHmd) == 0u)
+        frame.hmd = VRTrackedPoseLocal{};
+    if ((frame.validMask & l4d2vr_pose::kValidLeftHand) == 0u)
+        frame.leftHand = VRTrackedPoseLocal{};
+    if ((frame.validMask & l4d2vr_pose::kValidRightHand) == 0u)
+        frame.rightHand = VRTrackedPoseLocal{};
+
+    std::uint64_t observedRevision = 0u;
+    {
+        std::lock_guard<std::mutex> lock(m_VRPoseMutex);
+        observedRevision = m_PlayersVRInfo[static_cast<std::size_t>(playerIndex)].worldPoseRevision;
+    }
     C_BasePlayer* observedPlayer = nullptr;
     int observedUserID = -1;
     VRPoseReadPlayerIdentity(
@@ -2246,6 +2264,9 @@ bool Game::ReceiveVRPosePayload(
         playerIndex,
         observedPlayer,
         observedUserID);
+    // Do not bind a pre-entity packet to a later occupant of the same slot.
+    if (!observedPlayer || observedUserID < 0)
+        return false;
     if ((frame.featureMask & l4d2vr_pose::kFeatureBodyYaw) != 0u)
     {
         frame.bodyYaw = VRPoseUnpackAngle(wire.bodyYaw);
@@ -2275,13 +2296,11 @@ bool Game::ReceiveVRPosePayload(
     {
         std::lock_guard<std::mutex> lock(m_VRPoseMutex);
         Player& player = m_PlayersVRInfo[static_cast<std::size_t>(playerIndex)];
+        if (player.worldPoseRevision != observedRevision)
+            return false;
         const bool playerIdentityChanged =
-            (observedPlayer &&
-             player.pPlayer &&
-             observedPlayer != player.pPlayer) ||
-            (observedUserID >= 0 &&
-             player.worldPoseUserID >= 0 &&
-             observedUserID != player.worldPoseUserID);
+            observedPlayer != player.worldPoseEntity ||
+            observedUserID != player.worldPoseUserID;
         if (playerIdentityChanged)
         {
             player.previousWorldPose = VRPoseFrame{};
@@ -2289,10 +2308,8 @@ bool Game::ReceiveVRPosePayload(
             player.worldPoseBlendWeight = 0.0f;
             player.worldPoseBlendTickMs = 0u;
         }
-        if (observedPlayer)
-            player.pPlayer = observedPlayer;
-        if (observedUserID >= 0)
-            player.worldPoseUserID = observedUserID;
+        player.worldPoseEntity = observedPlayer;
+        player.worldPoseUserID = observedUserID;
 
         if (player.latestWorldPose.valid &&
             !l4d2vr_pose::IsSequenceNewer(
@@ -2321,6 +2338,7 @@ bool Game::ReceiveVRPosePayload(
             ? player.latestWorldPose
             : frame;
         player.latestWorldPose = frame;
+        ++player.worldPoseRevision;
     }
 
     if (fromServer)
@@ -2359,6 +2377,53 @@ bool Game::ReceiveVRPosePayload(
     return true;
 }
 
+void Game::RefreshVRPosePlayerIdentitiesMainThread()
+{
+    struct PoseOwner
+    {
+        C_BasePlayer* entity = nullptr;
+        int userID = -1;
+        std::uint64_t revision = 0u;
+    };
+    std::array<PoseOwner, kMaxPlayers> owners{};
+    {
+        std::lock_guard<std::mutex> lock(m_VRPoseMutex);
+        for (std::size_t index = 1u; index < owners.size(); ++index)
+        {
+            const Player& player = m_PlayersVRInfo[index];
+            if (player.latestWorldPose.valid)
+                owners[index] = {player.worldPoseEntity, player.worldPoseUserID, player.worldPoseRevision};
+        }
+    }
+    for (std::size_t index = 1u; index < owners.size(); ++index)
+    {
+        const PoseOwner& owner = owners[index];
+        if (!owner.entity)
+            continue;
+        C_BasePlayer* currentEntity = nullptr;
+        int currentUserID = -1;
+        // Native engine/entity APIs run only in this client callback, outside
+        // the pose mutex. Queued draws consume the resulting history snapshot.
+        VRPoseReadPlayerIdentity(this, static_cast<int>(index), currentEntity, currentUserID);
+        if (currentEntity == owner.entity && currentUserID == owner.userID)
+            continue;
+        std::lock_guard<std::mutex> lock(m_VRPoseMutex);
+        Player& player = m_PlayersVRInfo[index];
+        if (player.worldPoseRevision != owner.revision || player.worldPoseEntity != owner.entity ||
+            player.worldPoseUserID != owner.userID)
+        {
+            continue;
+        }
+        player.previousWorldPose = VRPoseFrame{};
+        player.latestWorldPose = VRPoseFrame{};
+        player.worldPoseBlendWeight = 0.0f;
+        player.worldPoseBlendTickMs = 0u;
+        player.worldPoseEntity = nullptr;
+        player.worldPoseUserID = -1;
+        ++player.worldPoseRevision;
+    }
+}
+
 bool Game::GetInterpolatedVRPose(
     int playerIndex,
     float interpolationDelayMs,
@@ -2377,6 +2442,8 @@ bool Game::GetInterpolatedVRPose(
         std::lock_guard<std::mutex> lock(m_VRPoseMutex);
         const Player& player =
             m_PlayersVRInfo[static_cast<std::size_t>(playerIndex)];
+        if (!player.worldPoseEntity || player.worldPoseUserID < 0)
+            return false;
         previous = player.previousWorldPose;
         latest = player.latestWorldPose;
     }
@@ -2415,47 +2482,21 @@ bool Game::GetInterpolatedVRPose(
         fraction = std::clamp(numerator / denominator, 0.0f, 1.0f);
     }
 
-    VRTrackedPoseLocal previousHmd =
-        previous.valid ? previous.hmd : latest.hmd;
-    VRTrackedPoseLocal previousLeftHand =
-        previous.valid ? previous.leftHand : latest.leftHand;
-    VRTrackedPoseLocal previousRightHand =
-        previous.valid ? previous.rightHand : latest.rightHand;
-    if (previous.valid &&
-        previous.bodyYawValid &&
-        latest.bodyYawValid)
+    auto interpolateTracker = [&](std::uint8_t bit, const VRTrackedPoseLocal& oldPoint,
+        const VRTrackedPoseLocal& newPoint)
     {
-        // Body-local packet coordinates are meaningful only in the yaw frame
-        // in which they were sampled. Rebase the older sample into the latest
-        // yaw frame before interpolation, otherwise a turn makes stationary
-        // controllers orbit the player origin and visibly breaks arm IK.
-        previousHmd = VRPoseRebaseTrackedPointYaw(
-            previous.hmd,
-            previous.bodyYaw,
-            latest.bodyYaw);
-        previousLeftHand = VRPoseRebaseTrackedPointYaw(
-            previous.leftHand,
-            previous.bodyYaw,
-            latest.bodyYaw);
-        previousRightHand = VRPoseRebaseTrackedPointYaw(
-            previous.rightHand,
-            previous.bodyYaw,
-            latest.bodyYaw);
-    }
-
+        if (!previous.valid || (previous.validMask & latest.validMask & bit) == 0u)
+            return newPoint;
+        // Rebase only an actual older sample of this tracker. A newly recovered
+        // tracker already belongs to the latest yaw frame.
+        const VRTrackedPoseLocal rebased = previous.bodyYawValid && latest.bodyYawValid
+            ? VRPoseRebaseTrackedPointYaw(oldPoint, previous.bodyYaw, latest.bodyYaw) : oldPoint;
+        return VRPoseInterpolateTrackedPoint(rebased, newPoint, fraction);
+    };
     outPose = latest;
-    outPose.hmd = VRPoseInterpolateTrackedPoint(
-        previousHmd,
-        latest.hmd,
-        fraction);
-    outPose.leftHand = VRPoseInterpolateTrackedPoint(
-        previousLeftHand,
-        latest.leftHand,
-        fraction);
-    outPose.rightHand = VRPoseInterpolateTrackedPoint(
-        previousRightHand,
-        latest.rightHand,
-        fraction);
+    outPose.hmd = interpolateTracker(l4d2vr_pose::kValidHmd, previous.hmd, latest.hmd);
+    outPose.leftHand = interpolateTracker(l4d2vr_pose::kValidLeftHand, previous.leftHand, latest.leftHand);
+    outPose.rightHand = interpolateTracker(l4d2vr_pose::kValidRightHand, previous.rightHand, latest.rightHand);
 
     const bool leftFingerModeStable =
         previous.valid &&
@@ -2466,6 +2507,7 @@ bool Game::GetInterpolatedVRPose(
     {
         const bool canInterpolate =
             leftFingerModeStable &&
+            (previous.validMask & latest.validMask & l4d2vr_pose::kValidLeftHand) != 0u &&
             (previous.featureMask &
              l4d2vr_pose::kFeatureLeftFingerCurls) != 0u;
         outPose.leftFingerCurls = canInterpolate
@@ -2485,6 +2527,7 @@ bool Game::GetInterpolatedVRPose(
     {
         const bool canInterpolate =
             rightFingerModeStable &&
+            (previous.validMask & latest.validMask & l4d2vr_pose::kValidRightHand) != 0u &&
             (previous.featureMask &
              l4d2vr_pose::kFeatureRightFingerCurls) != 0u;
         outPose.rightFingerCurls = canInterpolate

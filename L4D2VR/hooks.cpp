@@ -913,9 +913,16 @@ static bool ManualCarryThrowWeaponIdUsesSpawnedPhysicsProp(int weaponId)
 		weaponId == static_cast<int>(C_WeaponCSBase::WeaponID::FIREWORKS_BOX);
 }
 
+static bool ManualThrowIdentityBindingsReady()
+{
+    const auto* offsets = Hooks::m_Game ? Hooks::m_Game->m_Offsets : nullptr;
+    return offsets && offsets->PhysicalGunOwner.valid && offsets->PhysicalGunOwner.address != 0u &&
+        offsets->CBaseEntity_entindex.valid && offsets->CBaseEntity_entindex.address != 0u;
+}
+
 static bool ManualCarryThrowBackendIsReady(int weaponId)
 {
-	return Hooks::s_ManualCarryThrowHookReady &&
+	return Hooks::s_ManualCarryThrowHookReady && ManualThrowIdentityBindingsReady() &&
 		(!ManualCarryThrowWeaponIdUsesSpawnedPhysicsProp(weaponId) ||
 			Hooks::s_ManualCarryThrowPropSpawnHookReady);
 }
@@ -926,7 +933,7 @@ static bool ManualInventoryThrowBackendIsReady(int weaponId)
 		return false;
 	if (ManualCarryThrowWeaponIdIsSupported(static_cast<C_WeaponCSBase::WeaponID>(weaponId)))
 		return ManualCarryThrowBackendIsReady(weaponId);
-	return Hooks::s_ManualCarryThrowHookReady &&
+	return Hooks::s_ManualCarryThrowHookReady && ManualThrowIdentityBindingsReady() &&
 		Hooks::m_Game && Hooks::m_Game->m_Offsets &&
 		Hooks::m_Game->m_Offsets->ManualInventoryWeaponDrop.valid;
 }

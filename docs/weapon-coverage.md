@@ -29,7 +29,7 @@ are not assigned a guessed stock identity.
 | Hunting rifle, military sniper | Tracked gun, support grip, mounted physical optic | Host detachable-magazine transactions |
 | AWP, Scout | Tracked gun, support grip, mounted physical optic | Host detachable-magazine transactions; per-shot bolt animation remains native |
 | Pump and chrome shotguns | Tracked gun, retained support/pump grip | Host individual-shell insertion and manual pump |
-| Auto shotgun, SPAS | Tracked gun and support grip | Host individual-shell insertion; native semiautomatic action |
+| Auto shotgun, SPAS | Tracked gun and support grip | Host individual-shell insertion; manual bolt after an empty reload |
 | Grenade launcher | Tracked gun and support grip | Explicit native single-round reload fallback; no synthetic detachable magazine |
 | M60 | Tracked gun and support grip | Native stock ammo behavior; physical magazine requests reject this type |
 
@@ -57,6 +57,10 @@ from the scope camera image; native gun shadows are preserved.
 The mounted lens follows the held weapon's near-clipping policy, including when
 it is inside the scene near plane. It retains world depth testing and restores
 the captured D3D pipeline state after drawing.
+The fixed-function lens pass explicitly selects its vertex UVs, disables texture
+transforms and geometry blending, and sets solid fill and its own clipping state.
+State-setting failures stop the affected draw. Cleanup restores the render target
+before the captured pipeline and viewport, preserving the native scissor state.
 
 Each eye is evaluated separately against the optic axis, pupil and 3.5 to 25 cm
 eye-relief interval. Off-axis or backwards viewing darkens the aperture. Looking
