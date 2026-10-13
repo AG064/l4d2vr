@@ -64,9 +64,25 @@ def main():
     for command in ('git', 'cmake'):
         if not shutil.which(command):
             raise RuntimeError(f'{command} is required in PATH.')
+    temporary_keys = ('RUNNER_TEMP', 'TMPDIR', 'TEMP', 'TMP')
+    # Native tools can prefer TMP/TEMP even when Python prefers TMPDIR.
+    # Reject every configured provider that could make a tool write to the repo.
+    for key in temporary_keys:
+        if os.environ.get(key) and Path(os.environ[key]).resolve().is_relative_to(root):
+            raise RuntimeError(f'{key} must point outside the checkout.')
+    temporary_setting = next((os.environ[key] for key in temporary_keys if os.environ.get(key)), None)
+    if not temporary_setting:
+        raise RuntimeError('Configure a candidate temporary directory outside the checkout.')
+    temporary_base = Path(temporary_setting).resolve()
+    if temporary_base == root or temporary_base.is_relative_to(root):
+        raise RuntimeError('The candidate temporary directory must be outside the checkout.')
+    if not temporary_base.is_dir():
+        raise RuntimeError('The candidate temporary directory does not exist.')
     msbuild, environment = visual_studio_environment()
     scratch = Path(tempfile.mkdtemp(prefix='l4d2vr-candidate-',
-        dir=os.environ.get('RUNNER_TEMP') or None)).resolve()
+        dir=temporary_base)).resolve()
+    if not scratch.is_relative_to(temporary_base) or scratch.is_relative_to(root):
+        raise RuntimeError('Candidate staging escaped its temporary directory.')
     source = scratch / 'source'
     source.mkdir()
     logs = scratch / 'logs'
