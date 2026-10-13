@@ -26,9 +26,9 @@ class Server_BaseEntity;
 template <typename T>
 struct Hook
 {
-	T fOriginal;
-	LPVOID pTarget;
-	bool isEnabled;
+	T fOriginal{};
+	LPVOID pTarget = nullptr;
+	bool isEnabled = false;
 
 	int createHook(LPVOID targetFunc, LPVOID detourFunc)
 	{
@@ -51,6 +51,12 @@ struct Hook
 
 	int enableHook()
 	{
+		if (!pTarget)
+		{
+			isEnabled = false;
+			Game::logMsg("[VR][Hook] enable skipped: missing target type=%s", typeid(T).name());
+			return 1;
+		}
 		if (MH_EnableHook(pTarget) != MH_OK)
 		{
 			Game::errorMsg("Failed to enable hook");
@@ -62,6 +68,11 @@ struct Hook
 
 	int disableHook()
 	{
+		if (!pTarget)
+		{
+			isEnabled = false;
+			return 1;
+		}
 		if (MH_DisableHook(pTarget) != MH_OK)
 		{
 			Game::errorMsg("Failed to disable hook");
@@ -251,6 +262,7 @@ public:
 	static bool InitializeNoHmdNekoPostProbe();
 
 	int initSourceHooks();
+	static void RetryCreateMoveHook();
 
 	// Detour functions
 	static ITexture* __fastcall dGetRenderTarget(void* ecx, void* edx);

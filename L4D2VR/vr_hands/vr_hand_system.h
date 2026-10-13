@@ -136,6 +136,9 @@ private:
         vr::VRActionHandle_t action = vr::k_ulInvalidActionHandle;
         vr::VRInputValueHandle_t source = vr::k_ulInvalidInputValueHandle;
         VrHandMeshAsset asset;
+        bool assetLoadAttempted = false;
+        std::uint32_t assetLoadAttemptTick = 0u;
+        std::string assetFailureReason;
         VrHandSkeletonRuntime skeleton;
         std::vector<VrHandMatrixRows3x4> palette;
         bool paletteValid = false;
@@ -243,7 +246,6 @@ private:
     VrHandRendererD3D9 m_Renderer;
     std::unordered_set<std::string> m_ReportedErrors;
     std::unordered_set<std::string> m_ReportedWarnings;
-    bool m_AssetLoadAttempted = false;
     bool m_AssetsLoaded = false;
     bool m_DependencyUnavailable = false;
     std::string m_DependencyFailureReason;

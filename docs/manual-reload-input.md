@@ -32,6 +32,10 @@ Magnum, SMGs, rifles and shotguns, including before the first magazine ejection.
 Unsupported hosts keep conventional reload; dual pistols and the grenade
 launcher retain their explicit native fallback.
 
+If manual reload or VR hands are turned off, Magazine Release becomes a native
+reload request for a live reloadable gun. Its brief input pulse remains tied to
+the same owner and native weapon handle, so a weapon switch cannot inherit it.
+
 For an empty single pistol, Magnum or SMG, press Magazine Release, grab a fresh
 magazine from the body ammo position with the off-hand grip, guide it into the
 well, then grip and pull the slide or charging handle before releasing it.
@@ -80,3 +84,5 @@ An older workshop `config.sample` must not erase the saved optional release
 setting. A commented sample default seeds a missing setting; an active sample
 assignment can still override a saved value under the repository's current
 startup behavior.
+Saved ScopePhysicalLensEnabled and ScopeBaseMagnification also survive removal
+of unknown options against an older sample.

@@ -186,6 +186,23 @@ namespace l4d2vr_pistol
             if (!entry.exact) return false;
             result = entry.magazines; return true;
         }
+        bool RelinquishPhysical(const AmmoSnapshot& snapshot)
+        {
+            if (!snapshot.Valid() || snapshot.owner != m_Owner || snapshot.ownerSerial != m_Serial)
+                return false;
+            for (auto& entry : m_Entries)
+            {
+                if (entry.weapon != snapshot.weapon || entry.serial != snapshot.weaponSerial) continue;
+                if (entry.dual != snapshot.dual || entry.capacity != snapshot.capacity ||
+                    entry.right + entry.left != snapshot.clip || entry.magazines.physical == 0u)
+                    return false;
+                // Native reload takes over only this gun's mechanical ownership.
+                // Keep native rounds, the known hand partition and other guns.
+                entry.magazines = {};
+                return true;
+            }
+            return false;
+        }
         bool BlocksUnchambered(const AmmoSnapshot& snapshot, Hand hand)
         {
             MagazineState state{};

@@ -165,6 +165,10 @@ struct VR
     l4d2vr_input::ActionFrame m_InputActionFrame;
     vr::EVRInputError m_LastInputActionStateError = vr::VRInputError_None;
     std::array<vr::VRActiveActionSet_t,2> m_ActiveActionSets{};
+    bool m_InputActionHandlesReady = true;
+    std::string m_InputActionManifestPath;
+    std::chrono::steady_clock::time_point m_InputAcquisitionNextRetry{};
+    int SetActionManifest(const char*) { return 0; }
     uint64_t m_InputActionStateFrameSerial = 0u;
     bool m_LeftHanded = false, m_LeftHandedSwapInputActions = false, m_VrHandsDebugLog = false;
     vr::VRActionHandle_t m_ActionWalk = 10u, m_ActionTurn = 11u, m_ActionTeleport = 1u, m_ActionWeaponGrip = 1u;
@@ -291,6 +295,7 @@ struct VR
         (void)magazineGripDown; (void)supportHandDown;
     }
 };
+struct Hooks { static void RetryCreateMoveHook() {} };
 #include "vr_action_frame_functions.inl"
 #include "vr_action_frame_tracking.inl"
 #include "vr_action_frame_primary.inl"

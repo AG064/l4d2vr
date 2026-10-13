@@ -5105,6 +5105,29 @@ bool VR::GetWorldPoseAnatomicalRightHandOpenVRFingerCurls(
         "world pose anatomical right hand");
 }
 
+bool VR::UpdateNativeAmmoReloadButtonContext(C_BasePlayer* localPlayer)
+{
+    C_WeaponCSBase* weapon = nullptr;
+    C_WeaponCSBase::WeaponID weaponId = C_WeaponCSBase::WeaponID::NONE;
+    int clip = -1;
+    const bool liveWeapon = m_IsVREnabled && m_Game && m_Game->m_EngineClient &&
+        m_Game->m_EngineClient->IsInGame() &&
+        MagazineInteractionReadActiveWeapon(localPlayer, weapon, weaponId, clip);
+    const int id = static_cast<int>(weaponId);
+    const uint32_t handle = liveWeapon ? MagazineInteractionActiveWeaponHandle(m_Game, localPlayer, weapon) : 0u;
+    const bool reloadable = l4d2vr_remote_mag::IsDetachable(id) || l4d2vr_shell::IsShotgun(id) ||
+        weaponId == C_WeaponCSBase::WeaponID::GRENADE_LAUNCHER;
+    const bool enabled = liveWeapon && l4d2vr_shell::ValidHandle(handle) && reloadable &&
+        (!m_MagazineInteractionEnabled || (!m_VrHandsEnabled && !m_NativeViewmodelHandsOnly) ||
+            m_NativeAmmoReloadFallbackActive.load(std::memory_order_acquire));
+    const unsigned mode = (m_MagazineInteractionEnabled ? 1u : 0u) |
+        (m_VrHandsEnabled ? 2u : 0u) | (m_NativeViewmodelHandsOnly ? 4u : 0u);
+    if (m_NativeAmmoReloadButtonSession.Observe(enabled, reinterpret_cast<uintptr_t>(localPlayer),
+            reinterpret_cast<uintptr_t>(weapon), id, mode, handle))
+        m_NativeAmmoReloadFallbackPulse.Reset();
+    return enabled;
+}
+
 bool VR::UpdateMagazineInteraction(
     C_BasePlayer* localPlayer,
     bool leftGripDown,
@@ -8336,6 +8359,8 @@ void VR::FallbackVrHandsGlovesToNative(const char* reason)
     if (!m_VrHandsEnabled && m_NativeViewmodelHandsOnly)
         return;
 
+    if (!m_VrHandsGlovesRuntimeFallback)
+        m_VrHandsGlovesHideArmsBeforeFallback = m_HideArms;
     m_VrHandsEnabled = false;
     m_NativeViewmodelHandsOnly = true;
     m_HideArms = false;
@@ -8345,7 +8370,7 @@ void VR::FallbackVrHandsGlovesToNative(const char* reason)
     {
         m_VrHandsGlovesFallbackLogged = true;
         Game::logMsg(
-            "[VR][Hands] VR glove renderer unavailable (%s); falling back to NativeViewmodelHandsOnly",
+            "[VR][Hands] VR glove assets unavailable (%s); using native hands while retrying",
             (reason && reason[0] != '\0') ? reason : "unknown dependency failure");
     }
 }
@@ -8819,20 +8844,33 @@ void VR::BeginVrHandsEyeRender(const CViewSetup& view, int eyeIndex)
 
     const bool emptyHandsPlaceholderActive =
         m_ManualInventoryEmptyHandsActive.load(std::memory_order_acquire);
-    const bool drawVrGloves =
-        m_VrHandsEnabled && (!emptyHandsPlaceholderActive || m_GripReleaseDropEnabled);
-    if (drawVrGloves && m_Input && m_VrHandsGlovesEnabled)
+    const bool gloveModeRequested = m_VrHandsEnabled || m_VrHandsGlovesRuntimeFallback;
+    if (gloveModeRequested && (!emptyHandsPlaceholderActive || m_GripReleaseDropEnabled) &&
+        m_Input && m_VrHandsGlovesEnabled &&
+        l4d2vr_input::ActionFrame::Ready(m_InputActionFrame.Read()))
     {
         if (!m_VrHands)
             m_VrHands = std::make_unique<VrHandSystem>();
 
-        if (!m_VrHands->EnsureAssetsAvailable(m_VrHandsDebugLog) &&
-            m_VrHands->IsDependencyUnavailable())
+        if (m_VrHands->EnsureAssetsAvailable(m_VrHandsDebugLog))
+        {
+            if (m_VrHandsGlovesRuntimeFallback)
+            {
+                m_VrHandsEnabled = true;
+                m_NativeViewmodelHandsOnly = false;
+                m_HideArms = m_VrHandsGlovesHideArmsBeforeFallback;
+                m_VrHandsGlovesRuntimeFallback = false;
+                m_VrHandsGlovesFallbackLogged = false;
+            }
+        }
+        else if (m_VrHands->IsDependencyUnavailable())
         {
             FallbackVrHandsGlovesToNative(m_VrHands->DependencyFailureReason().c_str());
         }
     }
 
+    const bool drawVrGloves =
+        m_VrHandsEnabled && (!emptyHandsPlaceholderActive || m_GripReleaseDropEnabled);
     const bool drawScopeLens = IsPhysicalScopeMode() && m_ScopeEnabled && ScopeWeaponEligible();
     if (!drawVrGloves && !m_NativeViewmodelHandsOnly && !drawMagazineDebugBoxes && !drawScopeLens)
         return;

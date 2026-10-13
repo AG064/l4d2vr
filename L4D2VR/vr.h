@@ -1675,6 +1675,11 @@ public:
 	vr::VRActionSetHandle_t m_ActionSet = vr::k_ulInvalidActionSetHandle;
 	vr::VRActionSetHandle_t m_BaseActionSet = vr::k_ulInvalidActionSetHandle;
 	std::array<vr::VRActiveActionSet_t, 2> m_ActiveActionSets{};
+	bool m_InputManifestRegistered = false;
+	bool m_InputActionHandlesReady = false;
+	std::string m_InputActionManifestPath;
+	std::string m_InputAcquisitionFailure;
+	std::chrono::steady_clock::time_point m_InputAcquisitionNextRetry{};
 
 	// actions
 	vr::VRActionHandle_t m_ActionJump = vr::k_ulInvalidActionHandle;
@@ -2007,6 +2012,7 @@ public:
 	std::array<float, 5> m_VrHandsGloveFingerMaxCurl = { 1.0f, 1.0f, 1.0f, 1.0f, 1.0f };
 	bool m_VrHandsGlovesRuntimeFallback = false;
 	bool m_VrHandsGlovesFallbackLogged = false;
+	bool m_VrHandsGlovesHideArmsBeforeFallback = false;
 	bool m_VrHandsMotionRangeWithoutController = false;
 	bool m_VrHandsRightUseViewmodelPose = false;
 	float m_VrHandsTwoHandedGripTargetBoxScale = 1.0f;
@@ -2204,6 +2210,8 @@ public:
     l4d2vr_remote_mag::ClientRequest m_RemoteMagazineRequest;
     std::atomic<bool> m_NativeAmmoReloadFallbackActive{false};
     std::atomic<bool> m_PhysicalReloadOwnsStockInput{false};
+    bool UpdateNativeAmmoReloadButtonContext(C_BasePlayer* localPlayer);
+    l4d2vr_magazine::SessionTracker m_NativeAmmoReloadButtonSession;
     void SendRemoteMagazineRequest(const l4d2vr_remote_mag::Request& request, bool retry);
     l4d2vr_magazine::NativeFallbackPulse m_NativeAmmoReloadFallbackPulse;
     void OfferRemoteMagazineProtocol(unsigned version, uint32_t token);

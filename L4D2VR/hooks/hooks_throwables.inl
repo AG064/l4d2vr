@@ -4349,9 +4349,17 @@ static bool PistolPhysicalReloadOwnsWeapon(void* owner, void* weapon)
         !ManualPistolReadAmmo(owner, weapon, snapshot, index) ||
         !game->PistolAmmoClientReady(index, snapshot.ownerSerial) ||
         game->GetConVarIntDirect("sv_infinite_ammo", -1) != 0) return false;
-    std::lock_guard<std::mutex> lock(game->m_PistolAmmoMutex);
     l4d2vr_pistol::MagazineState magazines{};
-    return game->m_PistolAmmo[index].MagazineInfo(snapshot, magazines) && magazines.physical != 0u;
+    {
+        std::lock_guard<std::mutex> lock(game->m_PistolAmmoMutex);
+        if (!game->m_PistolAmmo[index].MagazineInfo(snapshot, magazines) || magazines.physical == 0u)
+            return false;
+    }
+    int command = 0;
+    if (TryGetExecutingPistolNativeReload(owner, index, snapshot, command) &&
+        game->RelinquishPistolPhysicalReload(index, snapshot, command))
+        return false;
+    return true;
 }
 
 static bool PhysicalNativeReloadIsBlocked(void* weapon)

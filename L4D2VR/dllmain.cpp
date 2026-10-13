@@ -3061,6 +3061,8 @@ namespace
         sampleKeys.insert("ManualPumpEnabled");
         sampleKeys.insert("DualPistolsIndependentHandsEnabled");
         sampleKeys.insert("DualPistolsNativeReloadFallbackEnabled");
+        sampleKeys.insert("ScopePhysicalLensEnabled");
+        sampleKeys.insert("ScopeBaseMagnification");
         for (const auto key : l4d2vr_calibration::kConfigKeys)
             sampleKeys.insert(std::string(key));
         configChanged |= RemoveConfigParametersNotInSample(configText, sampleKeys);

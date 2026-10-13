@@ -2635,6 +2635,8 @@ static inline bool ShouldForceThirdPersonByState(const C_BasePlayer* player,
 }
 
 static bool TryGetExecutingReloadGate(void* owner, void* weapon, bool& blocked);
+static bool TryGetExecutingPistolNativeReload(void* owner, int index,
+    const l4d2vr_pistol::AmmoSnapshot& snapshot, int& command);
 #include "vr_native_scope.h"
 static bool TryGetExecutingPistolPickup(void* owner, int& index, l4d2vr_pistol::Hand& hand);
 static void RefreshGripPickupContact(VR* vr, Game* game, C_BasePlayer* player, bool left);

@@ -464,10 +464,20 @@ bool VrHandSystem::ResolveSteamVrAssetPath(const char* fileName, std::string& ou
     if (buffer.empty() || buffer.front() == '\0')
         return false;
 
-    const std::filesystem::path path = std::filesystem::path(buffer.data()) /
-        "resources" / "rendermodels" / "vr_glove" / fileName;
-    outPath = path.string();
-    return std::filesystem::exists(path);
+    if (!fileName || !*fileName)
+        return false;
+    try
+    {
+        const std::filesystem::path path = std::filesystem::u8path(buffer.data()) /
+            "resources" / "rendermodels" / "vr_glove" / fileName;
+        outPath = path.u8string();
+        std::error_code error;
+        return std::filesystem::is_regular_file(path, error) && !error;
+    }
+    catch (const std::filesystem::filesystem_error&)
+    {
+        return false;
+    }
 }
 
 bool VrHandSystem::EnsureStandaloneMagazineBoxLoaded(
@@ -777,45 +787,64 @@ bool VrHandSystem::DrawMagazineDebugBoxesForEye(
 
 bool VrHandSystem::EnsureAssetsLoaded(bool debugLog)
 {
-    if (m_DependencyUnavailable)
-        return false;
     if (m_AssetsLoaded)
         return true;
-    if (m_AssetLoadAttempted)
-        return false;
-    m_AssetLoadAttempted = true;
+
+    const std::uint32_t now = GetTickCount();
+    bool loadedNewAsset = false;
 
     for (HandState& hand : m_Hands)
     {
+        if (hand.asset.IsValid())
+            continue;
+        if (hand.assetLoadAttempted && now - hand.assetLoadAttemptTick < 1000u)
+            continue;
+        hand.assetLoadAttempted = true;
+        hand.assetLoadAttemptTick = now;
+
         std::string assetPath;
         if (!ResolveSteamVrAssetPath(hand.assetFileName, assetPath))
         {
-            m_DependencyUnavailable = true;
-            m_DependencyFailureReason = std::string("missing SteamVR glove asset: ") +
+            hand.assetFailureReason = std::string("missing SteamVR glove asset: ") +
                 (hand.assetFileName ? hand.assetFileName : "<unknown>");
-            return false;
+            continue;
         }
 
+        VrHandMeshAsset asset;
         std::string error;
-        if (!VrHandAssetLoader::LoadGlb(assetPath, hand.asset, error))
+        if (!VrHandAssetLoader::LoadGlb(assetPath, asset, error) || !asset.IsValid())
         {
-            m_DependencyUnavailable = true;
-            m_DependencyFailureReason = "failed to load SteamVR glove asset: " + assetPath;
+            hand.assetFailureReason = "failed to load SteamVR glove asset: " + assetPath;
             if (!error.empty())
-                m_DependencyFailureReason += " (" + error + ")";
-            return false;
+                hand.assetFailureReason += " (" + error + ")";
+            continue;
         }
+        hand.asset = std::move(asset);
+        hand.assetFailureReason.clear();
+        loadedNewAsset = true;
     }
 
+    bool anyAssetLoaded = false;
     m_AssetsLoaded = true;
-    if (debugLog)
+    m_DependencyFailureReason.clear();
+    for (const HandState& hand : m_Hands)
+    {
+        anyAssetLoaded |= hand.asset.IsValid();
+        m_AssetsLoaded &= hand.asset.IsValid();
+        if (!hand.asset.IsValid() && m_DependencyFailureReason.empty())
+            m_DependencyFailureReason = hand.assetFailureReason;
+        if (debugLog && !hand.assetFailureReason.empty())
+            ReportWarningOnce(hand.assetFailureReason);
+    }
+    m_DependencyUnavailable = !anyAssetLoaded;
+    if (debugLog && loadedNewAsset)
     {
         Game::logMsg(
             "[VR][Hands] assets loaded left=%u vertices right=%u vertices",
             static_cast<unsigned int>(m_Hands[0].asset.vertices.size()),
             static_cast<unsigned int>(m_Hands[1].asset.vertices.size()));
     }
-    return true;
+    return anyAssetLoaded;
 }
 
 bool VrHandSystem::EnsureInitialized(
@@ -827,8 +856,6 @@ bool VrHandSystem::EnsureInitialized(
     bool leftHanded,
     bool debugLog)
 {
-    if (m_DependencyUnavailable)
-        return false;
     if (!input || !EnsureAssetsLoaded(debugLog))
         return false;
     const auto frameToken = actionFrame.Read();
@@ -1444,7 +1471,7 @@ bool VrHandSystem::DrawForEye(
     const std::array<float, 5>& gloveFingerMaxCurl,
     VrHandDrawPass drawPass)
 {
-    if (m_DependencyUnavailable || !device || !input)
+    if (!device || !input)
         return false;
     if (!EnsureInitialized(input, actionFrame, controllers, rightUseViewmodelPose, twoHandedViewmodelPose, leftHanded, debugLog))
     {

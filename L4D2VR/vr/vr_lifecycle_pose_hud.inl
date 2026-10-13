@@ -179,7 +179,10 @@ bool VR::UpdatePosesAndActions()
 
 void VR::UpdateInputActionState(const l4d2vr_input::ActionFrame::Attempt& attempt)
 {
-    const auto error = m_Input
+    Hooks::RetryCreateMoveHook();
+    if (!m_InputActionHandlesReady && std::chrono::steady_clock::now() >= m_InputAcquisitionNextRetry)
+        SetActionManifest(m_InputActionManifestPath.empty() ? "action_manifest.json" : nullptr);
+    const auto error = m_Input && m_InputActionHandlesReady
         ? m_Input->UpdateActionState(m_ActiveActionSets.data(), sizeof(vr::VRActiveActionSet_t), static_cast<uint32_t>(m_ActiveActionSets.size()))
         : vr::VRInputError_NoSteam;
     ++m_InputActionStateFrameSerial;

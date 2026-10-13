@@ -53,10 +53,12 @@ void Game::OfferPistolAmmoProtocol(edict_t* entity)
         auto& client = m_PistolAmmoServerClients[index];
         if (client.entity != entity || client.serial != serial || !client.sender.Token())
         {
+            const uint32_t executed = client.entity == entity && client.serial == serial ? client.executedCommand : 0u;
             static std::atomic<uint32_t> next{(static_cast<uint32_t>(GetTickCount64()) ^ GetCurrentProcessId()) | 1u};
             token = next.fetch_add(1u, std::memory_order_relaxed);
             if (!token) token = next.fetch_add(1u, std::memory_order_relaxed);
             client = {}; client.entity = entity; client.serial = serial; client.sender.Reset(token); client.reload.Reset(token);
+            client.executedCommand = executed;
         }
         token = client.sender.Token();
     }
@@ -160,6 +162,37 @@ bool Game::HandlePistolMagazineCommand(edict_t* entity, const void* sourceComman
         executed = client.executedCommand;
     }
     if (request.command <= executed) ProcessPistolMagazineRequests(index, static_cast<int>(executed), serial);
+    return true;
+}
+
+bool Game::RelinquishPistolPhysicalReload(int index, const l4d2vr_pistol::AmmoSnapshot& snapshot, int command)
+{
+    edict_t* entity = nullptr;
+    uint32_t handle = 0u;
+    if (command <= 0 || !ReadPistolAmmoRecipient(this, index, snapshot, entity, handle) ||
+        !l4d2vr_shell::HandleMatches(handle, static_cast<int>(handle & 0xfffu), snapshot.weaponSerial))
+        return false;
+    {
+        std::lock_guard<std::mutex> lock(m_PistolAmmoServerMutex);
+        auto& client = m_PistolAmmoServerClients[index];
+        if (client.entity != entity || client.serial != snapshot.ownerSerial || !client.sender.Ready() ||
+            static_cast<uint32_t>(command) <= client.executedCommand)
+            return false;
+        std::lock_guard<std::mutex> ammoLock(m_PistolAmmoMutex);
+        if (!m_PistolAmmo[index].RelinquishPhysical(snapshot)) return false;
+        // Revoke pending requests and replay results before offering a new token.
+        // A late same-clip Cycle must not restore the relinquished ownership.
+        client.sender.Reset(0u);
+        client.reload.Reset(0u);
+        client.havePending = false;
+        client.pending = {};
+        client.queuedAt = 0u;
+        client.reloadSequence = 0u;
+        client.executedCommand = std::max(client.executedCommand, static_cast<uint32_t>(command));
+    }
+    OfferPistolAmmoProtocol(entity);
+    Game::logMsg("[VR][PistolAmmo][server] native reload relinquished physical ownership player=%d command=%d handle=0x%X",
+        index, command, handle);
     return true;
 }
 

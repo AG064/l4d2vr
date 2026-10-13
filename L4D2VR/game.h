@@ -275,6 +275,7 @@ public:
     void ResetPistolAmmoServerClients();
     bool HandlePistolAmmoCommand(edict_t* entity, const void* command);
     bool PistolAmmoClientReady(int index, unsigned ownerSerial);
+    bool RelinquishPistolPhysicalReload(int index, const l4d2vr_pistol::AmmoSnapshot& snapshot, int command);
     bool HandlePistolMagazineCommand(edict_t* entity, const void* command);
     void ProcessPistolMagazineRequests(int index, int command, unsigned ownerSerial);
     mutable std::mutex m_VRPoseMutex;

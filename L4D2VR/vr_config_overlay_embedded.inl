@@ -2597,6 +2597,8 @@ CustomAction5Command=
 
 
 ScopeEnabled=false
+ScopePhysicalLensEnabled=true
+ScopeBaseMagnification=2
 ScopeRTTSize=512
 ScopeFov=20
 ScopeMagnification=20,15,5,3

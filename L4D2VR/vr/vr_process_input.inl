@@ -883,7 +883,7 @@ void VR::ProcessInput()
     if (MagazineInteractionOwnsGrip(true))
         m_PistolUseLeft.store(false, std::memory_order_release);
     const bool nativeAmmoReloadPulse = m_NativeAmmoReloadFallbackPulse.Update(
-        m_NativeAmmoReloadFallbackActive.load(std::memory_order_acquire) &&
+        UpdateNativeAmmoReloadButtonContext(localPlayer) && !isObserverOrIdle &&
         m_FirstPersonControlReady.load(std::memory_order_acquire) && !m_MouseModeEnabled &&
         !m_SuppressPlayerInput && !m_Game->m_EngineClient->IsPaused() &&
         (!m_Game->m_VguiSurface || !m_Game->m_VguiSurface->IsCursorVisible()),

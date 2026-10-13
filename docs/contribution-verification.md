@@ -11,11 +11,13 @@ friend-hosted shell and detachable-magazine transactions. See `physical-interact
 `manual-reload-input.md`, `weapon-calibration.md` and `vr-backlog.md` for their
 controls, limitations and remaining tests.
 
-The current local runtime source passed all 38 CTest suites in both Release and
-Debug, plus a full Windows Release x86 DLL/pose-server rebuild with v143 in a
-temporary build tree. Seven native ammo signatures matched uniquely against
-the installed server binary. These are
-offline checks. Later documentation edits do not change the tested runtime.
+The review-candidate recipe rebuilds the Windows x86 DLL and pose server with
+v143, then runs the complete CTest suite in both Release and Debug in TEMP.
+Its verification.json records the exact source and artifact hashes and suite
+counts. See playtest-candidate.md for the command, runtime prerequisites and
+gameplay acceptance. Seven native ammo signatures matched uniquely against
+the locally installed server binary. These are offline checks; a different game
+binary must satisfy the guarded bindings before physical ammo support is used.
 
 Manual throwing and grip-release dropping remain disabled in repository
 defaults; mounted physical scopes are enabled. Saved user configuration is
@@ -59,11 +61,11 @@ staged source hashes and use a full DLL/pose-server rebuild. The Debug hand test
 the SDK's `VECTOR_PARANOIA` behavior, which seeds unspecified vector/angle
 values with NaN and detects accidental assumptions about zero defaults.
 
-The contribution changes were checked with the v143 compiler. The bundled
-MinHook archive was incompatible with that compiler's link-time code generation,
-so MinHook 1.3.4 was rebuilt under the same temporary toolchain. That replacement
-was used only in the temporary build; the repository's dependency archive was
-not changed.
+The candidate recipe builds pinned MinHook 1.3.4 source with the same v143
+toolchain because the bundled archive has incompatible link-time code generation.
+It also builds the tracked D3DX proxy source. Both replacements remain in TEMP;
+the repository dependency archives and installed game are unchanged by the build.
+The native CI job uses this recipe and records fixed artifact paths and hashes.
 
 ## Local pistol material preparation
 

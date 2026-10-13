@@ -1146,7 +1146,8 @@ namespace
         bool use = false;
         l4d2vr_pistol::Hand pickup = l4d2vr_pistol::Hand::None;
         mutable unsigned pistolBulletCalls = 0u;
-        bool reloadValid = false, reloadBlocked = false;
+        bool reloadValid = false, reloadBlocked = false, reload = false, reloadPolicyValid = false;
+        l4d2vr_server_pistol::ReloadPolicy reloadPolicy = l4d2vr_server_pistol::ReloadPolicy::Native;
         l4d2vr_server_pistol::Weapon reloadWeapon{};
         l4d2vr_dual::Shot pose{};
     };
@@ -1172,6 +1173,7 @@ namespace
             result.serial = serial;
             result.attack = (command->buttons & 1) != 0;
             result.use = (command->buttons & (1 << 5)) != 0;
+            result.reload = (command->buttons & (1 << 13)) != 0;
             return true;
 #ifdef _MSC_VER
         }
@@ -1232,6 +1234,23 @@ static bool TryGetExecutingReloadGate(void* owner, void* weapon, bool& blocked)
     return true;
 }
 
+static bool TryGetExecutingPistolNativeReload(void* owner, int index,
+    const l4d2vr_pistol::AmmoSnapshot& snapshot, int& command)
+{
+    command = 0;
+    const auto* context = g_ServerPistolExecution;
+    if (!snapshot.Valid() || snapshot.owner != reinterpret_cast<uintptr_t>(owner) || !context ||
+        context->owner != owner || context->index != index || context->serial != snapshot.ownerSerial ||
+        !context->reload || !context->reloadPolicyValid ||
+        context->reloadPolicy != l4d2vr_server_pistol::ReloadPolicy::Native ||
+        !context->reloadValid || context->reloadBlocked || context->command <= 0 ||
+        context->reloadWeapon.pointer != snapshot.weapon || context->reloadWeapon.serial != snapshot.weaponSerial ||
+        ReadServerReloadWeapon(owner) != context->reloadWeapon)
+        return false;
+    command = context->command;
+    return true;
+}
+
 static bool TryGetExecutingPistolPickup(void* owner, int& index, l4d2vr_pistol::Hand& hand)
 {
     if (!g_ServerPistolExecution || g_ServerPistolExecution->owner != owner || !g_ServerPistolExecution->use ||
@@ -1255,9 +1274,11 @@ void __fastcall Hooks::dPistolPlayerRunCommand(void* owner, void*, CUserCmd* com
         if (found && context.attack && input.shot.hand != l4d2vr_dual::Hand::None)
         { context.pose = input.shot; context.poseValid = true; }
         if (found && context.use) context.pickup = input.pickup;
+        context.reloadPolicy = found ? input.reload : l4d2vr_server_pistol::ReloadPolicy::Native;
+        context.reloadPolicyValid = found;
         context.reloadValid = m_Game->m_ServerReloadCommands[context.index].Execute(
             reinterpret_cast<uintptr_t>(owner), context.serial, context.command, context.reloadWeapon,
-            found ? input.reload : l4d2vr_server_pistol::ReloadPolicy::Native, context.reloadBlocked);
+            context.reloadPolicy, context.reloadBlocked);
         // Outside the command scope, retain only the most recently simulated
         // policy. Decode must not advance this ledger while this hook is active.
         m_Game->m_PlayersVRInfo[context.index].physicalReloadLedger.Observe(context.command,
@@ -2993,6 +3014,12 @@ int Hooks::dWriteUsercmd(void* buf, CUserCmd* to, CUserCmd* from)
 	static int s_lastButtons = 0;
 	static uint32_t s_lastObjectPullLoggedWirePayload = 0u;
 
+    // Until the local decoder or an explicit server ACK proves capability,
+    // preserve the ordinary command exactly, including startup/reconnect.
+    const bool canEncode = m_VR && m_VR->m_IsVREnabled && m_VR->m_EncodeVRUsercmd &&
+        !m_VR->m_ForceNonVRServerMovement && s_ServerUnderstandsVR;
+    if (!canEncode)
+        return hkWriteUsercmd.fOriginal(buf, to, from);
 	const bool localUsingMountedWeapon = m_VR &&
 		m_VR->m_IsVREnabled &&
 		!m_VR->m_ForceNonVRServerMovement &&
@@ -3030,20 +3057,6 @@ int Hooks::dWriteUsercmd(void* buf, CUserCmd* to, CUserCmd* from)
 				m_VR->PlayMagazineInteractionBlockedFireEmptySound();
 			to->buttons &= ~(kMagazineInteractionInAttack | kMagazineInteractionInReload);
 		}
-	}
-
-	// VR 未启用：原样走引擎
-	if (!m_VR->m_IsVREnabled)
-		return hkWriteUsercmd.fOriginal(buf, to, from);
-
-	// 只有（配置开启编码）且（本进程确实在跑服务器钩子＝能解码）且（未强制走非 VR 标准）时才编码
-	const bool canEncode = (m_VR->m_EncodeVRUsercmd && !m_VR->m_ForceNonVRServerMovement);
-
-	if (!canEncode)
-	{
-		// 非 VR 服务器：不要动 tick_count/command_number/viewangles.z/upmove 等
-		// 保持标准 CUserCmd，让 dCreateMove 写入的 forwardmove/sidemove 正常生效
-		return hkWriteUsercmd.fOriginal(buf, to, from);
 	}
 
 	// ======== 以下为原有“编码”逻辑，保持不变，仅包在 canEncode 分支内 ========

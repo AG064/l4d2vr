@@ -311,6 +311,79 @@ bool Hooks::InitializeNoHmdNekoPostProbe()
 	return enabled;
 }
 
+namespace
+{
+    std::mutex g_CreateMoveDiscoveryMutex;
+    bool g_CreateMoveDiscoveryPending = false;
+    std::chrono::steady_clock::time_point g_CreateMoveDiscoveryNext{}, g_CreateMoveDiscoveryDeadline{};
+
+    void ScheduleCreateMoveDiscovery()
+    {
+        std::lock_guard<std::mutex> lock(g_CreateMoveDiscoveryMutex);
+        g_CreateMoveDiscoveryPending = true;
+        // Start the budget only when the initialized callback attempts a probe.
+        g_CreateMoveDiscoveryNext = {};
+        g_CreateMoveDiscoveryDeadline = {};
+        Game::logMsg("[VR][Input] CreateMove waiting for client mode: discovery retries for 30s");
+    }
+
+    void CancelCreateMoveDiscovery()
+    {
+        std::lock_guard<std::mutex> lock(g_CreateMoveDiscoveryMutex);
+        g_CreateMoveDiscoveryPending = false;
+    }
+
+    // Probe only memory at the verified client-mode address. This update path
+    // performs no engine/entity API calls and is independent of queued draws.
+    LPVOID ProbeCreateMoveTarget(uintptr_t address)
+    {
+        if (!address)
+            return nullptr;
+#ifdef _MSC_VER
+        __try
+#endif
+        {
+            const uintptr_t outer = *reinterpret_cast<uintptr_t*>(address);
+            const uintptr_t mode = outer ? *reinterpret_cast<uintptr_t*>(outer) : 0u;
+            void** vtable = mode ? *reinterpret_cast<void***>(mode) : nullptr;
+            return vtable ? vtable[27] : nullptr;
+        }
+#ifdef _MSC_VER
+        __except (EXCEPTION_EXECUTE_HANDLER) { return nullptr; }
+#endif
+    }
+}
+
+void Hooks::RetryCreateMoveHook()
+{
+    if (!m_Game || !m_Game->m_Initialized || !m_Game->m_Offsets)
+        return;
+    std::lock_guard<std::mutex> lock(g_CreateMoveDiscoveryMutex);
+    if (!g_CreateMoveDiscoveryPending)
+        return;
+    const auto now = std::chrono::steady_clock::now();
+    if (now < g_CreateMoveDiscoveryNext)
+        return;
+    if (g_CreateMoveDiscoveryDeadline.time_since_epoch().count() == 0)
+        g_CreateMoveDiscoveryDeadline = now + std::chrono::seconds(30);
+    g_CreateMoveDiscoveryNext = now + std::chrono::seconds(1);
+    LPVOID target = ProbeCreateMoveTarget(m_Game->m_Offsets->g_pClientMode.address);
+    if (!target)
+    {
+        if (now >= g_CreateMoveDiscoveryDeadline)
+        {
+            g_CreateMoveDiscoveryPending = false;
+            Game::logMsg("[VR][Input] CreateMove unavailable: client-mode discovery expired after 30s");
+        }
+        return;
+    }
+    g_CreateMoveDiscoveryPending = false;
+    const int created = hkCreateMove.createHook(target, dCreateMove);
+    const int enabled = created == 0 ? hkCreateMove.enableHook() : 1;
+    Game::logMsg("[VR][Input] CreateMove deferred acquisition target=%p created=%d enabled=%d",
+        target, created == 0 ? 1 : 0, enabled == 0 ? 1 : 0);
+}
+
 Hooks::Hooks(Game* game)
 {
 	if (MH_Initialize() != MH_OK)
@@ -360,7 +433,11 @@ Hooks::Hooks(Game* game)
     if (hkClientPistolFireActivity.pTarget) hkClientPistolFireActivity.enableHook();
     if (hkClientPistolReload.pTarget) hkClientPistolReload.enableHook();
     if (hkClientPistolFinishReload.pTarget) hkClientPistolFinishReload.enableHook();
-	hkCreateMove.enableHook();
+	if (hkCreateMove.pTarget)
+	{
+		const int enabled = hkCreateMove.enableHook();
+		Game::logMsg("[VR][Input] CreateMove acquisition target=%p enabled=%d", hkCreateMove.pTarget, enabled == 0 ? 1 : 0);
+	}
 	hkTestMeleeSwingCollisionClient.enableHook();
 	hkTestMeleeSwingCollisionServer.enableHook();
     if (hkPhysicalMeleeShootPosition.pTarget) hkPhysicalMeleeShootPosition.enableHook();
@@ -493,6 +570,7 @@ Hooks::Hooks(Game* game)
 
 Hooks::~Hooks()
 {
+	CancelCreateMoveDiscovery();
 	if (MH_Uninitialize() != MH_OK)
 	{
 		Game::errorMsg("Failed to uninitialize MinHook");
@@ -849,46 +927,11 @@ int Hooks::initSourceHooks()
 			break;
 	}
 
-	uintptr_t clientModeAddress = m_Game->m_Offsets->g_pClientMode.address;
-	if (!clientModeAddress)
-	{
-		Game::errorMsg("g_pClientMode address was null; aborting CreateMove hook installation");
-		return 0;
-	}
-
-	void* clientMode = nullptr;
-	constexpr int kMaxAttempts = 500;
-	for (int attempt = 0; attempt < kMaxAttempts && !clientMode; ++attempt)
-	{
-		uintptr_t clientModePtr = *reinterpret_cast<uintptr_t*>(clientModeAddress);
-		if (clientModePtr)
-		{
-			uintptr_t clientModeValue = *reinterpret_cast<uintptr_t*>(clientModePtr);
-			if (clientModeValue)
-			{
-				clientMode = reinterpret_cast<void*>(clientModeValue);
-				break;
-			}
-		}
-
-		Sleep(10);
-	}
-
-	if (!clientMode)
-	{
-		Game::errorMsg("Timed out waiting for g_pClientMode; CreateMove hook not installed");
-		return 0;
-	}
-
-	void*** clientModePtr = reinterpret_cast<void***>(clientMode);
-	void** clientModeVTable = (clientModePtr != nullptr) ? *clientModePtr : nullptr;
-	if (!clientModeVTable)
-	{
-		Game::errorMsg("Client mode vtable pointer was null; CreateMove hook not installed");
-		return 0;
-	}
-
-	hkCreateMove.createHook(clientModeVTable[27], dCreateMove);
+    LPVOID createMoveTarget = ProbeCreateMoveTarget(m_Game->m_Offsets->g_pClientMode.address);
+    if (createMoveTarget)
+        hkCreateMove.createHook(createMoveTarget, dCreateMove);
+    else
+        ScheduleCreateMoveDiscovery();
     if (m_Game->m_Offsets->PistolPlayerRunCommand.valid && m_Game->m_Offsets->CBaseEntity_entindex.valid)
         hkPistolPlayerRunCommand.createHook(
             reinterpret_cast<void*>(m_Game->m_Offsets->PistolPlayerRunCommand.address), dPistolPlayerRunCommand);
