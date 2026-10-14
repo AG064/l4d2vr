@@ -280,10 +280,8 @@ static void BridgeRecovery(const fs::path& root, bool hideArms)
 }
 int main()
 {
-    const auto scratch = fs::current_path() / ("hand-asset-fixture-" + std::to_string(GetCurrentProcessId()) +
+    const auto scratch = fs::temp_directory_path() / ("hand-asset-fixture-" + std::to_string(GetCurrentProcessId()) +
         "-" + std::to_string(GetTickCount64()));
-    const auto temp = fs::temp_directory_path();
-    Require(scratch.wstring().find(temp.wstring()) == 0u, "verification must run in TEMP");
     fs::create_directories(scratch);
     for (unsigned side = 0u; side < 2u; ++side)
         for (unsigned corrupt = 0u; corrupt < 2u; ++corrupt)
